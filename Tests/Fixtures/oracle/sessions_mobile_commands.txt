@@ -1,0 +1,281 @@
+=== learn_second_0
+s これはうれしいごさんです
+c 0 1
+commitallandfinish
+s これはうれしいごさんです
+=== learn_second_1
+s でこめをおくったら
+c 0 1
+commitallandfinish
+s でこめをおくったら
+=== learn_second_2
+s しょっぱいあじがした
+c 0 1
+commitallandfinish
+s しょっぱいあじがした
+=== learn_second_3
+s そういうわけだったのか
+c 0 1
+commitallandfinish
+s そういうわけだったのか
+=== learn_second_4
+s とうぜんそのようなこともそうていしています
+c 0 1
+commitallandfinish
+s とうぜんそのようなこともそうていしています
+=== learn_second_5
+s きしゃのきしゃがきしゃできしゃした
+c 0 1
+commitallandfinish
+s きしゃのきしゃがきしゃできしゃした
+=== learn_second_6
+s はしをわたる
+c 0 1
+commitallandfinish
+s はしをわたる
+=== learn_second_7
+s かいとう
+c 0 1
+commitallandfinish
+s かいとう
+=== learn_segment_0
+s これはだめだというし
+c 1 2
+commitallandfinish
+s これはだめだというし
+reset
+p これは
+=== learn_segment_1
+s そのことからもわかるように
+c 1 2
+commitallandfinish
+s そのことからもわかるように
+reset
+p そのこ
+=== learn_segment_2
+s ほしゅてきなめんもあるね
+c 1 2
+commitallandfinish
+s ほしゅてきなめんもあるね
+reset
+p ほしゅ
+=== focus_0
+s かいごはほんとうにたいへんです
+focus 0 1
+focus 1 2
+focus 0 0
+=== focus_1
+s さるのなきごえがすごい
+focus 0 1
+focus 1 2
+focus 0 0
+=== focus_2
+s 「かっこ」をつかう
+focus 0 1
+focus 1 2
+focus 0 0
+=== commitfirst_0
+s さとるくんにたのみましょう
+commitfirstsegment 1
+finish
+s さとるくんにたのみましょう
+=== commitfirst_1
+s ひまわりがさいている
+commitfirstsegment 1
+finish
+s ひまわりがさいている
+=== commitfirst_2
+s このひぼくらはきんじょにいった
+commitfirstsegment 1
+finish
+s このひぼくらはきんじょにいった
+=== history_toggle_0
+disableuserhistory
+s ぼーりんぐじょうのちかくです
+c 0 1
+commitallandfinish
+s ぼーりんぐじょうのちかくです
+enableuserhistory
+c 0 1
+commitallandfinish
+s ぼーりんぐじょうのちかくです
+=== history_toggle_1
+disableuserhistory
+s どんなふうにやったのか
+c 0 1
+commitallandfinish
+s どんなふうにやったのか
+enableuserhistory
+c 0 1
+commitallandfinish
+s どんなふうにやったのか
+=== history_toggle_2
+disableuserhistory
+s かんじへんかん
+c 0 1
+commitallandfinish
+s かんじへんかん
+enableuserhistory
+c 0 1
+commitallandfinish
+s かんじへんかん
+=== predict_learn_0
+suggest きょう
+p きょう
+c 0 2
+finish
+suggest きょう
+p きょう
+p
+=== predict_learn_1
+suggest わたし
+p わたし
+c 0 2
+finish
+suggest わたし
+p わたし
+p
+=== predict_learn_2
+suggest ありがとう
+p ありがとう
+c 0 2
+finish
+suggest ありがとう
+p ありがとう
+p
+=== predict_learn_3
+suggest よろしく
+p よろしく
+c 0 2
+finish
+suggest よろしく
+p よろしく
+p
+=== predict_learn_4
+suggest こんにちは
+p こんにちは
+c 0 2
+finish
+suggest こんにちは
+p こんにちは
+p
+=== zeroquery_0
+z わたし 私
+=== zeroquery_1
+z きょう 今日
+=== zeroquery_2
+z ありがとう ありがとう
+=== context_0
+s きょうは
+commitallandfinish
+s いいてんきです
+commitallandfinish
+p いい
+=== context_1
+s わたしの
+commitallandfinish
+s なまえはなかのです
+commitallandfinish
+p なま
+=== context_2
+s でびあんをつかっています
+commitallandfinish
+s たたかいにかつには
+commitallandfinish
+p たた
+=== cancel_reset_0
+s いがもたれる
+cancel
+s いがもたれる
+reset
+s いがもたれる
+c 0 1
+finish
+reset
+s いがもたれる
+=== cancel_reset_1
+s ぶいぶいいわしている
+cancel
+s ぶいぶいいわしている
+reset
+s ぶいぶいいわしている
+c 0 1
+finish
+reset
+s ぶいぶいいわしている
+=== reverse_0
+r 漢字変換
+=== reverse_1
+r 今日は良い天気です
+=== reverse_2
+r 東京都
+=== errors
+s
+c 0
+focus 5 5
+unknowncommand
+
+resize 0
+s あ
+c 0 999
+c 9 0
+commitallandfinish
+=== numbers
+s 12345えん
+c 0 1
+commitallandfinish
+s 12345えん
+p 2025ねん
+=== long_learning
+s ひとごみにながされてかわっていく
+c 0 1
+commitallandfinish
+s ぼうせんいっぽうになっている
+c 0 1
+commitallandfinish
+s ありのすのようにのびている
+c 0 1
+commitallandfinish
+s ふめんをよめないのがじゃくてんです
+c 0 1
+commitallandfinish
+s せがずいぶんたかい
+c 0 1
+commitallandfinish
+s かいさつぐちでてをふった
+c 0 1
+commitallandfinish
+s ひとごみにながされてかわっていく
+s ぼうせんいっぽうになっている
+s ありのすのようにのびている
+s ふめんをよめないのがじゃくてんです
+s せがずいぶんたかい
+s かいさつぐちでてをふった
+=== learn_then_predict_0
+s へんかんきのうをためす
+c 0 2
+commitallandfinish
+p へんかん
+suggest へんかんき
+=== learn_then_predict_1
+s しんかんせんでとうきょうにいく
+c 1 1
+commitallandfinish
+p しんかん
+s しんかんせんでとうきょうにいく
+=== learn_twice
+s かいとう
+c 0 3
+commitallandfinish
+s かいとう
+c 0 1
+commitallandfinish
+s かいとう
+=== predict_commit_continue
+p おせわに
+c 0 0
+finish
+p
+c 0 1
+finish
+p

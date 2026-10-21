@@ -1,0 +1,10 @@
+.build/
+.build-*/
+.swiftpm/
+/Tools/bin/
+/Data/genmai.data
+/Data/mock_genmai.data
+/Tests/Fixtures/oracle/*.tmp
+.DS_Store
+build/
+/Data/external/

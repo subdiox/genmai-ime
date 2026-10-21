@@ -1,0 +1,24 @@
+# Oracle tool for genmai-ime parity fixtures (copied into Vendor/mozc/src/swift_parity by
+# Tools/make_lattice_fixtures.sh and built with --nocheck_visibility; not part of Mozc).
+load("//:build_defs.bzl", "mozc_cc_binary")
+
+mozc_cc_binary(
+    name = "lattice_fixture_main",
+    testonly = True,
+    srcs = ["lattice_fixture_main.cc"],
+    deps = [
+        "//converter:debug_util",
+        "//converter:immutable_converter",
+        "//converter:lattice",
+        "//converter:segments",
+        "//base:file_stream",
+        "//base:init_mozc",
+        "//data_manager",
+        "//data_manager/oss:oss_data_manager",
+        "//engine:modules",
+        "//request:conversion_request",
+        "@com_google_absl//absl/flags:flag",
+        "@com_google_absl//absl/status:statusor",
+        "@com_google_absl//absl/strings",
+    ],
+)

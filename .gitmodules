@@ -1,0 +1,3 @@
+[submodule "Vendor/mozc"]
+	path = Vendor/mozc
+	url = https://github.com/google/mozc.git

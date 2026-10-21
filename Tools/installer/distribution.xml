@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+ Port of mozc/src/mac/installer/distribution.xml (3.35.6354) for the Swift port.
+ Differences: the package id / file name (io.github.subdiox.genmai.pkg, Genmai.pkg) so that the C++
+ Mozc package (org.mozc.pkg.JapaneseInput) is not treated as the same product, the title, the minimum OS
+ (the Swift package targets macOS 15) and hostArchitectures, which Tools/make_installer_pkg.sh fills with
+ the architectures of the built binaries (@@@HOST_ARCHITECTURES@@@).
+-->
+
+<installer-gui-script minSpecVersion="1">
+    <title>Genmai</title>
+    <allowed-os-versions>
+        <os-version min="15.0"/>
+    </allowed-os-versions>
+    <pkg-ref id="io.github.subdiox.genmai.pkg"/>
+    <domains enable_localSystem="true"/>
+    <options rootVolumeOnly="true"/>
+    <options customize="never" require-scripts="false" hostArchitectures="@@@HOST_ARCHITECTURES@@@"/>
+    <choices-outline>
+        <line choice="default">
+            <line choice="io.github.subdiox.genmai.pkg"/>
+        </line>
+    </choices-outline>
+    <choice id="default"/>
+    <choice id="io.github.subdiox.genmai.pkg" visible="false">
+        <pkg-ref id="io.github.subdiox.genmai.pkg"/>
+    </choice>
+    <pkg-ref id="io.github.subdiox.genmai.pkg" version="0" onConclusion="RequireLogout">Genmai.pkg</pkg-ref>
+</installer-gui-script>
