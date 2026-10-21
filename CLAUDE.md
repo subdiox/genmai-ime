@@ -79,7 +79,7 @@ mozc/src/...` provenance comments.
 
 ## AI conversion (GenmaiAI)
 
-The genmai model ([subdiox/genmai-v25m-kd](https://huggingface.co/subdiox/genmai-v25m-kd): GPT-2, character-level,
+The genmai model ([subdiox/genmai](https://huggingface.co/subdiox/genmai): GPT-2, character-level,
 24 layers, 1024 dim, 310M parameters, CC BY-SA 4.0) decodes the conversion from the reading by beam search on MLX
 (mlx-swift **0.32.3**, pinned `exact`). The Swift code is a port of the Python MLX reference decoder used in
 training and gives bit-identical n-best lists and scores (`Tests/Fixtures/genmai/python_mlx_daily.json`).
@@ -93,7 +93,7 @@ training and gives bit-identical n-best lists and scores (`Tests/Fixtures/genmai
   while typing).
 - The model is not bundled: `Tools/prepare_genmai_model.sh` downloads it from Hugging Face and writes the compact
   layout (bf16, 0.62 GB, safetensors metadata `format=genmai-bf16-out-in`, plus tokenizer.json / config.json /
-  genmai_fmt.txt) to `~/Library/Application Support/Genmai/model/v25m_kd`. Tests use `$GENMAI_MODEL_DIR`, else
+  genmai_fmt.txt) to `~/Library/Application Support/Genmai/model`. Tests use `$GENMAI_MODEL_DIR`, else
   that directory, and skip without it.
 - `genmai-cli`: `convert`, `eval [--incremental] [--every-key] [--draft] [--no-kv-reuse]` (per-item latency in the
   JSON), `compare`, `logprobs`, `prepare`, `session-eval` (below).

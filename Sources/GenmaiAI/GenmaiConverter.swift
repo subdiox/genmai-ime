@@ -44,10 +44,10 @@ public actor GenmaiConverter {
     public nonisolated let loadSeconds: Double
     public nonisolated let tokenizer: GenmaiTokenizer
 
-    /// The directory the IME loads the model from: `~/Library/Application Support/Genmai/model/v25m_kd`
+    /// The directory the IME loads the model from: `~/Library/Application Support/Genmai/model`
     /// (written by Tools/prepare_genmai_model.sh).
     public static var defaultModelDirectory: URL {
-        URL.applicationSupportDirectory.appending(path: "Genmai/model/v25m_kd", directoryHint: .isDirectory)
+        URL.applicationSupportDirectory.appending(path: "Genmai/model", directoryHint: .isDirectory)
     }
 
     public init(directory: URL = GenmaiConverter.defaultModelDirectory) throws {

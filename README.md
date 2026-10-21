@@ -64,7 +64,7 @@ Settings and learning data live in `~/Library/Application Support/Genmai`.
 The model is not part of the app. Download and convert it once (1.2 GB download, 0.6 GB on disk):
 
 ```sh
-Tools/prepare_genmai_model.sh      # from Hugging Face: subdiox/genmai-v25m-kd
+Tools/prepare_genmai_model.sh      # from Hugging Face: subdiox/genmai
 ```
 
 Then turn on **Use AI conversion** in the settings (tab "AI"). The settings are stored in
@@ -112,7 +112,7 @@ without AI conversion and reports accuracy and latency (see `CLAUDE.md`).
 - The dictionary data built into `genmai.data` contains data derived from IPAdic (NAIST; see `LICENSE`), the
   [Japanese usage dictionary](https://github.com/hiroyuki-komatsu/japanese-usage-dictionary) (BSD 2-Clause)
   and Japan Post zip code data. Build scripts download the latter two at pinned versions.
-- The AI model [subdiox/genmai-v25m-kd](https://huggingface.co/subdiox/genmai-v25m-kd) is distributed separately
+- The AI model [subdiox/genmai](https://huggingface.co/subdiox/genmai) is distributed separately
   under CC BY-SA 4.0. It is fine-tuned from [zenz-v2.5-medium](https://huggingface.co/Miwa-Keita/zenz-v2.5-medium)
   by Miwa-Keita (CC BY-SA 4.0).
 - Uses [mlx-swift](https://github.com/ml-explore/mlx-swift) (MIT) and

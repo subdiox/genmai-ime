@@ -18,7 +18,7 @@
 //   genmai-cli session-eval [--timeout-ms N] [--settle none|chunks|idle] [--errors] [--out-dir DIR] <anco set.json>...
 //       types the readings through the IME session layer (SessionHandlerBackend) with AI conversion off and on
 //       and reports top-1 accuracy and conversion-key latency (see SessionEval.swift).
-//   GENMAI_MODEL_DIR overrides the default model directory (~/Library/Application Support/Genmai/model/v25m_kd).
+//   GENMAI_MODEL_DIR overrides the default model directory (~/Library/Application Support/Genmai/model).
 
 import Foundation
 import GenmaiAI
