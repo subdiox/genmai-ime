@@ -24,7 +24,7 @@ extension Segment {
 /// engine::Modules for the rewriter tests.
 final class RewriterTestModules: RewriterModules {
   let base: TestModules
-  let singleKanjiDictionary: SingleKanjiDictionary
+  let singleKanjiDictionary: any SingleKanjiDictionaryInterface
 
   init(_ base: TestModules) {
     self.base = base
@@ -37,7 +37,7 @@ final class RewriterTestModules: RewriterModules {
   func getDictionary() -> any DictionaryInterface { base.dictionary }
   func getPosMatcher() -> PosMatcher { base.posMatcher }
   func getPosGroup() -> PosGroup { base.posGroup }
-  func getSingleKanjiDictionary() -> SingleKanjiDictionary { singleKanjiDictionary }
+  func getSingleKanjiDictionary() -> any SingleKanjiDictionaryInterface { singleKanjiDictionary }
   func getReadingAlignmentSupplementalModel() -> (any ReadingAlignmentSupplementalModel)? { nil }
 }
 

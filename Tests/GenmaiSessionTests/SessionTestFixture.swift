@@ -25,6 +25,7 @@ import Testing
 // MARK: - MockConverter (converter/converter_mock.h)
 
 /// NiceMock<StrictMockConverter>: unset handlers return false / do nothing.
+/// `@unchecked Sendable`: a test double with mutable handlers / records, set and used on the test's own task only.
 final class MockConverter: ConverterInterface, @unchecked Sendable {
   var startConversionHandler: ((ConversionRequest, Segments) -> Bool)?
   var startReverseConversionHandler: ((Segments, String) -> Bool)?
@@ -235,6 +236,7 @@ final class MockConverter: ConverterInterface, @unchecked Sendable {
 
 /// gMock MockEngine (a NiceMock-like test double). Every requirement is
 /// implemented here (protocol default dispatch pitfall).
+/// `@unchecked Sendable`: a test double with mutable handlers / records, set and used on the test's own task only.
 final class MockEngine: EngineInterface, @unchecked Sendable {
   var getDataVersionHandler: (() -> String)?
   var createEngineConverterHandler: (() -> any EngineConverterInterface)?
@@ -672,7 +674,7 @@ func switchCompositionMode(
 
 final class SessionTestFixture {
   let mobileRequest: Genmai_Commands_Request
-  let mockDataManager: MockDataManager
+  let mockDataManager: DataManager
   let t13nRewriter: TransliterationRewriter
   private var mockDataEngineImpl: Engine?
 
@@ -681,7 +683,7 @@ final class SessionTestFixture {
     RequestTestUtil.fillMobileRequest(&request)
     mobileRequest = request
 
-    mockDataManager = try MockDataManager()
+    mockDataManager = try MockDataManager.create()
     t13nRewriter = TransliterationRewriter(PosMatcher(mockDataManager.getPosMatcherData()))
   }
 

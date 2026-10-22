@@ -15,12 +15,12 @@ enum DictionaryTestSupport {
     "mock_genmai.data is missing; build //data_manager/testing:mozc_dataset_for_testing"
 
   /// Shared mock data manager (loading is cheap but repeated in many tests).
-  private static let cachedMock = Mutex<MockDataManager?>(nil)
+  private static let cachedMock = Mutex<DataManager?>(nil)
 
-  static func mockDataManager() throws -> MockDataManager {
+  static func mockDataManager() throws -> DataManager {
     try cachedMock.withLock { cached in
       if let m = cached { return m }
-      let m = try MockDataManager()
+      let m = try MockDataManager.create()
       cached = m
       return m
     }

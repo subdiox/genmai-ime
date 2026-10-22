@@ -428,11 +428,7 @@ public enum UserDictionaryImporter {
       return .numEncodings
     }
     let kMaxCheckSize = 1024
-    let buffer = mmap.buffer
-    let size = min(kMaxCheckSize, buffer.count)
-    return withExtendedLifetime(mmap) {
-      guessEncodingType(buffer[0..<size])
-    }
+    return guessEncodingType(mmap.data.prefix(kMaxCheckSize))
   }
 }
 

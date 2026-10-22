@@ -41,9 +41,9 @@ private func initUserPosManagerDataFromReader(_ reader: DataSetReader) throws ->
 /// Thread safety: the sections are guarded by a mutex; they are set during
 /// initialization (the `initFrom*` methods, protected in C++, are called while
 /// constructing an instance) and the memory is a read-only mmap or an
-/// immutable owned buffer. `@unchecked Sendable` only because an open class
-/// cannot be checked.
-open class DataManager: @unchecked Sendable {
+/// immutable owned buffer. The C++ subclasses (OssDataManager,
+/// MockDataManager) are factories here (see those files).
+public final class DataManager: Sendable {
   public static func getDataSetMagicNumber(_ type: String) -> [UInt8] {
     if type == "oss" {
       return kDataSetMagicNumberOss
@@ -177,6 +177,8 @@ open class DataManager: @unchecked Sendable {
     var usageItemsData = DataView.empty
     var usageStringArrayData = DataView.empty
     var dataVersion = DataView.empty
+    /// Replaces the data version (MockDataManager's mocked GetDataVersion()).
+    var dataVersionOverride: String? = nil
     // Note: as in the C++ code (3.35.6354), this map is never populated, so
     // getOffsetAndSize() always returns nil.
     var offsetAndSize: [String: (Int, Int)] = [:]
@@ -188,7 +190,7 @@ open class DataManager: @unchecked Sendable {
   private var sections: Sections { state.withLock { $0 } }
 
   /// An uninitialized data manager (C++ protected default constructor).
-  /// Subclasses call one of the `initFrom*` methods in their initializer.
+  /// Call one of the `initFrom*` methods next.
   public init() {}
 
   // MARK: - Initialization (protected in C++)
@@ -535,35 +537,35 @@ open class DataManager: @unchecked Sendable {
 
   // MARK: - Accessors
 
-  open func getFilename() -> String? { sections.filename }
+  public func getFilename() -> String? { sections.filename }
 
-  open func getPosMatcherData() -> DataSpan<UInt16> {
+  public func getPosMatcherData() -> DataSpan<UInt16> {
     sections.posMatcherData.span(UInt16.self)
   }
 
-  open func getPosIdMapData() -> DataView { sections.posIdMapData }
+  public func getPosIdMapData() -> DataView { sections.posIdMapData }
 
-  open func getUserPosData() -> (tokenArray: DataView, stringArray: DataView) {
+  public func getUserPosData() -> (tokenArray: DataView, stringArray: DataView) {
     (sections.userPosTokenArrayData, sections.userPosStringArrayData)
   }
 
-  open func getConnectorData() -> DataView { sections.connectionData }
+  public func getConnectorData() -> DataView { sections.connectionData }
 
-  open func getSystemDictionaryData() -> DataView { sections.dictionaryData }
+  public func getSystemDictionaryData() -> DataView { sections.dictionaryData }
 
-  open func getSuggestionFilterData() -> DataSpan<UInt32> {
+  public func getSuggestionFilterData() -> DataSpan<UInt32> {
     sections.suggestionFilterData.span(UInt32.self)
   }
 
-  open func getCollocationData() -> (collocation: DataView, collocationSuppression: DataView) {
+  public func getCollocationData() -> (collocation: DataView, collocationSuppression: DataView) {
     (sections.collocationData, sections.collocationSuppressionData)
   }
 
-  open func getPosGroupData() -> DataSpan<UInt8> {
+  public func getPosGroupData() -> DataSpan<UInt8> {
     sections.posGroupData.span(UInt8.self)
   }
 
-  open func getSegmenterData() -> (
+  public func getSegmenterData() -> (
     lNumElements: Int, rNumElements: Int, lTable: DataSpan<UInt16>, rTable: DataSpan<UInt16>,
     bitarrayData: DataSpan<UInt8>, boundaryData: DataSpan<UInt16>
   ) {
@@ -577,15 +579,15 @@ open class DataManager: @unchecked Sendable {
     )
   }
 
-  open func getCounterSuffixSortedArray() -> DataView { sections.counterSuffixData }
+  public func getCounterSuffixSortedArray() -> DataView { sections.counterSuffixData }
 
-  open func getSuffixDictionaryData() -> (
+  public func getSuffixDictionaryData() -> (
     keyArray: DataView, valueArray: DataView, tokenArray: DataView
   ) {
     (sections.suffixKeyArrayData, sections.suffixValueArrayData, sections.suffixTokenArrayData)
   }
 
-  open func getReadingCorrectionData() -> (
+  public func getReadingCorrectionData() -> (
     valueArray: DataView, errorArray: DataView, correctionArray: DataView
   ) {
     (
@@ -594,19 +596,19 @@ open class DataManager: @unchecked Sendable {
     )
   }
 
-  open func getSymbolRewriterData() -> (tokenArray: DataView, stringArray: DataView) {
+  public func getSymbolRewriterData() -> (tokenArray: DataView, stringArray: DataView) {
     (sections.symbolTokenArrayData, sections.symbolStringArrayData)
   }
 
-  open func getEmoticonRewriterData() -> (tokenArray: DataView, stringArray: DataView) {
+  public func getEmoticonRewriterData() -> (tokenArray: DataView, stringArray: DataView) {
     (sections.emoticonTokenArrayData, sections.emoticonStringArrayData)
   }
 
-  open func getEmojiRewriterData() -> (tokenArray: DataView, stringArray: DataView) {
+  public func getEmojiRewriterData() -> (tokenArray: DataView, stringArray: DataView) {
     (sections.emojiTokenArrayData, sections.emojiStringArrayData)
   }
 
-  open func getSingleKanjiRewriterData() -> (
+  public func getSingleKanjiRewriterData() -> (
     tokenArray: DataView, stringArray: DataView, variantTypeArray: DataView,
     variantTokenArray: DataView, variantStringArray: DataView,
     nounPrefixTokenArray: DataView, nounPrefixStringArray: DataView
@@ -622,11 +624,11 @@ open class DataManager: @unchecked Sendable {
     )
   }
 
-  open func getA11yDescriptionRewriterData() -> (tokenArray: DataView, stringArray: DataView) {
+  public func getA11yDescriptionRewriterData() -> (tokenArray: DataView, stringArray: DataView) {
     (sections.a11yDescriptionTokenArrayData, sections.a11yDescriptionStringArrayData)
   }
 
-  open func getZeroQueryData() -> (
+  public func getZeroQueryData() -> (
     tokenArray: DataView, stringArray: DataView, numberTokenArray: DataView,
     numberStringArray: DataView
   ) {
@@ -636,7 +638,7 @@ open class DataManager: @unchecked Sendable {
     )
   }
 
-  open func getUsageRewriterData() -> (
+  public func getUsageRewriterData() -> (
     baseConjugationSuffix: DataView, conjugationSuffix: DataView, conjugationIndex: DataView,
     usageItems: DataView, stringArray: DataView
   ) {
@@ -647,9 +649,17 @@ open class DataManager: @unchecked Sendable {
   }
 
   /// The data version string, e.g. "24.11.oss".
-  open func getDataVersion() -> String { sections.dataVersion.string }
+  public func getDataVersion() -> String {
+    let s = sections
+    return s.dataVersionOverride ?? s.dataVersion.string
+  }
 
-  open func getOffsetAndSize(_ name: String) -> (offset: Int, size: Int)? {
+  /// Makes `getDataVersion()` return `version` (MockDataManager).
+  func overrideDataVersion(_ version: String?) {
+    state.withLock { $0.dataVersionOverride = version }
+  }
+
+  public func getOffsetAndSize(_ name: String) -> (offset: Int, size: Int)? {
     if let v = sections.offsetAndSize[name] {
       return v
     }

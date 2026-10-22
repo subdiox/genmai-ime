@@ -58,11 +58,9 @@ public final class SuffixDictionary: DictionaryInterface, Sendable {
   // Kana modifier insensitive lookup is not supported.
   public func lookupPredictive(_ key: String, callback: any DictionaryCallback) {
     let keyBytes = Array(key.utf8)
-    let keyLen = keyBytes.count
     // compare by the prefix.
     func cmp(_ i: Int) -> Int {
-      let x = keyArray.bytes(at: i)
-      return Strings.compareBytes(x.prefix(keyLen), keyBytes)
+      keyArray.comparePrefix(at: i, bytes: keyBytes)
     }
     // std::equal_range.
     var begin = 0

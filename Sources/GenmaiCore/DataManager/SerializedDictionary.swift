@@ -109,7 +109,7 @@ public struct SerializedDictionary: RandomAccessCollection, Sendable {
     public var keyIndex: UInt32 { tokenArray.load(fromByteOffset: tokenOffset, as: UInt32.self) }
     public var key: String { stringArray[Int(keyIndex)] }
     /// The key bytes without decoding.
-    public var keyBytes: [UInt8] { Array(stringArray.bytes(at: Int(keyIndex))) }
+    public var keyBytes: [UInt8] { stringArray.utf8(at: Int(keyIndex)) }
 
     public var valueIndex: UInt32 { tokenArray.load(fromByteOffset: tokenOffset + 4, as: UInt32.self) }
     public var value: String { stringArray[Int(valueIndex)] }

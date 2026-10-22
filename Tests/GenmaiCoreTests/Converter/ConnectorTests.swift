@@ -140,7 +140,7 @@ import Testing
   /// DataManagerTestBase::ConnectorTest_RandomValueCheck for the OSS data set.
   @Test(.enabled(if: OssDataManagerAvailability.available, "genmai.data is missing; run Tools/build_oracle.sh"))
   func ossRandomValueCheck() throws {
-    let dm = try OssDataManager()
+    let dm = try OssDataManager.create()
     let connector = try Connector.create(dm.getConnectorData())
     let path = ConverterCoreTestSupport.sourcePath(
       "data", "dictionary_oss", "connection_single_column.txt")

@@ -86,7 +86,7 @@ private func expectResults(
 private struct NumberRewriterTestFixture {
   let posMatcher: PosMatcher
   let defaultRequest = ConversionRequest()
-  private let dataManager: MockDataManager
+  private let dataManager: DataManager
 
   init() throws {
     dataManager = try ConverterCoreTestSupport.mockDataManager()

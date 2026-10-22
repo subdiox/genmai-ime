@@ -49,15 +49,12 @@ import Foundation
 /// +=====================================================================+
 ///
 /// Memory: the array reads its bytes through an immutable `Data` (which may be a slice of a memory-mapped data
-/// set; no copy is made). The raw-pointer APIs (`initialize(_:owner:)`, `set(_:owner:)`, `bytes(at:)`) are kept
-/// for callers that still hold `UnsafeRawBufferPointer`s; they go through `RawBytesView`.
+/// set; no copy is made).
 public struct SerializedStringArray: RandomAccessCollection, Sendable {
   public typealias Index = Int
   public typealias Element = String
 
   private var storage = Data()
-  /// Raw view of `storage` for the pointer-returning compatibility API.
-  private var raw = RawBytesView()
 
   /// Constructs an empty array.
   public init() {}
@@ -82,7 +79,7 @@ public struct SerializedStringArray: RandomAccessCollection, Sendable {
   @discardableResult
   public mutating func initialize(_ data: Data) -> Bool {
     if SerializedStringArray.verifyData(data) {
-      set(data, RawBytesView(data))
+      storage = data
       return true
     }
     clear()
@@ -92,33 +89,7 @@ public struct SerializedStringArray: RandomAccessCollection, Sendable {
   /// Initializes the array from given memory block without verifying data.
   public mutating func set(_ data: Data) {
     assert(SerializedStringArray.verifyData(data))
-    set(data, RawBytesView(data))
-  }
-
-  /// Initializes the array from memory owned by the caller (valid while `owner` is alive, or forever when it
-  /// is nil). Returns false when the data is invalid. Compatibility API for raw buffers.
-  @discardableResult
-  public mutating func initialize(_ data: UnsafeRawBufferPointer, owner: AnyObject? = nil) -> Bool {
-    let view = RawBytesView(borrowing: data, owner: owner)
-    if SerializedStringArray.verifyData(view.data) {
-      set(view.data, view)
-      return true
-    }
-    clear()
-    return false
-  }
-
-  /// Initializes the array from memory owned by the caller without verifying data. Compatibility API for raw
-  /// buffers.
-  public mutating func set(_ data: UnsafeRawBufferPointer, owner: AnyObject? = nil) {
-    let view = RawBytesView(borrowing: data, owner: owner)
-    assert(SerializedStringArray.verifyData(view.data))
-    set(view.data, view)
-  }
-
-  private mutating func set(_ data: Data, _ view: RawBytesView) {
     storage = data
-    raw = view
   }
 
   /// The number of elements.
@@ -139,7 +110,6 @@ public struct SerializedStringArray: RandomAccessCollection, Sendable {
 
   public mutating func clear() {
     storage = Data()
-    raw = RawBytesView()
   }
 
   public mutating func swap(_ other: inout SerializedStringArray) {
@@ -159,12 +129,6 @@ public struct SerializedStringArray: RandomAccessCollection, Sendable {
     let r = rangeAt(i)
     let start = storage.startIndex
     return storage[(start + r.lowerBound)..<(start + r.upperBound)]
-  }
-
-  /// Returns the bytes of the i-th string (without copying). Valid while this array (or a copy) is alive.
-  /// Compatibility API for raw buffers; new code uses `data(at:)` or `utf8(at:)`.
-  public func bytes(at i: Int) -> UnsafeRawBufferPointer {
-    UnsafeRawBufferPointer(rebasing: raw.buffer[rangeAt(i)])
   }
 
   /// Returns a copy of the bytes of the i-th string.
@@ -189,6 +153,35 @@ public struct SerializedStringArray: RandomAccessCollection, Sendable {
       j += 1
     }
     return j == r.upperBound ? 0 : 1
+  }
+
+  /// Bytewise three-way comparison of the i-th string with `key`.
+  public func compare(at i: Int, bytes key: [UInt8]) -> Int {
+    compare(rangeAt(i), key)
+  }
+
+  /// Bytewise three-way comparison of the first `key.count` bytes of the i-th string (all of it when shorter)
+  /// with `key`.
+  public func comparePrefix(at i: Int, bytes key: [UInt8]) -> Int {
+    let r = rangeAt(i)
+    return compare(r.lowerBound..<Swift.min(r.upperBound, r.lowerBound + key.count), key)
+  }
+
+  private func compare(_ r: Range<Int>, _ key: [UInt8]) -> Int {
+    let s = storage.span
+    var j = r.lowerBound
+    for b in key {
+      if j == r.upperBound { return -1 }
+      let a = s[j]
+      if a != b { return a < b ? -1 : 1 }
+      j += 1
+    }
+    return j == r.upperBound ? 0 : 1
+  }
+
+  /// True if the i-th string equals `key` bytewise.
+  public func equals(at i: Int, bytes key: [UInt8]) -> Bool {
+    rangeAt(i).count == key.count && compare(at: i, bytes: key) == 0
   }
 
   /// std::lower_bound(begin(), end(), key) with bytewise comparison.
@@ -287,11 +280,6 @@ public struct SerializedStringArray: RandomAccessCollection, Sendable {
 
   public static func verifyData(_ data: [UInt8]) -> Bool {
     verifyData(Data(data))
-  }
-
-  /// Compatibility overload for callers that still hold raw buffers (no copy).
-  public static func verifyData(_ data: UnsafeRawBufferPointer) -> Bool {
-    verifyData(RawBytesView(borrowing: data, owner: nil).data)
   }
 
   /// Creates a byte image of |strs|.

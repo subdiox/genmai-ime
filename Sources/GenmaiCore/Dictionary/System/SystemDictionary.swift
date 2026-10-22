@@ -91,8 +91,8 @@ private struct TokenArray: Sendable {
 
   init(_ image: DataView) {
     var array = BitVectorBasedArray()
-    if let base = image.baseAddress {
-      array.open(base)
+    if !image.isEmpty {
+      array.open(image.data)
     }
     self.array = array
     self.image = image
@@ -105,7 +105,7 @@ private struct TokenArray: Sendable {
   /// (`token_array_->Get(key_id)`).
   @inline(__always)
   func offset(_ keyId: Int) -> Int {
-    image.byteOffset(of: array.get(keyId))
+    array.byteRange(keyId).lowerBound
   }
 }
 
@@ -380,8 +380,8 @@ public final class SystemDictionary: DictionaryInterface, Sendable {
         // has the privilege to mlock.
         // Note that we don't munlock the space because it's always better to keep
         // the singleton system dictionary paged in as long as the process runs.
-        if let base = image.baseAddress {
-          _ = Mmap.maybeMLock(base, image.count)
+        if !image.isEmpty {
+          _ = Mmap.maybeMLock(image.data)
         }
         try dictionaryFile.openFromImage(image)
       }
@@ -404,9 +404,6 @@ public final class SystemDictionary: DictionaryInterface, Sendable {
   private let codec: SystemDictionaryCodec
   private let hiraganaExpansionTable: KeyExpansionTable
   private let dictionaryFile: DictionaryFile
-  /// Keeps the section images (and through them the mapped file / image
-  /// owner) alive: the tries read them in place.
-  private let sectionImages: [DataView]
   private let reverseLookupCache = Mutex<ReverseLookupCache?>(nil)
   private let reverseLookupIndex: ReverseLookupIndex?
 
@@ -421,15 +418,12 @@ public final class SystemDictionary: DictionaryInterface, Sendable {
       let valueImage = dictionaryFile.getSection(codec.getSectionNameForValue()),
       let tokenImage = dictionaryFile.getSection(codec.getSectionNameForTokens()),
       let frequentPosImage = dictionaryFile.getSection(codec.getSectionNameForPos()),
-      let keyBase = keyImage.baseAddress, let valueBase = valueImage.baseAddress,
-      !tokenImage.isEmpty
+      !keyImage.isEmpty, !valueImage.isEmpty, !tokenImage.isEmpty
     else {
       return nil
     }
-    sectionImages = [keyImage, valueImage, tokenImage, frequentPosImage]
-
     if !keyTrie.open(
-      keyBase, kKeyTrieLb0CacheSize, kKeyTrieLb1CacheSize, kKeyTrieSelect0CacheSize,
+      keyImage.data, kKeyTrieLb0CacheSize, kKeyTrieLb1CacheSize, kKeyTrieSelect0CacheSize,
       kKeyTrieSelect1CacheSize, kKeyTrieTermvecCacheSize)
     {
       GenmaiLog.error("cannot open key trie")
@@ -441,7 +435,7 @@ public final class SystemDictionary: DictionaryInterface, Sendable {
     self.hiraganaExpansionTable = hiraganaExpansionTable
 
     if !_valueTrie.open(
-      valueBase, kValueTrieLb0CacheSize, kValueTrieLb1CacheSize, kValueTrieSelect0CacheSize,
+      valueImage.data, kValueTrieLb0CacheSize, kValueTrieLb1CacheSize, kValueTrieSelect0CacheSize,
       kValueTrieSelect1CacheSize, kValueTrieTermvecCacheSize)
     {
       GenmaiLog.error("can not open value trie")

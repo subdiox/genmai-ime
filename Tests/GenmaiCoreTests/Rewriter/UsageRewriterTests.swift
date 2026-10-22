@@ -18,7 +18,7 @@ struct UsageRewriterTests {
     var config = ConfigHandler.defaultConfig()
     let posMatcher: PosMatcher
     let userDictionary: UserDictionary
-    let dataManager: MockDataManager
+    let dataManager: DataManager
 
     init() async throws {
       dataManager = try R2RewriterTestSupport.mockDataManager()

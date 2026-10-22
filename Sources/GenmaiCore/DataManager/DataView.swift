@@ -20,38 +20,31 @@ public struct DataView: RandomAccessCollection, Sendable {
   public typealias Index = Int
   public typealias Element = UInt8
 
-  /// The viewed bytes (`startIndex` is always 0). Shares the backing memory.
+  /// The viewed bytes: a slice of the whole buffer (the mapped file or the
+  /// copy) that shares its memory. Its indices are those of the whole buffer
+  /// (`data.startIndex` is the offset of this view in it), so read it through
+  /// `data.span` (indices from 0) or the members of this view.
   public let data: Data
-  /// The backing memory, for the pointer-based APIs (see `PinnedBytes`).
-  private let pinned: PinnedBytes?
-  /// Offset of `data` in `pinned`.
-  private let pinnedOffset: Int
 
   /// An empty view (C++ `absl::string_view()` / `""`).
   public static let empty = DataView()
 
   public init() {
     data = Data()
-    pinned = nil
-    pinnedOffset = 0
   }
 
-  private init(_ pinned: PinnedBytes, offset: Int, count: Int) {
-    self.pinned = pinned
-    pinnedOffset = offset
-    data = pinned.makeData(offset, count)
+  private init(slice: Data) {
+    data = slice
   }
 
   /// A view of the whole memory-mapped file.
   public init(_ mmap: Mmap) {
-    let pinned = PinnedBytes(mmap)
-    self.init(pinned, offset: 0, count: pinned.count)
+    data = mmap.data
   }
 
-  /// Creates a view over an owned, 64-byte aligned copy of `bytes`.
+  /// Creates a view over an owned copy of `bytes`.
   public init(copying bytes: some Collection<UInt8>) {
-    let pinned = PinnedBytes(copying: bytes)
-    self.init(pinned, offset: 0, count: pinned.count)
+    data = Data(bytes)
   }
 
   /// Creates a view over an owned copy of the UTF-8 bytes of `string`.
@@ -71,19 +64,15 @@ public struct DataView: RandomAccessCollection, Sendable {
   public func clippedSubstr(_ offset: Int, _ length: Int = Int.max) -> DataView {
     let start = Swift.min(Swift.max(offset, 0), count)
     let len = Swift.min(Swift.max(length, 0), count - start)
-    guard let pinned else {
-      return self
-    }
-    return DataView(pinned, offset: pinnedOffset + start, count: len)
+    let base = data.startIndex + start
+    return DataView(slice: data[base..<(base + len)])
   }
 
   /// Sub-view `[offset, offset + length)`; the range must be in bounds.
   public func slice(_ offset: Int, _ length: Int) -> DataView {
     precondition(offset >= 0 && length >= 0 && offset + length <= count, "DataView.slice out of range")
-    guard let pinned else {
-      return self
-    }
-    return DataView(pinned, offset: pinnedOffset + offset, count: length)
+    let base = data.startIndex + offset
+    return DataView(slice: data[base..<(base + length)])
   }
 
   /// Little-endian unaligned load (C++ `LoadUnaligned<T>`).
@@ -123,39 +112,26 @@ public struct DataView: RandomAccessCollection, Sendable {
   /// Copies the bytes into an array.
   public var array: [UInt8] { [UInt8](data) }
 
-  // MARK: Pointer-based interop
-
-  // The pointer-based APIs of GenmaiBase / GenmaiStorage (`SerializedStringArray.set`, `LoudsTrie.open`,
-  // `BitVectorBasedArray`, `ExistenceFilter.read`, `Mmap.maybeMLock`) take raw pointers into the image. Until they
-  // take `Data`, these members hand out the backing memory. The memory stays valid while `owner` is alive.
-
-  /// The viewed bytes as a raw buffer (valid while `owner` is alive).
-  public var bytes: UnsafeRawBufferPointer {
-    pinned?.bytes(pinnedOffset, count) ?? UnsafeRawBufferPointer(start: nil, count: 0)
+  /// Byte offset of `subview` (a view inside this one, e.g. from `slice`) from
+  /// the start of this view (C++ `subview.data() - data()`).
+  public func byteOffset(of subview: DataView) -> Int {
+    subview.data.startIndex - data.startIndex
   }
 
-  /// The start address (C++ `data()`), nil for an empty view without memory.
-  public var baseAddress: UnsafeRawPointer? { bytes.baseAddress }
+  // MARK: Alignment
 
-  /// The object that keeps the backing memory alive, nil for an empty view.
-  public var owner: AnyObject? { pinned }
+  // The C++ checks the alignment of pointers into the data set (`MakeAlignedConstSpan`, the connection matrix,
+  // the dictionary file). The whole buffer of a view starts at an aligned address (a mapped file starts on a page
+  // boundary; a copy is a fresh allocation), so the alignment of a byte is that of its offset in the whole
+  // buffer, which is `data.startIndex + offset`. The values are read with unaligned-safe loads either way.
 
-  /// Byte offset of `element` (a buffer inside this view, e.g. from
-  /// `BitVectorBasedArray.get`) from the start of this view.
-  public func byteOffset(of element: UnsafeRawBufferPointer) -> Int {
-    guard let start = element.baseAddress, let base = baseAddress else {
-      return 0
-    }
-    return start - base
-  }
-
-  /// The address of byte `offset` modulo `alignment` (the address of an empty
-  /// view is 0).
+  /// The offset of byte `offset` in the whole buffer modulo `alignment` (the
+  /// misalignment of its address in C++).
   public func misalignment(of offset: Int = 0, to alignment: Int) -> Int {
-    (Int(bitPattern: baseAddress) &+ offset) % alignment
+    (data.startIndex + offset) % alignment
   }
 
-  /// True if the start address is a multiple of `alignment`.
+  /// True if the start of the view is aligned to `alignment`.
   public func isAligned(to alignment: Int) -> Bool {
     misalignment(to: alignment) == 0
   }
@@ -165,66 +141,6 @@ extension DataView: Equatable {
   /// Byte content equality (C++ `absl::string_view::operator==`).
   public static func == (lhs: DataView, rhs: DataView) -> Bool {
     lhs.data == rhs.data
-  }
-}
-
-/// The backing memory of `DataView`s: a memory-mapped file or an owned,
-/// 64-byte aligned copy.
-///
-/// The only place where the views touch raw memory: `Data` cannot wrap memory
-/// it does not own without a pointer, and the pointer-based APIs of
-/// GenmaiBase / GenmaiStorage need a stable address (a small `Data` is stored
-/// inline, so its address is not stable). `@unchecked Sendable`: the memory is
-/// immutable (read-only mmap, or a copy that is never written after `init`)
-/// and freed only in `deinit`.
-private final class PinnedBytes: @unchecked Sendable {
-  private let base: UnsafeRawBufferPointer
-  /// The mapped file, or nil when `base` is owned (allocated in `init`).
-  private let mmap: Mmap?
-
-  init(_ mmap: Mmap) {
-    base = mmap.buffer
-    self.mmap = mmap
-  }
-
-  init(copying bytes: some Collection<UInt8>) {
-    let n = bytes.count
-    let storage = UnsafeMutableRawBufferPointer.allocate(byteCount: Swift.max(n, 1), alignment: 64)
-    let copied: Void? = bytes.withContiguousStorageIfAvailable { src in
-      storage.copyMemory(from: UnsafeRawBufferPointer(src))
-    }
-    if copied == nil {
-      var i = 0
-      for b in bytes {
-        storage[i] = b
-        i += 1
-      }
-    }
-    base = UnsafeRawBufferPointer(rebasing: storage[0..<n])
-    mmap = nil
-  }
-
-  deinit {
-    if mmap == nil {
-      base.deallocate()
-    }
-  }
-
-  var count: Int { base.count }
-
-  func bytes(_ offset: Int, _ count: Int) -> UnsafeRawBufferPointer {
-    UnsafeRawBufferPointer(rebasing: base[offset..<(offset + count)])
-  }
-
-  /// A `Data` over `[offset, offset + count)` without copying; it keeps this
-  /// object alive.
-  func makeData(_ offset: Int, _ count: Int) -> Data {
-    guard count > 0, let start = base.baseAddress else {
-      return Data()
-    }
-    return Data(
-      bytesNoCopy: UnsafeMutableRawPointer(mutating: start + offset), count: count,
-      deallocator: .custom { [self] _, _ in withExtendedLifetime(self) {} })
   }
 }
 
@@ -266,32 +182,23 @@ public struct DataSpan<T: FixedWidthInteger>: RandomAccessCollection, Sendable {
     }
     return result
   }
-
-  // MARK: Pointer-based interop (see DataView)
-
-  /// The typed memory (valid while `owner` is alive).
-  public var buffer: UnsafeBufferPointer<T> { Bits.makeAlignedConstSpan(view.bytes, as: T.self) }
-
-  /// The object that keeps the memory alive.
-  public var owner: AnyObject? { view.owner }
 }
 
 extension SerializedStringArray {
-  /// `SerializedStringArray::Init(view)` for a `DataView`; keeps the view's
-  /// owner alive.
+  /// `SerializedStringArray::Init(view)` for a `DataView` (no copy).
   @discardableResult
   public mutating func initialize(_ view: DataView) -> Bool {
-    initialize(view.bytes, owner: view.owner)
+    initialize(view.data)
   }
 
-  /// `SerializedStringArray::Set(view)` for a `DataView`.
+  /// `SerializedStringArray::Set(view)` for a `DataView` (no copy).
   public mutating func set(_ view: DataView) {
-    set(view.bytes, owner: view.owner)
+    set(view.data)
   }
 
   /// `SerializedStringArray::VerifyData(view)` for a `DataView`.
   public static func verifyData(_ view: DataView) -> Bool {
-    verifyData(view.bytes)
+    verifyData(view.data)
   }
 
   /// Creates and initializes an array over `view`; nil when the data is

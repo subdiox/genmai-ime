@@ -46,8 +46,8 @@ public final class UsageRewriter: RewriterInterface {
     let conjugationSuffix = conjugationSuffixData
     let conjugationSuffixDataIndex = conjugationIndexData
 
-    if SerializedStringArray.verifyData(stringArrayData.bytes) {
-      stringArray.set(stringArrayData.bytes, owner: stringArrayData.owner)
+    if SerializedStringArray.verifyData(stringArrayData) {
+      stringArray.set(stringArrayData)
     } else {
       // \0\0\0\0 is the header value of the data size.
       stringArray = SerializedStringArray(bytes: [0, 0, 0, 0]) ?? SerializedStringArray()
@@ -73,16 +73,16 @@ public final class UsageRewriter: RewriterInterface {
     // TODO(taku): To reduce memory footprint, better to replace it with
     // binary search over the conjugation_suffix_data directly.
     for (t, token) in usageItems.enumerated() {
-      let key = Array(stringArray.bytes(at: Int(token.keyIndex)))
-      let value = Array(stringArray.bytes(at: Int(token.valueIndex)))
+      let key = stringArray.utf8(at: Int(token.keyIndex))
+      let value = stringArray.utf8(at: Int(token.valueIndex))
       let conjugationId = Int(token.conjugationId)
       let begin = u32(conjugationSuffixDataIndex, conjugationId)
       let end = u32(conjugationSuffixDataIndex, conjugationId + 1)
       var i = begin
       while i < end {
-        let keySuffix = stringArray.bytes(at: u32(conjugationSuffix, 2 * i + 1))
-        let valueSuffix = stringArray.bytes(at: u32(conjugationSuffix, 2 * i))
-        let keyValue1 = StrPair(first: key + Array(keySuffix), second: value + Array(valueSuffix))
+        let keySuffix = stringArray.utf8(at: u32(conjugationSuffix, 2 * i + 1))
+        let valueSuffix = stringArray.utf8(at: u32(conjugationSuffix, 2 * i))
+        let keyValue1 = StrPair(first: key + keySuffix, second: value + valueSuffix)
         keyValueUsageitemMap[keyValue1] = t
 
         let keyValue2 = StrPair(first: [], second: keyValue1.second)
@@ -166,7 +166,7 @@ public final class UsageRewriter: RewriterInterface {
     }
     let item = usageItems[index]
     // Check result key part is a prefix of the content_key.
-    let key = stringArray.bytes(at: Int(item.keyIndex))
+    let key = stringArray.data(at: Int(item.keyIndex))
     if candidate.contentKey.utf8.starts(with: key) {
       return item
     }

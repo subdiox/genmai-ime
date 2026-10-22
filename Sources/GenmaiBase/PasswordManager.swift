@@ -74,7 +74,7 @@ public enum PasswordManager {
       GenmaiLog.error("Invalid password is saved")
       return nil
     }
-    return Array(mmap.buffer)
+    return [UInt8](mmap.data)
   }
 
   private static func removePasswordFile() -> Bool {

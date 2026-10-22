@@ -54,7 +54,7 @@ private func makeUserPosToken(_ key: String, _ value: String, _ id: UInt16) -> U
 /// depends on POS. It accepts only two values for part-of-speech:
 /// "noun" as words without inflection and "verb" as words with
 /// inflection.
-private final class UserPosMock: UserPos, @unchecked Sendable {
+private final class UserPosMock: UserPosInterface {
   static let kNoun = Genmai_UserDictionary_UserDictionary.PosType.noun
   static let kVerb = Genmai_UserDictionary_UserDictionary.PosType.waGroup1Verb
 
@@ -70,8 +70,8 @@ private final class UserPosMock: UserPos, @unchecked Sendable {
   ///  verb (base form) | 200 | 200
   ///  verb (-ed form)  | 210 | 210
   ///  verb (-ing form) | 220 | 220
-  override func getTokens(_ key: String, _ value: String, _ posType: PosType) -> [Token] {
-    var tokens: [Token] = []
+  func getTokens(_ key: String, _ value: String, _ posType: UserPos.PosType) -> [UserPos.Token] {
+    var tokens: [UserPos.Token] = []
     if key.isEmpty || value.isEmpty {
       return tokens
     }
@@ -85,7 +85,7 @@ private final class UserPosMock: UserPos, @unchecked Sendable {
     return tokens
   }
 
-  override func getPosList() -> [String] { ["名詞"] }
+  func getPosList() -> [String] { ["名詞"] }
 }
 
 private struct Entry: Equatable, Hashable, CustomStringConvertible {
@@ -172,7 +172,7 @@ private func loadFromString(_ contents: [UInt8]) -> [UInt8] {
 struct UserDictionaryTests {
   typealias PB = Genmai_UserDictionary_UserDictionary
 
-  let mockDataManager: MockDataManager
+  let mockDataManager: DataManager
 
   init() throws {
     mockDataManager = try DictionaryTestSupport.mockDataManager()

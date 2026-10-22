@@ -15,7 +15,7 @@ final class TestSuggestionFilter: SuggestionFilterProtocol, Sendable {
   private let filter: ExistenceFilter
 
   init(_ data: DataSpan<UInt32>) throws {
-    filter = try ExistenceFilter.read(data.view.bytes)
+    filter = try ExistenceFilter.read(data.view.data)
   }
 
   func isBadSuggestion(_ text: String) -> Bool {
@@ -78,12 +78,12 @@ final class TestModules: ConverterModules {
     suggestionFilter = try TestSuggestionFilter(dataManager.getSuggestionFilterData())
   }
 
-  static func mock() throws -> TestModules { try TestModules(MockDataManager()) }
+  static func mock() throws -> TestModules { try TestModules(MockDataManager.create()) }
 
   /// nil when Data/genmai.data is missing.
   static func oss() throws -> TestModules? {
     guard FileManager.default.fileExists(atPath: OssDataManager.defaultDataPath) else { return nil }
-    return try TestModules(OssDataManager())
+    return try TestModules(OssDataManager.create())
   }
 
   func getPosMatcher() -> PosMatcher { posMatcher }

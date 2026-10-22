@@ -5,6 +5,6 @@
 
 public enum OssEngineFactory {
   public static func create() throws -> Engine {
-    try Engine.createEngine(OssDataManager())
+    try Engine.createEngine(OssDataManager.create())
   }
 }

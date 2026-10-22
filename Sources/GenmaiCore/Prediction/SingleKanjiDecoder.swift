@@ -7,10 +7,10 @@ import GenmaiBase
 import GenmaiProtocol
 
 open class SingleKanjiDecoder {
-  private let singleKanjiDictionary: SingleKanjiDictionary
+  private let singleKanjiDictionary: any SingleKanjiDictionaryInterface
   private let generalSymbolId: UInt16
 
-  public init(_ posMatcher: PosMatcher, _ singleKanjiDictionary: SingleKanjiDictionary) {
+  public init(_ posMatcher: PosMatcher, _ singleKanjiDictionary: any SingleKanjiDictionaryInterface) {
     self.singleKanjiDictionary = singleKanjiDictionary
     generalSymbolId = posMatcher.getGeneralSymbolId()
   }

@@ -12,7 +12,7 @@ struct A11yDescriptionRewriterTests {
   private let rewriterWithoutData: A11yDescriptionRewriter
 
   init() throws {
-    let mockDataManager = try MockDataManager()
+    let mockDataManager = try MockDataManager.create()
     rewriter = A11yDescriptionRewriter(mockDataManager.getA11yDescriptionRewriterData())
     rewriterWithoutData = A11yDescriptionRewriter(DataView(), DataView())
   }

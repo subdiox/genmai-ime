@@ -5,12 +5,13 @@
 // `$GENMAI_MOCK_DATA_FILE`, else `Data/mock_genmai.data` at the repository root,
 // else the Bazel output `Vendor/mozc/src/bazel-bin/data_manager/testing/
 // mock_genmai.data` (target //data_manager/testing:mozc_dataset_for_testing).
-// The gmock `MOCK_METHOD(GetDataVersion)` becomes an optional override.
+// The class is a factory of `DataManager` (a final class); the gmock
+// `MOCK_METHOD(GetDataVersion)` becomes an optional override of the version.
 
 import Foundation
 import GenmaiBase
 
-public final class MockDataManager: DataManager, @unchecked Sendable {
+public enum MockDataManager {
   /// The length of the mock magic number "MOCK"
   /// (MOZC_DATASET_MAGIC_NUMBER_LENGTH in data_manager/testing/BUILD.bazel).
   public static let kMagicNumberLength = 4
@@ -46,21 +47,16 @@ public final class MockDataManager: DataManager, @unchecked Sendable {
     candidateDataPaths.first { FileManager.default.fileExists(atPath: $0) }
   }
 
-  private let dataVersionOverride: String?
-
   /// Loads the mock data set. `dataVersion` replaces GetDataVersion()'s
   /// result (the C++ test mocks it with gmock).
-  public init(dataVersion: String? = nil) throws {
+  public static func create(dataVersion: String? = nil) throws -> DataManager {
     guard let path = MockDataManager.defaultDataPath else {
       throw StatusError.notFound(
         "mock_genmai.data not found in \(MockDataManager.candidateDataPaths)")
     }
-    dataVersionOverride = dataVersion
-    super.init()
-    try initFromFile(path, magicLength: MockDataManager.kMagicNumberLength)
-  }
-
-  public override func getDataVersion() -> String {
-    dataVersionOverride ?? super.getDataVersion()
+    let dataManager = DataManager()
+    try dataManager.initFromFile(path, magicLength: MockDataManager.kMagicNumberLength)
+    dataManager.overrideDataVersion(dataVersion)
+    return dataManager
   }
 }

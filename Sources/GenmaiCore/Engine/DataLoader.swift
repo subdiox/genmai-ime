@@ -221,7 +221,7 @@ public final class DataLoader: Sendable {
 
   private func getRequestId(_ request: Genmai_EngineReloadRequest) -> UInt64 {
     let bytes: [UInt8] = (try? request.serializedBytes()) ?? []
-    return bytes.withUnsafeBytes { cityFingerprint(bytes: $0) }
+    return cityFingerprint(bytes: bytes)
   }
 
   /// Returns the RequestData to be processed. Return nil when no request

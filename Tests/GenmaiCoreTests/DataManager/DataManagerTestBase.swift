@@ -195,7 +195,7 @@ struct DataManagerTestBase {
     // Check if the array is sorted in ascending order.
     var prevSuffix: [UInt8] = []  // The smallest string.
     for i in 0..<suffixArray.size {
-      let suffix = Array(suffixArray.bytes(at: i))
+      let suffix = suffixArray.utf8(at: i)
       #expect(!suffix.lexicographicallyPrecedes(prevSuffix), "\(suffixArray[i])")
       prevSuffix = suffix
     }

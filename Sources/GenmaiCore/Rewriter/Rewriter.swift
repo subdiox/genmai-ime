@@ -25,7 +25,7 @@ public protocol RewriterModules: AnyObject {
   func getDictionary() -> any DictionaryInterface
   func getPosMatcher() -> PosMatcher
   func getPosGroup() -> PosGroup
-  func getSingleKanjiDictionary() -> SingleKanjiDictionary
+  func getSingleKanjiDictionary() -> any SingleKanjiDictionaryInterface
   /// `GetSupplementalModel()` as used by CorrectionRewriter (reading
   /// alignment); nil behaves like the stub model.
   func getReadingAlignmentSupplementalModel() -> (any ReadingAlignmentSupplementalModel)?

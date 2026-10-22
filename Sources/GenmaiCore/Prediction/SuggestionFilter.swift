@@ -2,8 +2,6 @@
 //
 // Deviations from C++:
 // - `absl::StatusOr` becomes `throws`; `CreateOrDie` traps on failure.
-// - The filter keeps the data span (the memory mapped data set) so that the
-//   bitmap it reads stays valid.
 
 import GenmaiBase
 import GenmaiStorage
@@ -11,22 +9,19 @@ import GenmaiStorage
 /// An immutable view of the data set.
 public final class SuggestionFilter: SuggestionFilterProtocol {
   private let filter: ExistenceFilter
-  private let source: DataSpan<UInt32>?
 
   public init() {
     filter = ExistenceFilter()
-    source = nil
   }
 
-  public init(_ filter: ExistenceFilter, source: DataSpan<UInt32>? = nil) {
+  public init(_ filter: ExistenceFilter) {
     self.filter = filter
-    self.source = source
   }
 
   public static func create(_ data: DataSpan<UInt32>) throws -> SuggestionFilter {
     do {
-      let filter = try ExistenceFilter.read(UnsafeRawBufferPointer(data.buffer))
-      return SuggestionFilter(filter, source: data)
+      // The filter keeps a slice of the data (no copy).
+      return SuggestionFilter(try ExistenceFilter.read(data.view.data))
     } catch {
       GenmaiLog.error("SuggestionFilterData is broken: \(error)")
       throw error

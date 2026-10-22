@@ -87,6 +87,7 @@ struct FakeError: Error {}
 
 /// A converter double for the merger: `resizeSegments` re-segments and "converts" every new segment to its
 /// key (plus a katakana candidate), like Mozc's re-conversion.
+/// `@unchecked Sendable`: a test double with mutable handlers / records, set and used on the test's own task only.
 final class ResizingConverterStub: ConverterInterface, @unchecked Sendable {
   var resizeCalls: [[UInt8]] = []
 

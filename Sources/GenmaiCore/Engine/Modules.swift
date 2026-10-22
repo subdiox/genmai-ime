@@ -24,14 +24,8 @@ import GenmaiStorage
 private let gSupplementalModel = SupplementalModelStub()
 
 public final class Modules: ConverterModules, PredictionModules, UserHistoryPredictorModules,
-  RewriterModules, @unchecked Sendable
+  RewriterModules, Sendable
 {
-  // @unchecked Sendable: every stored property is an immutable `let` set in
-  // `init`; the members are themselves thread-safe or immutable (mmapped
-  // data). Not checked because the supplemental model and the single kanji
-  // dictionary are non-Sendable protocol existentials / open classes of the
-  // prediction layer.
-
   /// Modules must be initialized via create() to keep Modules as immutable as
   /// possible.
   public static func create(_ dataManager: DataManager) throws -> Modules {
@@ -50,7 +44,7 @@ public final class Modules: ConverterModules, PredictionModules, UserHistoryPred
   public func getDictionary() -> any DictionaryInterface { dictionary }
   public func getPosGroup() -> PosGroup { posGroup }
   public func getSuggestionFilter() -> SuggestionFilter { suggestionFilter }
-  public func getSingleKanjiDictionary() -> SingleKanjiDictionary { singleKanjiDictionary }
+  public func getSingleKanjiDictionary() -> any SingleKanjiDictionaryInterface { singleKanjiDictionary }
   public func getZeroQueryDict() -> ZeroQueryDict { zeroQueryDict }
   public func getZeroQueryNumberDict() -> ZeroQueryDict { zeroQueryNumberDict }
   public func getUserHistoryStorage() -> UserHistoryStorage { userHistoryStorage }
@@ -84,7 +78,7 @@ public final class Modules: ConverterModules, PredictionModules, UserHistoryPred
   private let posGroup: PosGroup
   private let userHistoryStorage: UserHistoryStorage
   private let suggestionFilter: SuggestionFilter
-  private let singleKanjiDictionary: SingleKanjiDictionary
+  private let singleKanjiDictionary: any SingleKanjiDictionaryInterface
   private let zeroQueryDict: ZeroQueryDict
   private let zeroQueryNumberDict: ZeroQueryDict
 
@@ -100,7 +94,7 @@ public final class Modules: ConverterModules, PredictionModules, UserHistoryPred
     var userDictionary: (any UserDictionaryInterface)?
     var suffixDictionary: (any DictionaryInterface)?
     var dictionary: (any DictionaryInterface)?
-    var singleKanjiDictionary: SingleKanjiDictionary?
+    var singleKanjiDictionary: (any SingleKanjiDictionaryInterface)?
     var supplementalModel: (any SupplementalModelInterface)?
     var userHistoryStorage: UserHistoryStorage?
   }
@@ -214,7 +208,7 @@ public final class ModulesPresetBuilder {
   }
 
   @discardableResult
-  public func presetSingleKanjiDictionary(_ singleKanjiDictionary: SingleKanjiDictionary)
+  public func presetSingleKanjiDictionary(_ singleKanjiDictionary: any SingleKanjiDictionaryInterface)
     -> ModulesPresetBuilder
   {
     assert(presets != nil, "Module is already initialized")

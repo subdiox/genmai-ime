@@ -41,8 +41,8 @@ enum SystemDictionaryTestSupport {
   /// The mock data manager and the tokens of dictionary00.txt (first
   /// `dictionaryTestSize` lines) loaded by TextDictionaryLoader, shared by the
   /// tests (loading takes a while).
-  static let fixture: (dataManager: MockDataManager, posMatcher: PosMatcher, tokens: [Token])? = {
-    guard let dataManager = try? MockDataManager() else { return nil }
+  static let fixture: (dataManager: DataManager, posMatcher: PosMatcher, tokens: [Token])? = {
+    guard let dataManager = try? MockDataManager.create() else { return nil }
     let posMatcher = PosMatcher(dataManager.getPosMatcherData())
     let loader = TextDictionaryLoader(posMatcher)
     loader.loadWithLineLimit(sourcePath("data", "dictionary_oss", "dictionary00.txt"), "", dictionaryTestSize)

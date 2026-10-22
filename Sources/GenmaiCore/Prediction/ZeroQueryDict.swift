@@ -58,7 +58,7 @@ public struct ZeroQueryDict: Sendable {
   /// `Init`.
   public mutating func initialize(_ tokenArrayData: DataView, _ stringArrayData: DataView) {
     tokenArray = tokenArrayData
-    stringArray.set(stringArrayData.bytes, owner: stringArrayData.owner)
+    stringArray.set(stringArrayData)
   }
 
   public func key(_ entry: ZeroQueryEntry) -> String {

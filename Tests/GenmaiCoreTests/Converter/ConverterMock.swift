@@ -6,6 +6,7 @@
 
 @testable import GenmaiCore
 
+/// `@unchecked Sendable`: a test double with mutable handlers / records, set and used on the test's own task only.
 final class MockConverter: ConverterInterface, @unchecked Sendable {
   var startConversionHandler: ((ConversionRequest, Segments) -> Bool)?
   var startReverseConversionHandler: ((Segments, String) -> Bool)?

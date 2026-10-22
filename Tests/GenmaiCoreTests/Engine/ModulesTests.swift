@@ -15,7 +15,7 @@ import Testing
 struct ModulesTests {
   @Test func createTest() throws {
     try SystemUtil.withTempUserProfile { _ in
-      let modules = try Modules.create(MockDataManager())
+      let modules = try Modules.create(MockDataManager.create())
       #expect(modules.getPosIdMap().getPosIdCount() > 0)
     }
   }
@@ -24,14 +24,14 @@ struct ModulesTests {
     SystemUtil.withTempUserProfile { _ in
       let builder = ModulesPresetBuilder()
 
-      #expect(throws: Never.self) { try builder.build(MockDataManager()) }
-      #expect(throws: (any Error).self) { try builder.build(MockDataManager()) }
+      #expect(throws: Never.self) { try builder.build(MockDataManager.create()) }
+      #expect(throws: (any Error).self) { try builder.build(MockDataManager.create()) }
     }
   }
 
   @Test func presetTest() throws {
     try SystemUtil.withTempUserProfile { _ in
-      let mockDataManager = try MockDataManager()
+      let mockDataManager = try MockDataManager.create()
 
       // PosMatcher
       let posMatcher = PosMatcher(mockDataManager.getPosMatcherData())
@@ -54,7 +54,7 @@ struct ModulesTests {
         .presetUserDictionary(userDictionary)
         .presetSuffixDictionary(suffixDictionary)
         .presetDictionary(dictionary)
-        .build(MockDataManager())
+        .build(MockDataManager.create())
 
       #expect(modules.getPosMatcher().getGeneralNounId() == posMatcher.getGeneralNounId())
       #expect(modules.getPosIdMap() === posIdMap)
@@ -66,8 +66,8 @@ struct ModulesTests {
 
   @Test func supplementalModelTest() throws {
     try SystemUtil.withTempUserProfile { _ in
-      let modules1 = try Modules.create(MockDataManager())
-      let modules2 = try Modules.create(MockDataManager())
+      let modules1 = try Modules.create(MockDataManager.create())
+      let modules2 = try Modules.create(MockDataManager.create())
 
       // Returns the same non-null static instance by default.
       #expect(
@@ -77,7 +77,7 @@ struct ModulesTests {
       let supplementalModel = SupplementalModelStub()
       let modules3 = try ModulesPresetBuilder()
         .presetSupplementalModel(supplementalModel)
-        .build(MockDataManager())
+        .build(MockDataManager.create())
 
       #expect(
         modules1.getSupplementalModelInterface() as AnyObject
@@ -85,7 +85,7 @@ struct ModulesTests {
       #expect(supplementalModel === modules3.getSupplementalModelInterface() as AnyObject)
 
       // The default static instance is used again.
-      let modules4 = try Modules.create(MockDataManager())
+      let modules4 = try Modules.create(MockDataManager.create())
       #expect(
         modules1.getSupplementalModelInterface() as AnyObject
           === modules4.getSupplementalModelInterface() as AnyObject)
@@ -98,7 +98,7 @@ struct ModulesTests {
     try SystemUtil.withTempUserProfile { _ in
       let model = SupplementalModelStub()
       let modules = try ModulesPresetBuilder().presetSupplementalModel(model).build(
-        MockDataManager())
+        MockDataManager.create())
       #expect(modules.getSupplementalModel() as AnyObject === model)
       #expect(modules.getUserHistorySupplementalModel() as AnyObject === model)
       #expect(modules.getReadingAlignmentSupplementalModel() as AnyObject === model)

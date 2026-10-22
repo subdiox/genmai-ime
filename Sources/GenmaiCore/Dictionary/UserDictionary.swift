@@ -32,7 +32,7 @@ public final class UserDictionary: UserDictionaryInterface, Sendable {
     var reloadState: ReloadState = .idle
   }
 
-  private let userPos: UserPos
+  private let userPos: any UserPosInterface
   private let posMatcher: PosMatcher
   private let state: Mutex<State>
   // Signal variable to cancel the dictionary loading.
@@ -41,12 +41,12 @@ public final class UserDictionary: UserDictionaryInterface, Sendable {
   private let filename: String
   private let taskManager = TaskManager()
 
-  public convenience init(_ userPos: UserPos, _ posMatcher: PosMatcher) {
+  public convenience init(_ userPos: any UserPosInterface, _ posMatcher: PosMatcher) {
     self.init(userPos, posMatcher, UserDictionaryUtil.getUserDictionaryFileName())
   }
 
   /// Specify dictionary filename for testing.
-  public init(_ userPos: UserPos, _ posMatcher: PosMatcher, _ filename: String) {
+  public init(_ userPos: any UserPosInterface, _ posMatcher: PosMatcher, _ filename: String) {
     assert(!filename.isEmpty)
     self.userPos = userPos
     self.posMatcher = posMatcher
@@ -388,16 +388,16 @@ extension UserDictionary {
       var posType: UserPos.PosType? { UserPos.PosType(rawValue: Int(rawPosType)) }
     }
 
-    private let userPos: UserPos
+    private let userPos: any UserPosInterface
     private let tokens: [Entry]
     private let suppressionSet: Set<UInt64>
     private let costPenalty: Int
 
-    convenience init(_ userPos: UserPos) {
+    convenience init(_ userPos: any UserPosInterface) {
       self.init(userPos, tokens: [], suppressionSet: [], costPenalty: 0)
     }
 
-    private init(_ userPos: UserPos, tokens: [Entry], suppressionSet: Set<UInt64>, costPenalty: Int) {
+    private init(_ userPos: any UserPosInterface, tokens: [Entry], suppressionSet: Set<UInt64>, costPenalty: Int) {
       self.userPos = userPos
       self.tokens = tokens
       self.suppressionSet = suppressionSet
@@ -513,7 +513,7 @@ extension UserDictionary {
 
     /// Reads the serialized UserDictionaryStorage; nil when it is broken.
     static func load(
-      _ userPos: UserPos, _ bytes: [UInt8], _ canceledSignal: borrowing Mutex<Bool>
+      _ userPos: any UserPosInterface, _ bytes: [UInt8], _ canceledSignal: borrowing Mutex<Bool>
     ) -> TokensIndex? {
       var suppressionSet = Set<UInt64>()
       var decoder = WireDecoder(bytes)
@@ -647,7 +647,7 @@ extension UserDictionary {
     }
 
     private static func addEntry(
-      _ userPos: UserPos, _ raw: RawEntry, _ seen: inout Set<UInt64>, _ serializedTokens: inout [Entry],
+      _ userPos: any UserPosInterface, _ raw: RawEntry, _ seen: inout Set<UInt64>, _ serializedTokens: inout [Entry],
       _ suppressionSet: inout Set<UInt64>
     ) {
       guard let entry = Self.makeValidEntry(raw) else {

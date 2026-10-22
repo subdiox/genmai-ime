@@ -20,7 +20,7 @@ private func setAkann(_ composer: inout Composer) {
   #expect(composer.getQueryForConversion() == "あかん")
 }
 
-private let transliterationMockData: MockDataManager? = try? MockDataManager()
+private let transliterationMockData: DataManager? = try? MockDataManager.create()
 
 private func meta(_ seg: Segment, _ type: TransliterationType) -> Candidate {
   seg.metaCandidate(type.rawValue)

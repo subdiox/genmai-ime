@@ -8,7 +8,7 @@ import Testing
 @Suite("HistoryReconstructor")
 struct HistoryReconstructorTests {
   @Test func getLastConnectivePart() throws {
-    let dataManager = try MockDataManager()
+    let dataManager = try MockDataManager.create()
     let posMatcher = PosMatcher(dataManager.getPosMatcherData())
     let reconstructor = HistoryReconstructor(posMatcher)
 
@@ -76,7 +76,7 @@ struct HistoryReconstructorTests {
   }
 
   @Test func reconstructHistory() throws {
-    let dataManager = try MockDataManager()
+    let dataManager = try MockDataManager.create()
     let posMatcher = PosMatcher(dataManager.getPosMatcherData())
     let reconstructor = HistoryReconstructor(posMatcher)
 

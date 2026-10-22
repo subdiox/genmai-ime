@@ -170,7 +170,7 @@ struct DataManagerOssDataSetTest {
   }
 
   @Test func symbolDictionaryLookup() throws {
-    let dm = try OssDataManager()
+    let dm = try OssDataManager.create()
     let dic = SerializedDictionary(dm.getSymbolRewriterData())
     // data/symbol/symbol.tsv has entries for "きごう".
     let range = dic.equalRange("きごう")

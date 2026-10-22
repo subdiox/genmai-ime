@@ -252,7 +252,7 @@ public final class LruStorage {
   // MARK: - Lookup
 
   /// Looks up elements by key. Returns the value_size bytes of the value.
-  public func lookupBytes(_ key: some StringProtocol, lastAccessTime: inout UInt32) -> [UInt8]? {
+  public func lookup(_ key: some StringProtocol, lastAccessTime: inout UInt32) -> [UInt8]? {
     guard let ptr = find(key) else {
       return nil
     }
@@ -260,14 +260,14 @@ public final class LruStorage {
     return getValue(ptr)
   }
 
-  public func lookupBytes(_ key: some StringProtocol) -> [UInt8]? {
+  public func lookup(_ key: some StringProtocol) -> [UInt8]? {
     find(key).map(getValue)
   }
 
   /// A safer lookup for string values (the buffers returned by above
   /// lookup()'s are not null terminated.) Returns empty if not found.
   public func lookupAsString(_ key: some StringProtocol) -> [UInt8] {
-    lookupBytes(key) ?? []
+    lookup(key) ?? []
   }
 
   /// Returns all the values.  The order is new to old (first is the most
@@ -681,36 +681,6 @@ public final class LruStorage {
     fill(nextItem..<(nextItem + itemSize))
 
     return true
-  }
-}
-
-// MARK: - Raw buffer interface (kept for callers that still use raw memory)
-
-extension LruStorage {
-  /// Looks up elements by key. Returns value_size bytes inside the storage's
-  /// image, valid until the storage is modified or closed (as the C++ pointer
-  /// into the mapping). Prefer `lookupBytes(_:lastAccessTime:)`.
-  public func lookup(_ key: some StringProtocol, lastAccessTime: inout UInt32)
-    -> UnsafeRawBufferPointer?
-  {
-    guard let ptr = find(key) else {
-      return nil
-    }
-    lastAccessTime = getTimeStamp(ptr)
-    return rawValue(ptr)
-  }
-
-  /// See `lookup(_:lastAccessTime:)`. Prefer `lookupBytes(_:)`.
-  public func lookup(_ key: some StringProtocol) -> UnsafeRawBufferPointer? {
-    find(key).map(rawValue)
-  }
-
-  /// Raw memory of the value at `ptr` inside `image`, whose storage stays at
-  /// the same address while it is only modified in place (the image is never
-  /// resized or copied while open).
-  private func rawValue(_ ptr: Int) -> UnsafeRawBufferPointer {
-    let start = ptr + Self.kItemHeaderSize
-    return image.withUnsafeBytes { UnsafeRawBufferPointer(rebasing: $0[start..<(start + valueSizeStorage)]) }
   }
 }
 

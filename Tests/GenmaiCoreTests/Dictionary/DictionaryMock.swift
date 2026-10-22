@@ -10,6 +10,7 @@ import os
 @testable import GenmaiCore
 
 /// `MockDictionary`.
+/// `@unchecked Sendable`: a test double with mutable handlers / records, set and used on the test's own task only.
 final class MockDictionary: DictionaryInterface, @unchecked Sendable {
   static let kDefaultCost = 0
   static let kDefaultPosId = 1
@@ -85,6 +86,7 @@ final class MockDictionary: DictionaryInterface, @unchecked Sendable {
 }
 
 /// `MockUserDictionary`. Only the interface w/o ConversionOptions is used.
+/// `@unchecked Sendable`: a test double with mutable handlers / records, set and used on the test's own task only.
 final class MockUserDictionary: UserDictionaryInterface, @unchecked Sendable {
   static let kDefaultCost = 0
   static let kDefaultPosId = 1

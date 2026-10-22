@@ -75,7 +75,13 @@ import Testing
     #expect(Array(a) == ["Hello", "Mozc", "google"])
     #expect(a.utf8(at: 1) == Array("Mozc".utf8))
     #expect(Array(a.data(at: 2)) == Array("google".utf8))
-    #expect(Array(a.bytes(at: 1)) == Array("Mozc".utf8))
+    #expect(a.utf8(at: 1) == Array("Mozc".utf8))
+    #expect(a.compare(at: 1, bytes: Array("Mozc".utf8)) == 0)
+    #expect(a.compare(at: 1, bytes: Array("Moz".utf8)) == 1)
+    #expect(a.compare(at: 1, bytes: Array("Mozd".utf8)) == -1)
+    #expect(a.comparePrefix(at: 1, bytes: Array("Moz".utf8)) == 0)
+    #expect(a.equals(at: 1, bytes: Array("Mozc".utf8)))
+    #expect(!a.equals(at: 1, bytes: Array("Moz".utf8)))
     // Invalid data.
     var broken = Self.kTestData
     broken[broken.count - 1] = 0x41  // not null-terminated

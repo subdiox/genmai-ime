@@ -5,9 +5,8 @@
 
 /// `mozc::dictionary::DictionaryFileSection`.
 ///
-/// `image` is a view (C++ `absl::string_view`) into memory owned elsewhere
-/// (the memory-mapped dictionary file, or a buffer kept alive through
-/// `DataView.owner`). `name` is the 8-byte encoded section name (fingerprint).
+/// `image` is a view (C++ `absl::string_view`) into the memory-mapped
+/// dictionary file or an image buffer (shared, not copied). `name` is the 8-byte encoded section name (fingerprint).
 public struct DictionaryFileSection: Sendable {
   public var image: DataView
   public var name: [UInt8]

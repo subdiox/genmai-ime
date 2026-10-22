@@ -46,7 +46,7 @@ private final class FullStackModules: PredictionModules, UserHistoryPredictorMod
   func getDictionary() -> any DictionaryInterface { base.getDictionary() }
   func getSuffixDictionary() -> any DictionaryInterface { base.getSuffixDictionary() }
   func getSuggestionFilter() -> SuggestionFilter { base.getSuggestionFilter() }
-  func getSingleKanjiDictionary() -> SingleKanjiDictionary { base.getSingleKanjiDictionary() }
+  func getSingleKanjiDictionary() -> any SingleKanjiDictionaryInterface { base.getSingleKanjiDictionary() }
   func getZeroQueryDict() -> ZeroQueryDict { base.getZeroQueryDict() }
   func getZeroQueryNumberDict() -> ZeroQueryDict { base.getZeroQueryNumberDict() }
   func getUserHistoryStorage() -> UserHistoryStorage { base.getUserHistoryStorage() }

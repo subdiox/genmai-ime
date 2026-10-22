@@ -106,7 +106,7 @@ private func serialize(_ config: Genmai_Config_Config) -> [UInt8] {
 }
 
 private func fingerprint(_ bytes: [UInt8]) -> UInt64 {
-  bytes.withUnsafeBytes { cityFingerprint(bytes: $0) }
+  cityFingerprint(bytes: bytes)
 }
 
 /// The state of a config handler (ConfigHandlerImpl in C++).

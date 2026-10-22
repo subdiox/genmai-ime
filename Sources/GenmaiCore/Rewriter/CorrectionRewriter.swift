@@ -40,9 +40,9 @@ public final class CorrectionRewriter: RewriterInterface {
     valueArrayData: DataView, errorArrayData: DataView, correctionArrayData: DataView
   ) {
     self.supplementalModel = supplementalModel
-    valueArray.set(valueArrayData.bytes, owner: valueArrayData.owner)
-    errorArray.set(errorArrayData.bytes, owner: errorArrayData.owner)
-    correctionArray.set(correctionArrayData.bytes, owner: correctionArrayData.owner)
+    valueArray.set(valueArrayData)
+    errorArray.set(errorArrayData)
+    correctionArray.set(correctionArrayData)
     assert(valueArray.size == errorArray.size)
     assert(valueArray.size == correctionArray.size)
   }

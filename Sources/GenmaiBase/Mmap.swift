@@ -111,25 +111,28 @@ public final class Mmap: @unchecked Sendable {
 
   public static func isMLockSupported() -> Bool { true }
 
+  /// mlock()s the memory of `data` (C++ `MaybeMLock(data.data(), data.size())`), e.g. a section of a mapped file
+  /// that should not be paged out. Returns the result of mlock().
   @discardableResult
-  public static func maybeMLock(_ addr: UnsafeRawPointer, _ len: Int) -> Int32 {
+  public static func maybeMLock(_ data: Data) -> Int32 {
+    data.withUnsafeBytes { bytes in
+      guard let base = bytes.baseAddress else { return -1 }
+      return mlock(base, bytes.count)
+    }
+  }
+
+  private static func maybeMLock(_ addr: UnsafeRawPointer, _ len: Int) -> Int32 {
     mlock(addr, len)
   }
 
-  @discardableResult
-  public static func maybeMUnlock(_ addr: UnsafeRawPointer, _ len: Int) -> Int32 {
+  private static func maybeMUnlock(_ addr: UnsafeRawPointer, _ len: Int) -> Int32 {
     munlock(addr, len)
   }
 
   /// The mapped bytes, without copying. The `Data` keeps this map alive.
   public var data: Data {
-    RawBytesView(borrowing: buffer, owner: self).data
-  }
-
-  /// The mapped bytes as a raw buffer, valid while this map is alive. Compatibility API for callers that
-  /// still hold raw buffers; new code uses `data`.
-  public var buffer: UnsafeRawBufferPointer {
-    UnsafeRawBufferPointer(start: base, count: count)
+    guard let base, count > 0 else { return Data() }
+    return Data(bytesNoCopy: base, count: count, deallocator: .custom { [self] _, _ in withExtendedLifetime(self) {} })
   }
 
   /// Copies `bytes` into the map at byte `offset` (only for `.readWrite` maps; traps when out of range).
@@ -141,7 +144,7 @@ public final class Mmap: @unchecked Sendable {
     }
   }
 
-  /// mlock()s the whole map (see `maybeMLock(_:_:)`).
+  /// mlock()s the whole map.
   @discardableResult
   public func maybeMLock() -> Int32 {
     guard let base else { return -1 }

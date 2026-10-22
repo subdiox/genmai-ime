@@ -3,6 +3,6 @@
 public enum MockDataEngineFactory {
   /// Creates an instance of Engine class with the mock data set.
   public static func create() throws -> Engine {
-    try Engine.createEngine(MockDataManager())
+    try Engine.createEngine(MockDataManager.create())
   }
 }

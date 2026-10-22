@@ -53,21 +53,21 @@ struct EngineFactoryTests {
   @Test func ossEngineFactory() throws {
     try SystemUtil.withTempUserProfile { _ in
       let engine = try EngineFactory.create()
-      #expect(engine.getDataVersion() == (try OssDataManager().getDataVersion()))
+      #expect(engine.getDataVersion() == (try OssDataManager.create().getDataVersion()))
     }
   }
 
   @Test func mockDataEngineFactory() throws {
     try SystemUtil.withTempUserProfile { _ in
       let engine = try MockDataEngineFactory.create()
-      #expect(engine.getDataVersion() == (try MockDataManager().getDataVersion()))
+      #expect(engine.getDataVersion() == (try MockDataManager.create().getDataVersion()))
     }
   }
 
   @Test func evalEngineFactory() throws {
     try SystemUtil.withTempUserProfile { _ in
       let engine = try createEvalEngine(EngineTestSupport.ossDataPath, "oss")
-      #expect(engine.getDataVersion() == (try OssDataManager().getDataVersion()))
+      #expect(engine.getDataVersion() == (try OssDataManager.create().getDataVersion()))
       #expect(throws: (any Error).self) {
         try createEvalEngine("file_does_not_exist", "oss")
       }

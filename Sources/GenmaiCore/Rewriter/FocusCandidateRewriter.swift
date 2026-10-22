@@ -90,7 +90,7 @@ public final class FocusCandidateRewriter: RewriterInterface, Sendable {
     self.counterSuffixData = counterSuffixData
     var array = SerializedStringArray()
     // Data manager is responsible for providing a valid data.
-    array.set(counterSuffixData.bytes, owner: counterSuffixData.owner)
+    array.set(counterSuffixData)
     self.suffixArray = array
   }
 

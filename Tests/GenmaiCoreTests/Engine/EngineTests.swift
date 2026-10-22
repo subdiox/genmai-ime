@@ -13,22 +13,68 @@
 import Foundation
 import GenmaiBase
 import GenmaiProtocol
+import Synchronization
 import Testing
 
 @testable import GenmaiCore
 
-private final class SupplementalModelForTesting: SupplementalModelStub, @unchecked Sendable {
-  private(set) var loadAsyncCount = 0
-  private(set) var clearOldModelsCount = 0
-  private(set) var lastRequest = Genmai_EngineReloadRequest()
+/// Counts the loading calls; every other function behaves like
+/// `SupplementalModelStub`.
+private final class SupplementalModelForTesting: SupplementalModelInterface, Sendable {
+  private struct State {
+    var loadAsyncCount = 0
+    var clearOldModelsCount = 0
+    var lastRequest = Genmai_EngineReloadRequest()
+  }
 
-  override func loadAsync(_ request: Genmai_EngineReloadRequest) -> Bool {
-    loadAsyncCount += 1
-    lastRequest = request
+  private let state = Mutex(State())
+  private let stub = SupplementalModelStub()
+
+  var loadAsyncCount: Int { state.withLock { $0.loadAsyncCount } }
+  var clearOldModelsCount: Int { state.withLock { $0.clearOldModelsCount } }
+  var lastRequest: Genmai_EngineReloadRequest { state.withLock { $0.lastRequest } }
+
+  func loadAsync(_ request: Genmai_EngineReloadRequest) -> Bool {
+    state.withLock {
+      $0.loadAsyncCount += 1
+      $0.lastRequest = request
+    }
     return true
   }
 
-  override func clearOldModels() { clearOldModelsCount += 1 }
+  func load(_ request: Genmai_EngineReloadRequest) -> Genmai_EngineReloadResponse { stub.load(request) }
+
+  func clearOldModels() { state.withLock { $0.clearOldModelsCount += 1 } }
+
+  func isAvailable() -> Bool { stub.isAvailable() }
+
+  func correctComposition(_ request: ConversionRequest) -> [TypeCorrectedQuery]? {
+    stub.correctComposition(request)
+  }
+
+  func populateTypeCorrectedQuery(_ request: ConversionRequest, _ results: inout [PredictionResult]) {
+    stub.populateTypeCorrectedQuery(request, &results)
+  }
+
+  func postCorrect(_ request: ConversionRequest, _ results: inout [PredictionResult]) {
+    stub.postCorrect(request, &results)
+  }
+
+  func rescoreResults(_ request: ConversionRequest, _ results: inout [PredictionResult]) {
+    stub.rescoreResults(request, &results)
+  }
+
+  func predict(_ request: ConversionRequest, _ results: inout [PredictionResult]) -> Bool {
+    stub.predict(request, &results)
+  }
+
+  func getReadingAlignment(_ surface: String, _ reading: String) -> [(String, String)] {
+    stub.getReadingAlignment(surface, reading)
+  }
+
+  func decodeEnglish(_ request: ConversionRequest, _ results: inout [PredictionResult]) -> Bool {
+    stub.decodeEnglish(request, &results)
+  }
 }
 
 private let kMockMagicNumber = "MOCK"
@@ -80,7 +126,7 @@ struct EngineTests {
   @Test func reloadModulesTest() async throws {
     try SystemUtil.withTempUserProfile { _ in
       let engine = makeEngine()
-      let modules = try Modules.create(MockDataManager())
+      let modules = try Modules.create(MockDataManager.create())
       try engine.reloadModules(modules)
     }
   }
@@ -183,7 +229,7 @@ struct EngineTests {
       let supplementalModel = SupplementalModelForTesting()
       let modules = try ModulesPresetBuilder()
         .presetSupplementalModel(supplementalModel)
-        .build(MockDataManager())
+        .build(MockDataManager.create())
       try engine.reloadModules(modules)
 
       // The pending latest request is loaded upon converter_ initialization.
@@ -219,7 +265,7 @@ struct EngineTests {
 
   @Test func createEngineFromDataManager() async throws {
     try await SystemUtil.withTempUserProfile { _ in
-      let engine = try Engine.createEngine(MockDataManager())
+      let engine = try Engine.createEngine(MockDataManager.create())
       #expect(engine.getDataVersion() == mockVersion)
       #expect(!engine.getPosList().isEmpty)
       #expect(engine.getConverterImpl() != nil)

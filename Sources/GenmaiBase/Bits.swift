@@ -67,25 +67,4 @@ public enum Bits {
 
   /// LittleToHost changes the little endian byte order to the host byte order.
   public static func littleToHost<T: FixedWidthInteger>(_ n: T) -> T { T(littleEndian: n) }
-
-  /// Returns a typed buffer over data. Returns an empty buffer when the data
-  /// has an invalid alignment or size (MakeAlignedConstSpan).
-  /// The result is valid only while `data` is.
-  ///
-  /// Unsafe by nature (reinterprets raw memory as `T`; Swift has no safe way to view bytes as an arbitrary
-  /// struct). Kept only for GenmaiCore's `DataView`; new code reads fields with `Span<UInt8>.loadLittleEndian`.
-  public static func makeAlignedConstSpan<T>(_ data: UnsafeRawBufferPointer, as type: T.Type = T.self)
-    -> UnsafeBufferPointer<T>
-  {
-    guard let base = data.baseAddress,
-      Int(bitPattern: base) % MemoryLayout<T>.alignment == 0,
-      data.count >= MemoryLayout<T>.size,
-      data.count % MemoryLayout<T>.stride == 0
-    else {
-      // misaligned data is passed. returns an empty span.
-      return UnsafeBufferPointer(start: nil, count: 0)
-    }
-    return UnsafeBufferPointer(
-      start: base.assumingMemoryBound(to: T.self), count: data.count / MemoryLayout<T>.stride)
-  }
 }

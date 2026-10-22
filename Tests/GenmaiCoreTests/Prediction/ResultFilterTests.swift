@@ -121,7 +121,7 @@ struct ResultFilterTests {
     builder.insert("<nwp>京都")
     let suggestionFilter = SuggestionFilter(builder.build())
     // C++ uses a default (empty) Connector; GetTransitionCost is not called.
-    let connector = try Connector.create(MockDataManager().getConnectorData())
+    let connector = try Connector.create(MockDataManager.create().getConnectorData())
 
     func result(_ key: String, _ value: String) -> PredictionResult {
       var r = PredictionResult()

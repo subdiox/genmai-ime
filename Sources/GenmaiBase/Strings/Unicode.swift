@@ -6,8 +6,8 @@
 //   valid UTF-8. A "character" in Mozc is a Unicode code point (= a Swift
 //   `Unicode.Scalar`), never a grapheme cluster (`Character`).
 // - Functions that must handle ill-formed UTF-8 have overloads taking any
-//   `Collection` of `UInt8` (e.g. `[UInt8]`, `String.UTF8View`,
-//   `UnsafeRawBufferPointer`), so the byte semantics of the C++ code are kept.
+//   `Collection` of `UInt8` (e.g. `[UInt8]`, `String.UTF8View`, `Data`),
+//   so the byte semantics of the C++ code are kept.
 // - When bytes produced by a faithful port are turned into a `String`, Swift's
 //   standard UTF-8 repair (U+FFFD substitution) applies. This only matters for
 //   ill-formed data (e.g. encoding a lone surrogate).

@@ -88,7 +88,7 @@ private func createConverter(
 private func createConverterWithUserDefinedEntries(
   _ userDefinedEntries: [UserDefinedEntry], _ predictorType: PredictorType
 ) throws -> Converter {
-  let dataManager = try MockDataManager()
+  let dataManager = try MockDataManager.create()
   let posMatcher = PosMatcher(dataManager.getPosMatcherData())
   let userPosData = dataManager.getUserPosData()
   let userDictionary = UserDictionary(
@@ -116,7 +116,7 @@ private func createConverterWithUserDefinedEntries(
 }
 
 private func createEngine() throws -> Engine {
-  try Engine.createEngine(MockDataManager())
+  try Engine.createEngine(MockDataManager.create())
 }
 
 private func findCandidateByValue(_ value: String, _ segment: Segment) -> Bool {
@@ -266,7 +266,7 @@ struct ConverterEngineTests {
 
       let modules = try ModulesPresetBuilder()
         .presetUserDictionary(mockUserDictionary)
-        .build(MockDataManager())
+        .build(MockDataManager.create())
 
       let converter = Converter(
         modules,
@@ -562,7 +562,7 @@ struct ConverterEngineTests {
       // Since DateRewriter is not used in some build targets, the test needs
       // to explicitly add it to the converter.
       let converter = createConverter(
-        try Modules.create(MockDataManager()), DateRewriter(dictionary), .stubPredictor)
+        try Modules.create(MockDataManager.create()), DateRewriter(dictionary), .stubPredictor)
 
       do {
         // Default (enable_multi_segment_candidate = false):
@@ -681,7 +681,7 @@ struct ConverterEngineTests {
 
   @Test func applyUserHistoryToConversionE2ETest() throws {
     try withTestProfile {
-      let modules = try Modules.create(MockDataManager())
+      let modules = try Modules.create(MockDataManager.create())
       let rewriter = RewriterImpl(modules)
       let converter = createConverter(modules, rewriter, .defaultPredictor)
 

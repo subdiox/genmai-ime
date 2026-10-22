@@ -32,10 +32,9 @@ import GenmaiProtocol
 /// search to lookup necessary information efficiently.  Note that there are
 /// tokens having the same POS index.
 ///
-/// `open` (C++ virtual methods) for testing/mocking. `@unchecked Sendable` only
-/// because a non-final class cannot be checked: all stored properties are
-/// immutable and Sendable (subclasses must keep it so).
-open class UserPos: @unchecked Sendable {
+/// The C++ virtual methods are the requirements of `UserPosInterface`, which
+/// tests mock.
+public final class UserPos: UserPosInterface {
   public typealias PosType = Genmai_UserDictionary_UserDictionary.PosType
 
   /// `UserPos::Token`.
@@ -133,7 +132,7 @@ open class UserPos: @unchecked Sendable {
     // make token_array_index_
     var posToIndex: [[UInt8]: [Int]] = [:]
     for i in 0..<tokenArrayDataSize {
-      let pos = Array(stringArray.bytes(at: Int(getTokenArrayData(tokenArrayData, i).posIndex)))
+      let pos = stringArray.utf8(at: Int(getTokenArrayData(tokenArrayData, i).posIndex))
       posToIndex[pos, default: []].append(i)
     }
 
@@ -149,10 +148,10 @@ open class UserPos: @unchecked Sendable {
     return (posList, tokenArrayIndex)
   }
 
-  /// Virtual for testing/mocking.
-  open func getPosList() -> [String] { posList }
+  /// A `UserPosInterface` requirement (mocked in tests).
+  public func getPosList() -> [String] { posList }
 
-  open func getTokens(_ key: String, _ value: String, _ posType: PosType) -> [Token] {
+  public func getTokens(_ key: String, _ value: String, _ posType: PosType) -> [Token] {
     if key.isEmpty || value.isEmpty {
       return []
     }
@@ -171,8 +170,8 @@ open class UserPos: @unchecked Sendable {
       var keyStem = key.utf8[...]
       var valueStem = value.utf8[...]
       // assume that conjugation_form[0] contains the suffix of "base form".
-      let baseKeySuffix = stringArray.bytes(at: Int(first.keySuffixIndex))
-      let baseValueSuffix = stringArray.bytes(at: Int(first.valueSuffixIndex))
+      let baseKeySuffix = stringArray.utf8(at: Int(first.keySuffixIndex))
+      let baseValueSuffix = stringArray.utf8(at: Int(first.valueSuffixIndex))
 
       if baseKeySuffix.count < key.utf8.count && baseValueSuffix.count < value.utf8.count
         && key.utf8.reversed().starts(with: baseKeySuffix.reversed())
@@ -183,12 +182,12 @@ open class UserPos: @unchecked Sendable {
       }
       for i in 0..<tokenArrayIndex.count {
         let src = getTokenArrayData(tokenArrayIndex[i])
-        let keySuffix = stringArray.bytes(at: Int(src.keySuffixIndex))
-        let valueSuffix = stringArray.bytes(at: Int(src.valueSuffixIndex))
+        let keySuffix = stringArray.utf8(at: Int(src.keySuffixIndex))
+        let valueSuffix = stringArray.utf8(at: Int(src.valueSuffixIndex))
         tokens.append(
           Token(
-            key: String(decoding: Array(keyStem) + Array(keySuffix), as: UTF8.self),
-            value: String(decoding: Array(valueStem) + Array(valueSuffix), as: UTF8.self),
+            key: String(decoding: Array(keyStem) + keySuffix, as: UTF8.self),
+            value: String(decoding: Array(valueStem) + valueSuffix, as: UTF8.self),
             id: src.conjugationId, posType: posType))
       }
     }
@@ -260,4 +259,14 @@ open class UserPos: @unchecked Sendable {
     }
     return PosType(rawValue: index)
   }
+}
+
+/// The virtual methods of the C++ `UserPos` that the user dictionary calls (a
+/// protocol so that tests can mock them).
+public protocol UserPosInterface: Sendable {
+  /// Returns the list of POS names (`UserPos::GetPosList`).
+  func getPosList() -> [String]
+
+  /// Converts a word into tokens for each inflection (`UserPos::GetTokens`).
+  func getTokens(_ key: String, _ value: String, _ posType: UserPos.PosType) -> [UserPos.Token]
 }

@@ -33,7 +33,7 @@ struct OssDataManagerTest {
       segmenterDef: DataManagerTestSupport.sourcePath("data", "rules", "segmenter.def"))
     let dictionaryDir = DataManagerTestSupport.sourcePath("data", "dictionary_oss")
     let base = DataManagerTestBase(
-      dataManager: try OssDataManager(),
+      dataManager: try OssDataManager.create(),
       lsize: segmenterInternal.lsize, rsize: segmenterInternal.rsize,
       isBoundary: segmenterInternal.isBoundaryInternal,
       connectionTxtFile: FileUtil.joinPath(dictionaryDir, "connection_single_column.txt"),
@@ -52,18 +52,18 @@ struct OssDataManagerTest {
 
   // Swift-only: the default data path and the OSS magic number.
   @Test func defaultDataPathAndMagic() throws {
-    let dm = try OssDataManager()
+    let dm = try OssDataManager.create()
     #expect(dm.getFilename() == OssDataManager.defaultDataPath)
     let mmap = try Mmap.map(OssDataManager.defaultDataPath)
     let magic = DataManager.getDataSetMagicNumber("oss")
     #expect(magic.count == OssDataManager.kMagicNumberLength)
-    #expect(Array(mmap.buffer.prefix(magic.count)) == magic)
+    #expect(Array(mmap.data.prefix(magic.count)) == magic)
     #expect(dm.getDataVersion().hasSuffix(".oss"))
   }
 
   @Test func missingFileThrows() {
     #expect(throws: StatusError.self) {
-      _ = try OssDataManager(path: "/nonexistent/genmai.data")
+      _ = try OssDataManager.create(path: "/nonexistent/genmai.data")
     }
   }
 }

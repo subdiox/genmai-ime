@@ -16,17 +16,14 @@ import GenmaiStorage
 public enum CollocationRewriterInternal {
   public struct CollocationFilter: Sendable {
     private let filter: ExistenceFilter
-    // Keeps the memory referenced by `filter` alive.
-    private let data: DataView
 
-    public init(_ filter: ExistenceFilter, data: DataView = .empty) {
+    public init(_ filter: ExistenceFilter) {
       self.filter = filter
-      self.data = data
     }
 
     public static func create(_ data: DataView) throws -> CollocationFilter {
-      let filter = try ExistenceFilter.read(data.bytes)
-      return CollocationFilter(filter, data: data)
+      // The filter keeps a slice of the data (no copy).
+      CollocationFilter(try ExistenceFilter.read(data.data))
     }
 
     public func exists(_ left: some StringProtocol, _ right: some StringProtocol) -> Bool {
@@ -39,17 +36,14 @@ public enum CollocationRewriterInternal {
 
   public struct SuppressionFilter: Sendable {
     private let filter: ExistenceFilter
-    // Keeps the memory referenced by `filter` alive.
-    private let data: DataView
 
-    public init(_ filter: ExistenceFilter, data: DataView = .empty) {
+    public init(_ filter: ExistenceFilter) {
       self.filter = filter
-      self.data = data
     }
 
     public static func create(_ data: DataView) throws -> SuppressionFilter {
-      let filter = try ExistenceFilter.read(data.bytes)
-      return SuppressionFilter(filter, data: data)
+      // The filter keeps a slice of the data (no copy).
+      SuppressionFilter(try ExistenceFilter.read(data.data))
     }
 
     public func exists(_ cand: Candidate) -> Bool {

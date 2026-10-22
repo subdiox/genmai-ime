@@ -42,7 +42,7 @@ import Testing
 
   @Test(.enabled(if: MockDataManager.defaultDataPath != nil, "mock_genmai.data is missing"))
   func basicTest() throws {
-    let posMatcher = PosMatcher(try MockDataManager().getPosMatcherData())
+    let posMatcher = PosMatcher(try MockDataManager.create().getPosMatcherData())
     let zipcodeRewriter = ZipcodeRewriter(posMatcher)
 
     let kZipcode = "107-0052"

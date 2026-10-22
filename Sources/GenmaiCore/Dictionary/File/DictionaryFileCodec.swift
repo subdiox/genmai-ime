@@ -74,7 +74,7 @@ public final class DictionaryFileCodec: Sendable {
   }
 
   /// Parses `image` into sections. The section images are views into `image`
-  /// (they keep `image.owner` alive).
+  /// (they share its memory).
   public func readSections(_ image: DataView) throws -> [DictionaryFileSection] {
     var sections: [DictionaryFileSection] = []
     // At least 12 bytes (3 * int32_t) are required.
@@ -130,7 +130,7 @@ public final class DictionaryFileCodec: Sendable {
           "codec.cc: Section \(sectionIndex): Read pointer will pass the end: offset=\(sectionEnd), image_size=\(image.count)"
         )
       }
-      let fingerprint = Array(image.data[ptr..<(ptr + kFingerprintByteLength)])
+      let fingerprint = image.slice(ptr, kFingerprintByteLength).array
       ptr += kFingerprintByteLength
       // Add a section with data and fingerprint.  Note that the data size is
       // |data_size| but |ptr| is advanced by |padded_data_size| to skip padding
@@ -168,7 +168,7 @@ public final class DictionaryFileCodec: Sendable {
     assert(name.count == 8)
     FileCodecUtil.writeInt32(Int32(truncatingIfNeeded: image.count), &ofs)
     ofs.append(contentsOf: name)
-    ofs.append(contentsOf: image.bytes)
+    ofs.append(contentsOf: image.data)
     FileCodecUtil.pad4(image.count, &ofs)
   }
 }

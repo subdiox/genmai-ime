@@ -598,7 +598,7 @@ public final class TableManager {
     if config.preeditMethod == .roman && config.hasCustomRomanTable
       && !config.customRomanTable.isEmpty
     {
-      let fingerprint = config.customRomanTable.withUnsafeBytes { cityFingerprint(bytes: $0) }
+      let fingerprint = cityFingerprint(bytes: config.customRomanTable)
       if fingerprint != customRomanTableFingerprint {
         updateCustomRomanTable = true
         customRomanTableFingerprint = fingerprint

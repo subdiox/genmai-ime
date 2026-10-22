@@ -63,14 +63,14 @@ private func selectCandidate(_ segment: Segment, _ n: Int) {
 private func hasAttr(_ c: Candidate, _ attr: UInt32) -> Bool { c.attributes & attr != 0 }
 
 private final class Fixture {
-  let mockDataManager: MockDataManager
+  let mockDataManager: DataManager
   let posMatcher: PosMatcher
   let posGroup: PosGroup
   var config = Genmai_Config_Config()
   var request = Genmai_Commands_Request()
 
   init() throws {
-    mockDataManager = try MockDataManager()
+    mockDataManager = try MockDataManager.create()
     posMatcher = PosMatcher(mockDataManager.getPosMatcherData())
     posGroup = PosGroup(mockDataManager.getPosGroupData())
     ConfigHandler.getDefaultConfig(&config)

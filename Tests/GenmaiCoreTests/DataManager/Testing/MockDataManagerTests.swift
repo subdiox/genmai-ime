@@ -18,7 +18,7 @@ struct MockDataManagerTest {
       segmenterDef: DataManagerTestSupport.sourcePath("data", "rules", "segmenter.def"))
     let dictionaryDir = DataManagerTestSupport.sourcePath("data", "test", "dictionary")
     let base = DataManagerTestBase(
-      dataManager: try MockDataManager(),
+      dataManager: try MockDataManager.create(),
       lsize: segmenterInternal.lsize, rsize: segmenterInternal.rsize,
       isBoundary: segmenterInternal.isBoundaryInternal,
       connectionTxtFile: FileUtil.joinPath(dictionaryDir, "connection_single_column.txt"),
@@ -37,7 +37,7 @@ struct MockDataManagerTest {
 
   // Swift-only: the gmock GetDataVersion override.
   @Test func dataVersionOverride() throws {
-    #expect(try MockDataManager().getDataVersion() == "24.11.mock")
-    #expect(try MockDataManager(dataVersion: "1.2.3").getDataVersion() == "1.2.3")
+    #expect(try MockDataManager.create().getDataVersion() == "24.11.mock")
+    #expect(try MockDataManager.create(dataVersion: "1.2.3").getDataVersion() == "1.2.3")
   }
 }

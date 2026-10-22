@@ -7,7 +7,7 @@ import Testing
 /// One checker for all tests (building the reverse lookup index takes a moment).
 private let sharedChecker: AIReadingChecker? = {
   guard FileManager.default.fileExists(atPath: OssDataManager.defaultDataPath) else { return nil }
-  return try? AIReadingChecker(dataManager: OssDataManager())
+  return try? AIReadingChecker(dataManager: OssDataManager.create())
 }()
 
 @Suite struct AIReadingCheckerFoldTests {

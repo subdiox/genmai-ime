@@ -11,8 +11,9 @@
 import Foundation
 import GenmaiBase
 
-/// This is a simple wrapper of DataManager that uses the OSS data set.
-public final class OssDataManager: DataManager, @unchecked Sendable {
+/// This is a simple wrapper of DataManager that uses the OSS data set. (The C++
+/// subclass is a factory here: `DataManager` is a final class.)
+public enum OssDataManager {
   /// The length of the OSS magic number "\xEFMOZC\r\n"
   /// (MOZC_DATASET_MAGIC_NUMBER_LENGTH in data_manager/oss/BUILD.bazel).
   public static let kMagicNumberLength = 7
@@ -49,7 +50,7 @@ public final class OssDataManager: DataManager, @unchecked Sendable {
     return candidates.first { FileManager.default.fileExists(atPath: $0.path) }?.path
   }
 
-  /// The data set used by `init()`: `$GENMAI_DATA_FILE` if set, otherwise
+  /// The data set used by `create()`: `$GENMAI_DATA_FILE` if set, otherwise
   /// `bundleDataPath`, otherwise `repositoryDataPath`.
   public static var defaultDataPath: String {
     if let path = ProcessInfo.processInfo.environment[dataFileEnvironmentVariable], !path.isEmpty {
@@ -64,8 +65,9 @@ public final class OssDataManager: DataManager, @unchecked Sendable {
   /// Loads the OSS data set from `path` (default: `defaultDataPath`). Throws
   /// (instead of the C++ CHECK failure) when the file is missing or broken.
   /// As in C++, only the length of the magic number is checked.
-  public init(path: String = OssDataManager.defaultDataPath) throws {
-    super.init()
-    try initFromFile(path, magicLength: OssDataManager.kMagicNumberLength)
+  public static func create(path: String = OssDataManager.defaultDataPath) throws -> DataManager {
+    let dataManager = DataManager()
+    try dataManager.initFromFile(path, magicLength: OssDataManager.kMagicNumberLength)
+    return dataManager
   }
 }

@@ -147,12 +147,6 @@ public enum UnverifiedSHA1 {
     makeDigest(Data(source).span)
   }
 
-  /// Compatibility overload for callers that still hold raw buffers (no copy; the caller keeps the memory
-  /// alive for the duration of the call).
-  public static func makeDigest(_ source: UnsafeBufferPointer<UInt8>) -> [UInt8] {
-    makeDigest(source.span)
-  }
-
   public static func makeDigest(_ source: String) -> [UInt8] {
     makeDigest(Array(source.utf8))
   }

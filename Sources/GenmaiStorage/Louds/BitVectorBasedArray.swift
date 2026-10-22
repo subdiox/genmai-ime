@@ -18,9 +18,8 @@ public struct BitVectorBasedArray: Sendable {
   private var baseLength = 0
   private var stepLength = 0
   private var data = Data()
-  /// The address of the element data when the image was opened from raw
-  /// memory (0 otherwise); only for `get(_:)`, which returns raw memory.
-  private var rawElementsAddress = 0
+  /// The offset of the element data in the image.
+  private var dataOffset = 0
 
   public init() {}
 
@@ -28,7 +27,7 @@ public struct BitVectorBasedArray: Sendable {
   public mutating func open(_ image: Data) {
     let indexLength = openIndex(image)
     data = image.dropFirst(16 + indexLength)
-    rawElementsAddress = 0
+    dataOffset = 16 + indexLength
   }
 
   /// Reads the header and initializes the bit vector. Returns its length.
@@ -51,7 +50,7 @@ public struct BitVectorBasedArray: Sendable {
     baseLength = 0
     stepLength = 0
     data = Data()
-    rawElementsAddress = 0
+    dataOffset = 0
   }
 
   /// Returns the byte range of the element in the element data.
@@ -71,42 +70,15 @@ public struct BitVectorBasedArray: Sendable {
   /// image, use `.span` or iterate it).
   /// Note: the result may contain '\0' chars, or may NOT be '\0'-terminated.
   public func element(_ index: Int) -> Data {
-    if rawElementsAddress != 0 {
-      // Opened from raw memory: copy the (small) element.
-      return Data(get(index))
-    }
     let range = range(index)
     let start = data.startIndex + range.lowerBound
     return data[start..<(start + range.count)]
   }
-}
 
-// MARK: - Raw pointer interface (kept for callers that still pass raw memory)
-
-extension BitVectorBasedArray {
-  /// Opens the image at `image`, which the caller keeps alive and unchanged
-  /// while the array is used (as in C++). The memory is shared, not copied.
-  ///
-  /// Raw pointers are needed here because the caller passes memory it owns;
-  /// prefer `open(_: Data)`.
-  public mutating func open(_ image: UnsafeRawPointer) {
-    let mutableImage = UnsafeMutableRawPointer(mutating: image)
-    let indexLength = Int(UInt32(littleEndian: image.loadUnaligned(as: UInt32.self)))
-    _ = openIndex(Data(bytesNoCopy: mutableImage, count: 16 + indexLength, deallocator: .none))
-    // The image size is not passed, so the element data is only read through
-    // get(_:) (raw memory, as in C++).
-    data = Data()
-    rawElementsAddress = Int(bitPattern: image + 16 + indexLength)
-  }
-
-  /// Returns the element as raw memory inside the image given to
-  /// `open(_: UnsafeRawPointer)` (valid while that memory is). Prefer
-  /// `element(_:)`.
-  public func get(_ index: Int) -> UnsafeRawBufferPointer {
+  /// Returns the byte range of the element in the image given to `open(_:)`
+  /// (C++ `Get(index, &length) - image`).
+  public func byteRange(_ index: Int) -> Range<Int> {
     let range = range(index)
-    guard let base = UnsafeRawPointer(bitPattern: rawElementsAddress) else {
-      preconditionFailure("get(_:) needs an image opened with open(_: UnsafeRawPointer); use element(_:)")
-    }
-    return UnsafeRawBufferPointer(start: base + range.lowerBound, count: range.count)
+    return (dataOffset + range.lowerBound)..<(dataOffset + range.upperBound)
   }
 }

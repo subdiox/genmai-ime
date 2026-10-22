@@ -34,12 +34,6 @@ public func cityFingerprint(bytes: [UInt8]) -> UInt64 {
   CityHash.cityHash64(Data(bytes).span)
 }
 
-/// CityHash64 of raw bytes. Compatibility overload for callers that still hold raw buffers (the bytes are
-/// copied; the callers hash small serialized protobufs).
-public func cityFingerprint(bytes: UnsafeRawBufferPointer) -> UInt64 {
-  CityHash.cityHash64(Data(bytes).span)
-}
-
 /// CityHash64WithSeed of the UTF-8 bytes of `str`.
 @inlinable
 public func cityFingerprintWithSeed(_ str: some StringProtocol, _ seed: UInt64) -> UInt64 {

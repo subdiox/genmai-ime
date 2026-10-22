@@ -82,7 +82,7 @@ public protocol PredictionModules: ConverterModules {
   func getDictionary() -> any DictionaryInterface
   func getSuffixDictionary() -> any DictionaryInterface
   func getSuggestionFilter() -> SuggestionFilter
-  func getSingleKanjiDictionary() -> SingleKanjiDictionary
+  func getSingleKanjiDictionary() -> any SingleKanjiDictionaryInterface
   func getZeroQueryDict() -> ZeroQueryDict
   func getZeroQueryNumberDict() -> ZeroQueryDict
 }

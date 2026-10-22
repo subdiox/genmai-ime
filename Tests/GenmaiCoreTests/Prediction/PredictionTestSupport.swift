@@ -37,7 +37,7 @@ final class PredictionTestModules: PredictionModules, UserHistoryPredictorModule
   let connector: Connector
   let segmenter: Segmenter
   let suggestionFilter: SuggestionFilter
-  let singleKanjiDictionary: SingleKanjiDictionary
+  let singleKanjiDictionary: any SingleKanjiDictionaryInterface
   let zeroQueryDict: ZeroQueryDict
   let zeroQueryNumberDict: ZeroQueryDict
   var supplementalModel: any PredictionSupplementalModel
@@ -46,7 +46,7 @@ final class PredictionTestModules: PredictionModules, UserHistoryPredictorModule
   init(
     _ dataManager: DataManager, dictionary: (any DictionaryInterface)? = nil,
     suffixDictionary: (any DictionaryInterface)? = nil,
-    singleKanjiDictionary: SingleKanjiDictionary? = nil,
+    singleKanjiDictionary: (any SingleKanjiDictionaryInterface)? = nil,
     supplementalModel: (any PredictionSupplementalModel)? = nil
   ) throws {
     self.dataManager = dataManager
@@ -83,18 +83,18 @@ final class PredictionTestModules: PredictionModules, UserHistoryPredictorModule
   static func mock(
     dictionary: (any DictionaryInterface)? = nil,
     suffixDictionary: (any DictionaryInterface)? = nil,
-    singleKanjiDictionary: SingleKanjiDictionary? = nil,
+    singleKanjiDictionary: (any SingleKanjiDictionaryInterface)? = nil,
     supplementalModel: (any PredictionSupplementalModel)? = nil
   ) throws -> PredictionTestModules {
     try PredictionTestModules(
-      MockDataManager(), dictionary: dictionary, suffixDictionary: suffixDictionary,
+      MockDataManager.create(), dictionary: dictionary, suffixDictionary: suffixDictionary,
       singleKanjiDictionary: singleKanjiDictionary, supplementalModel: supplementalModel)
   }
 
   /// nil when Data/genmai.data is missing.
   static func oss() throws -> PredictionTestModules? {
     guard FileManager.default.fileExists(atPath: OssDataManager.defaultDataPath) else { return nil }
-    return try PredictionTestModules(OssDataManager())
+    return try PredictionTestModules(OssDataManager.create())
   }
 
   // ConverterModules
@@ -109,7 +109,7 @@ final class PredictionTestModules: PredictionModules, UserHistoryPredictorModule
   func getDictionary() -> any DictionaryInterface { dictionary }
   func getSuffixDictionary() -> any DictionaryInterface { suffixDictionary }
   func getSuggestionFilter() -> SuggestionFilter { suggestionFilter }
-  func getSingleKanjiDictionary() -> SingleKanjiDictionary { singleKanjiDictionary }
+  func getSingleKanjiDictionary() -> any SingleKanjiDictionaryInterface { singleKanjiDictionary }
   func getZeroQueryDict() -> ZeroQueryDict { zeroQueryDict }
   func getZeroQueryNumberDict() -> ZeroQueryDict { zeroQueryNumberDict }
 
@@ -285,13 +285,23 @@ final class PredictionMockRealtimeDecoder: RealtimeDecoder {
 
 /// `MockSingleKanjiDictionary`.
 ///
-/// `@unchecked Sendable` is inherited from `SingleKanjiDictionary` and must be
-/// restated; the handler is set and called on the test's own task only.
-final class PredictionMockSingleKanjiDictionary: SingleKanjiDictionary, @unchecked Sendable {
+/// Test mock, `@unchecked Sendable`: the handler is a non-Sendable closure
+/// (the tests count calls in a captured variable); it is set and called on the
+/// test's own task only.
+final class PredictionMockSingleKanjiDictionary: SingleKanjiDictionaryInterface, @unchecked Sendable {
   var lookupKanjiEntriesHandler: ((String, Bool) -> [String])?
+  private let empty = SingleKanjiDictionary()
 
-  override func lookupKanjiEntries(_ key: String, _ useSvs: Bool) -> [String] {
+  func lookupKanjiEntries(_ key: String, _ useSvs: Bool) -> [String] {
     lookupKanjiEntriesHandler?(key, useSvs) ?? []
+  }
+
+  func lookupNounPrefixEntries(_ key: String) -> Slice<SerializedDictionary> {
+    empty.lookupNounPrefixEntries(key)
+  }
+
+  func generateDescription(_ kanjiSurface: String) -> String? {
+    empty.generateDescription(kanjiSurface)
   }
 }
 

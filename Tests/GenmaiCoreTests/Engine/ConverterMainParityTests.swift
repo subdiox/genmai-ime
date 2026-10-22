@@ -164,7 +164,7 @@ private func runConverterMain(
   try SystemUtil.withTempUserProfile { _ in
     try CharacterFormManager.withScopedManagerForTesting {
       let body = { () throws -> [String] in
-        let engine = try Engine.createEngine(OssDataManager())
+        let engine = try Engine.createEngine(OssDataManager.create())
         var config = ConfigHandler.defaultConfig()
         var request = Genmai_Commands_Request()
         if mobile {

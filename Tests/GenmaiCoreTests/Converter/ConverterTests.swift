@@ -197,7 +197,7 @@ private struct UserDefinedEntry {
 private func createConverterWithUserDefinedEntries(_ userDefinedEntries: [UserDefinedEntry]) async throws
   -> Converter
 {
-  let dataManager = try MockDataManager()
+  let dataManager = try MockDataManager.create()
   let posMatcher = PosMatcher(dataManager.getPosMatcherData())
   let userPosData = dataManager.getUserPosData()
   let userDictionary = UserDictionary(

@@ -13,13 +13,13 @@ enum ConverterCoreTestSupport {
   static var hasMockData: Bool { MockDataManager.defaultDataPath != nil }
   static let mockDataMissing: Comment = "mock_genmai.data is missing; run Tools/build_oracle.sh"
 
-  private static let cachedMock = Mutex<MockDataManager?>(nil)
+  private static let cachedMock = Mutex<DataManager?>(nil)
   private static let cachedConnector = Mutex<Connector?>(nil)
 
-  static func mockDataManager() throws -> MockDataManager {
+  static func mockDataManager() throws -> DataManager {
     try cachedMock.withLock { cached in
       if let m = cached { return m }
-      let m = try MockDataManager()
+      let m = try MockDataManager.create()
       cached = m
       return m
     }

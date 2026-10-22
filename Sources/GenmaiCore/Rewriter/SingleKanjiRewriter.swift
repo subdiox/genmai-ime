@@ -9,9 +9,9 @@ import GenmaiProtocol
 
 public final class SingleKanjiRewriter: RewriterInterface {
   private let posMatcher: PosMatcher
-  private let singleKanjiDictionary: SingleKanjiDictionary
+  private let singleKanjiDictionary: any SingleKanjiDictionaryInterface
 
-  public init(_ posMatcher: PosMatcher, _ singleKanjiDictionary: SingleKanjiDictionary) {
+  public init(_ posMatcher: PosMatcher, _ singleKanjiDictionary: any SingleKanjiDictionaryInterface) {
     self.posMatcher = posMatcher
     self.singleKanjiDictionary = singleKanjiDictionary
   }

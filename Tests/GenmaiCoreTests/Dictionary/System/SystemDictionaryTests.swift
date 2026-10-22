@@ -646,7 +646,7 @@ struct SystemDictionaryTests {
 @Suite(.enabled(if: SystemDictionaryTestSupport.hasOssData, "Data/genmai.data is missing (run Tools/build_oracle.sh)"))
 struct SystemDictionaryOssDataTests {
   static let dictionary: SystemDictionary? = {
-    guard let dataManager = try? OssDataManager() else { return nil }
+    guard let dataManager = try? OssDataManager.create() else { return nil }
     return try? SystemDictionary.Builder(image: dataManager.getSystemDictionaryData()).build()
   }()
 

@@ -216,12 +216,6 @@ public struct ExistenceFilter: Sendable {
     return ExistenceFilter(params, body)
   }
 
-  /// Reads the filter from `buf`, which the caller keeps alive and unchanged
-  /// while the filter is used (as in C++). Prefer `read(_: Data)`.
-  public static func read(_ buf: UnsafeRawBufferPointer) throws -> ExistenceFilter {
-    try read(sharedData(buf))
-  }
-
   /// Checks if the concatenation of the given `keys` was in the filter.
   public func exists(_ keys: [String]) -> Bool {
     exists(hash: ExistenceFilterInternal.fingerprint(keys.joined(), params.fpType))
@@ -401,11 +395,4 @@ public struct ExistenceFilterBuilder: Sendable {
       rep.set(index)
     }
   }
-}
-
-/// A `Data` sharing the caller's memory (no copy): `read(_: UnsafeRawBufferPointer)`
-/// above views memory the caller keeps alive, like the C++ absl::Span view.
-private func sharedData(_ buf: UnsafeRawBufferPointer) -> Data {
-  guard let base = buf.baseAddress, !buf.isEmpty else { return Data() }
-  return Data(bytesNoCopy: UnsafeMutableRawPointer(mutating: base), count: buf.count, deallocator: .none)
 }

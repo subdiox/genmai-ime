@@ -28,8 +28,8 @@ public final class EmojiRewriter: RewriterInterface {
 
   public init(_ tokenArrayData: DataView, _ stringArrayData: DataView) {
     tokens = EmojiDataArray(tokenArrayData)
-    assert(SerializedStringArray.verifyData(stringArrayData.bytes))
-    stringArray.set(stringArrayData.bytes, owner: stringArrayData.owner)
+    assert(SerializedStringArray.verifyData(stringArrayData))
+    stringArray.set(stringArrayData)
   }
 
   /// `std::make_from_tuple<EmojiRewriter>(GetEmojiRewriterData())`.
@@ -168,7 +168,7 @@ public final class EmojiRewriter: RewriterInterface {
     var count = tokens.count
     while count > 0 {
       let half = count / 2
-      if Strings.compareBytes(stringArray.bytes(at: Int(tokens[lo + half].keyIndex)), keyBytes) < 0 {
+      if stringArray.compare(at: Int(tokens[lo + half].keyIndex), bytes: keyBytes) < 0 {
         lo += half + 1
         count -= half + 1
       } else {
@@ -180,7 +180,7 @@ public final class EmojiRewriter: RewriterInterface {
     count = tokens.endIndex - lo
     while count > 0 {
       let half = count / 2
-      if Strings.compareBytes(keyBytes, stringArray.bytes(at: Int(tokens[hi + half].keyIndex))) < 0 {
+      if stringArray.compare(at: Int(tokens[hi + half].keyIndex), bytes: keyBytes) > 0 {
         count = half
       } else {
         hi += half + 1

@@ -21,7 +21,7 @@ private struct Fixture {
 }
 
 private func withFixture(_ body: (Fixture) throws -> Void) throws {
-  let dataManager = try MockDataManager()
+  let dataManager = try MockDataManager.create()
   try withExtendedLifetime(dataManager) {
     let posMatcher = PosMatcher(dataManager.getPosMatcherData())
     try SystemUtil.withTempUserProfile { _ in
