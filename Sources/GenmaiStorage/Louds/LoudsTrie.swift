@@ -7,9 +7,8 @@
 // the node `inout` (C++ `Node*`), with value-returning overloads as in C++.
 //
 // The image is an immutable `Data` (typically a slice of a memory-mapped file,
-// so nothing is copied). The opened structure is an immutable object; the
-// first open() publishes it atomically (lock-free reads), later open() /
-// close() replace it under a Mutex. Readers take it once per call.
+// so nothing is copied). The opened structure is an immutable object held in a
+// Mutex; open() / close() replace it. Readers take it once per call.
 
 import Foundation
 import GenmaiBase
@@ -98,28 +97,19 @@ public final class LoudsTrie: Sendable {
     }
   }
 
-  /// The structure of the first open(): set once, then read without a lock (an atomic load). Tries are opened
-  /// once and then read a lot (dictionary lookups), so the common path must not take a lock per node.
-  private let firstOpened = AtomicLazyReference<Structure>()
-  /// Set when the trie is closed or opened again; from then on `current` is read under `replacement`.
-  private let isReplaced = Atomic<Bool>(false)
-  private let replacement = Mutex(Structure.empty)
+  /// The opened structure, replaced by open() / close(). A Mutex rather than an atomic reference:
+  /// `AtomicLazyReference` is not specialized across modules and its loads cost a runtime metadata lookup each
+  /// (2.7x slower reverse lookups); an uncontended lock is a few nanoseconds.
+  private let structure = Mutex(Structure.empty)
 
   /// The current structure (taken once per operation).
   @usableFromInline
   var current: Structure {
-    if !isReplaced.load(ordering: .acquiring), let structure = firstOpened.load() {
-      return structure
-    }
-    return isReplaced.load(ordering: .acquiring) ? replacement.withLock { $0 } : Structure.empty
+    structure.withLock { $0 }
   }
 
-  private func replaceStructure(_ structure: Structure) {
-    if !isReplaced.load(ordering: .acquiring), firstOpened.storeIfNil(structure) === structure {
-      return
-    }
-    replacement.withLock { $0 = structure }
-    isReplaced.store(true, ordering: .releasing)
+  private func replaceStructure(_ newStructure: Structure) {
+    structure.withLock { $0 = newStructure }
   }
 
   public init() {}
