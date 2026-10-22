@@ -21,6 +21,29 @@ extension Span where Element == UInt8 {
     return T(truncatingIfNeeded: value)
   }
 
+  // Non-generic overloads for the common widths: they are what the hot loops (LOUDS rank / select, CityHash,
+  // the connection matrix) call, and they stay fast in unoptimized (debug) builds, where generic code is not
+  // specialized.
+
+  /// The little-endian `UInt16` at byte `offset`.
+  @inlinable
+  public func loadLittleEndian(_ type: UInt16.Type, at offset: Int) -> UInt16 {
+    UInt16(self[offset]) | UInt16(self[offset + 1]) << 8
+  }
+
+  /// The little-endian `UInt32` at byte `offset`.
+  @inlinable
+  public func loadLittleEndian(_ type: UInt32.Type, at offset: Int) -> UInt32 {
+    UInt32(self[offset]) | UInt32(self[offset + 1]) << 8 | UInt32(self[offset + 2]) << 16
+      | UInt32(self[offset + 3]) << 24
+  }
+
+  /// The little-endian `UInt64` at byte `offset`.
+  @inlinable
+  public func loadLittleEndian(_ type: UInt64.Type, at offset: Int) -> UInt64 {
+    UInt64(loadLittleEndian(UInt32.self, at: offset)) | UInt64(loadLittleEndian(UInt32.self, at: offset + 4)) << 32
+  }
+
   /// The little-endian `Float` at byte `offset`.
   @inlinable
   public func loadFloat(at offset: Int) -> Float {

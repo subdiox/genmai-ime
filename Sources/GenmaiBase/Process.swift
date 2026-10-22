@@ -42,20 +42,26 @@ public enum GenmaiProcess {
       return MacProcess.openApplication(path)
     }
 
-    // Spawn new process (posix_spawn in the C++ code; Foundation.Process spawns
-    // with posix_spawn too, with argv[0] = path and the current environment).
-    let process = Foundation.Process()
-    process.executableURL = URL(filePath: path)
-    process.arguments = argTmp
-    do {
-      try process.run()
-    } catch {
-      GenmaiLog.error("posix_spawn failed: \(error)")
-      pid = 0
-      return false
+    // Spawn new process.
+    // NOTE:
+    // posix_spawn returns 0 even if kGenmaiServer doesn't exist, because
+    // the return value of posix_spawn is basically determined
+    // by the return value of fork().
+    // Not Foundation.Process: it reaps the child itself, but callers wait for
+    // the returned pid (WaitProcess). posix_spawn takes C strings, so argv is
+    // built with strdup / free here (the only unsafe code in this file).
+    var tmpPid: pid_t = 0
+    var cArgs: [UnsafeMutablePointer<CChar>?] = ([path] + argTmp).map { strdup($0) }
+    cArgs.append(nil)
+    defer {
+      for p in cArgs { free(p) }
     }
-    pid = Int(process.processIdentifier)
-    return true
+    let result = posix_spawn(&tmpPid, path, nil, nil, cArgs, environ)
+    if result != 0 {
+      GenmaiLog.error("posix_spawn failed: \(String(cString: strerror(result)))")
+    }
+    pid = Int(tmpPid)
+    return result == 0
   }
 
   @discardableResult
