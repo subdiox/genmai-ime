@@ -279,10 +279,12 @@ struct AuthorizationPrivilegedCommandRunner: PrivilegedCommandRunner {
     }
     let execute = unsafeBitCast(symbol, to: ExecuteWithPrivileges.self)
     var pipe: UnsafeMutablePointer<FILE>?
-    let arguments = ["-c", Self.script(for: shellCommand)].map { strdup($0) }
+    let words: [String] = ["-c", Self.script(for: shellCommand)]
+    let arguments: [UnsafeMutablePointer<CChar>?] = words.map { strdup($0) }
     defer { arguments.forEach { free($0) } }
-    let result = (arguments + [nil]).withUnsafeBufferPointer { argv in
-      execute(authorization, "/bin/sh", [], argv.baseAddress!, &pipe)
+    let argv: [UnsafeMutablePointer<CChar>?] = arguments + [nil]
+    let result = argv.withUnsafeBufferPointer { buffer in
+      execute(authorization, "/bin/sh", [], buffer.baseAddress!, &pipe)
     }
     if Self.kAuthorizationErrors.contains(result) {
       return .authorizationFailed
