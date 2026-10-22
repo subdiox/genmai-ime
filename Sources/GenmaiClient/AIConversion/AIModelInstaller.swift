@@ -11,6 +11,7 @@
 // `astype(bfloat16)`).
 
 import Foundation
+import GenmaiBase
 
 /// The weights of a release: Conv1D weights (out, in), no lm_head, no `transformer.` prefix.
 public enum AIModelVariant: String, Codable, CaseIterable, Sendable {
@@ -120,7 +121,8 @@ public struct GenmaiModelRelease: Equatable, Sendable {
   public var variants: [AIModelVariant] { AIModelVariant.allCases.filter { files(for: $0) != nil } }
 
   public func url(of file: File) -> URL {
-    URL(string: "https://huggingface.co/\(info.repository)/resolve/\(info.revision)/\(file.name)")!
+    URL(validLiteral: "https://huggingface.co").appending(
+      path: "\(info.repository)/resolve/\(info.revision)/\(file.name)")
   }
 
   // MARK: - Hugging Face API
@@ -155,7 +157,7 @@ public struct GenmaiModelRelease: Equatable, Sendable {
   }
 
   static func apiURL(_ repository: String, _ path: String) -> URL {
-    URL(string: "https://huggingface.co/api/models/\(repository)/\(path)")!
+    URL(validLiteral: "https://huggingface.co/api/models").appending(path: "\(repository)/\(path)")
   }
 
   private static func fetch(_ url: URL, name: String, session: URLSession) async throws -> Data {
@@ -289,10 +291,8 @@ public enum AIModelInstaller {
         try? fm.removeItem(at: local)
         let base = done
         try await FileDownload.download(
-          release.url(of: file), to: local, failure: { AIModelInstallError.download(file.name, status: $0) }
-        ) { received in
-          progress(.downloading(received: base + received, total: total))
-        }
+          release.url(of: file), to: local, failure: { AIModelInstallError.download(file.name, status: $0) },
+          progress: { received in progress(.downloading(received: base + received, total: total)) })
       }
       done += file.size
       progress(.downloading(received: done, total: total))
@@ -414,7 +414,7 @@ public enum GenmaiSafetensors {
     guard let lengthData = try handle.read(upToCount: 8), lengthData.count == 8 else {
       throw AIModelInstallError.badModel("file too short")
     }
-    let length = lengthData.withUnsafeBytes { Int($0.loadUnaligned(as: UInt64.self).littleEndian) }
+    let length = Int(lengthData.span.loadLittleEndian(UInt64.self, at: 0))
     guard length < 1 << 24, let headerData = try handle.read(upToCount: length), headerData.count == length,
       let header = try JSONSerialization.jsonObject(with: headerData) as? [String: Any]
     else {
@@ -429,7 +429,7 @@ public enum GenmaiSafetensors {
   public static func prepare(source: URL, destination: URL) throws {
     let data = try Data(contentsOf: source, options: .alwaysMapped)
     guard data.count >= 8 else { throw AIModelInstallError.badModel("file too short") }
-    let headerLength = data.withUnsafeBytes { Int($0.loadUnaligned(as: UInt64.self).littleEndian) }
+    let headerLength = Int(data.span.loadLittleEndian(UInt64.self, at: 0))
     guard 8 + headerLength <= data.count,
       let header = try JSONSerialization.jsonObject(with: data[8..<(8 + headerLength)]) as? [String: Any]
     else {
@@ -483,34 +483,31 @@ public enum GenmaiSafetensors {
     FileManager.default.createFile(atPath: destination.path, contents: nil)
     let out = try FileHandle(forWritingTo: destination)
     defer { try? out.close() }
-    var length = UInt64(headerData.count).littleEndian
-    try out.write(contentsOf: Data(bytes: &length, count: 8))
+    var length = Data()
+    length.appendLittleEndian(UInt64(headerData.count))
+    try out.write(contentsOf: length)
     try out.write(contentsOf: headerData)
-    try data.withUnsafeBytes { (raw: UnsafeRawBufferPointer) in
-      for t in tensors {
-        let input = UnsafeRawBufferPointer(rebasing: raw[t.begin..<t.end])
-        var bf16 = [UInt16](repeating: 0, count: t.count)
-        let rows = t.transpose ? t.shape[1] : 1  // the source's row count ("in")
-        let columns = t.transpose ? t.shape[0] : t.count
-        bf16.withUnsafeMutableBufferPointer { dst in
-          for i in 0..<t.count {
-            let value: UInt16
-            switch t.dtype {
-            case "F32":
-              value = bfloat16(input.loadUnaligned(fromByteOffset: i * 4, as: UInt32.self).littleEndian)
-            case "F16":
-              let half = Float16(bitPattern: input.loadUnaligned(fromByteOffset: i * 2, as: UInt16.self).littleEndian)
-              value = bfloat16(Float(half).bitPattern)
-            default:
-              value = input.loadUnaligned(fromByteOffset: i * 2, as: UInt16.self).littleEndian
-            }
-            // source (r, c) of (rows, columns) → destination (c, r)
-            let j = t.transpose ? (i % columns) * rows + i / columns : i
-            dst[j] = value.littleEndian
-          }
+    let input = data.span
+    for t in tensors {
+      var bf16 = [UInt8](repeating: 0, count: t.count * 2)
+      let rows = t.transpose ? t.shape[1] : 1  // the source's row count ("in")
+      let columns = t.transpose ? t.shape[0] : t.count
+      for i in 0..<t.count {
+        let value: UInt16
+        switch t.dtype {
+        case "F32":
+          value = bfloat16(input.loadLittleEndian(UInt32.self, at: t.begin + i * 4))
+        case "F16":
+          let half = Float16(bitPattern: input.loadLittleEndian(UInt16.self, at: t.begin + i * 2))
+          value = bfloat16(Float(half).bitPattern)
+        default:
+          value = input.loadLittleEndian(UInt16.self, at: t.begin + i * 2)
         }
-        try bf16.withUnsafeBytes { try out.write(contentsOf: Data($0)) }
+        // source (r, c) of (rows, columns) → destination (c, r)
+        let j = t.transpose ? (i % columns) * rows + i / columns : i
+        bf16.storeLittleEndian(value, at: j * 2)
       }
+      try out.write(contentsOf: Data(bf16))
     }
   }
 

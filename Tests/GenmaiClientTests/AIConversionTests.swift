@@ -534,13 +534,12 @@ func conversionRequest() -> ConversionRequest {
     for (name, shape, values) in tensors {
       header[name] = ["dtype": "F32", "shape": shape, "data_offsets": [body.count, body.count + values.count * 4]]
       for v in values {
-        var bits = v.bitPattern.littleEndian
-        body.append(Data(bytes: &bits, count: 4))
+        body.appendLittleEndian(v.bitPattern)
       }
     }
     let json = try JSONSerialization.data(withJSONObject: header)
-    var length = UInt64(json.count).littleEndian
-    var data = Data(bytes: &length, count: 8)
+    var data = Data()
+    data.appendLittleEndian(UInt64(json.count))
     data.append(json)
     data.append(body)
     try data.write(to: url)
@@ -548,8 +547,8 @@ func conversionRequest() -> ConversionRequest {
 
   static func read(_ url: URL) throws -> (header: [String: Any], body: Data) {
     let data = try Data(contentsOf: url)
-    let n = data.prefix(8).withUnsafeBytes { Int($0.loadUnaligned(as: UInt64.self).littleEndian) }
-    let header = try JSONSerialization.jsonObject(with: data[8..<(8 + n)]) as! [String: Any]
+    let n = Int(data.span.loadLittleEndian(UInt64.self, at: 0))
+    let header = try #require(try JSONSerialization.jsonObject(with: data[8..<(8 + n)]) as? [String: Any])
     return (header, Data(data[(8 + n)...]))
   }
 
@@ -581,14 +580,13 @@ func conversionRequest() -> ConversionRequest {
     #expect(try GenmaiSafetensors.format(of: dst) == GenmaiSafetensors.preparedFormat)
     #expect(try GenmaiSafetensors.format(of: src) == "pt")
     #expect(Set(header.keys) == ["__metadata__", "h.0.attn.c_attn.weight", "ln_f.bias"])
-    let w = header["h.0.attn.c_attn.weight"] as! [String: Any]
+    let w = try #require(header["h.0.attn.c_attn.weight"] as? [String: Any])
     #expect(w["dtype"] as? String == "BF16")
     #expect(w["shape"] as? [Int] == [3, 2])
     #expect(w["data_offsets"] as? [Int] == [0, 12])
-    let values = body.withUnsafeBytes { raw in
-      (0..<(body.count / 2)).map {
-        Float(bitPattern: UInt32(raw.loadUnaligned(fromByteOffset: $0 * 2, as: UInt16.self)) << 16)
-      }
+    let bytes = [UInt8](body)
+    let values = (0..<(bytes.count / 2)).map {
+      Float(bitPattern: UInt32(bytes.loadLittleEndian(UInt16.self, at: $0 * 2)) << 16)
     }
     // transposed: (out, in)
     #expect(values == [1, 4, 2, 5, 3, 6, 0.5, -1])

@@ -33,7 +33,7 @@ import Testing
     #expect(newest.pageURL == URL(string: "https://github.com/x/y/releases/10"))
     #expect(
       newest.package
-        == .init(name: "Genmai-0.10.0.pkg", url: URL(string: "https://x/10.pkg")!, size: 1234, sha256: "abcdef"))
+        == .init(name: "Genmai-0.10.0.pkg", url: URL(validLiteral: "https://x/10.pkg"), size: 1234, sha256: "abcdef"))
     #expect(releases[1].package.sha256 == nil)
     #expect(newest.isNewer(than: "0.9.9"))
     #expect(!newest.isNewer(than: "0.10.0"))
@@ -42,9 +42,9 @@ import Testing
 
   static func release(_ version: String) -> GenmaiAppRelease {
     GenmaiAppRelease(
-      version: version, tag: "v\(version)", pageURL: URL(string: "https://example.com")!, notes: "",
+      version: version, tag: "v\(version)", pageURL: URL(validLiteral: "https://example.com"), notes: "",
       package: .init(
-        name: "Genmai-\(version).pkg", url: URL(string: "https://example.com/p.pkg")!, size: 1, sha256: nil))
+        name: "Genmai-\(version).pkg", url: URL(validLiteral: "https://example.com/p.pkg"), size: 1, sha256: nil))
   }
 
   @Test func settings() throws {

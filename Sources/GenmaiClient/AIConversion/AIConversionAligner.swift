@@ -208,8 +208,10 @@ public enum AIConversionAligner {
     let r = Array(reading.unicodeScalars).map(readingKey)
     let n = segmentKeys.count
     var bounds = [0]
+    var bound = 0
     for key in segmentKeys {
-      bounds.append(bounds.last! + key.unicodeScalars.count)
+      bound += key.unicodeScalars.count
+      bounds.append(bound)
     }
     // Possible AI text positions at each Mozc boundary.
     var nodes: [[Int]] = (0...n).map { positions[bounds[$0]] }
