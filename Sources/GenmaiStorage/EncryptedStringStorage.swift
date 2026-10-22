@@ -4,6 +4,7 @@
 // becomes `load() -> [UInt8]?`. The file format is the same as C++:
 // [salt: 32 bytes][Encryptor::EncryptString(body)].
 
+import Foundation
 import GenmaiBase
 
 public protocol StringStorageInterface: AnyObject, Sendable {
@@ -11,12 +12,10 @@ public protocol StringStorageInterface: AnyObject, Sendable {
   func save(_ input: [UInt8]) -> Bool
 }
 
-/// `open` so that tests (and platforms without the encryptor) can override
-/// encrypt/decrypt, like the C++ virtual methods.
-open class EncryptedStringStorage: StringStorageInterface, @unchecked Sendable {
-  // @unchecked Sendable: the base class only holds an immutable filename;
-  // subclasses with mutable state are responsible for their own safety.
-
+/// A final class (the C++ virtual methods are only overridden by an
+/// Android-only test mock, which is not ported); other storages implement
+/// StringStorageInterface.
+public final class EncryptedStringStorage: StringStorageInterface, Sendable {
   // Salt size for encryption
   private static let kSaltSize = 32
 
@@ -29,36 +28,35 @@ open class EncryptedStringStorage: StringStorageInterface, @unchecked Sendable {
     self.filename = filename
   }
 
-  open func load() -> [UInt8]? {
+  public func load() -> [UInt8]? {
     var salt: [UInt8]
     var output: [UInt8]
 
     // Reads encrypted message and salt from local file
     do {
-      let mmap: Mmap
+      let buf: Data
       do {
-        mmap = try Mmap.map(filename, .readOnly)
+        buf = try Data(contentsOf: URL(filePath: filename), options: .alwaysMapped)
       } catch {
         GenmaiLog.error("cannot open user history file: \(error)")
         return nil
       }
 
-      if mmap.size < Self.kSaltSize {
+      if buf.count < Self.kSaltSize {
         GenmaiLog.error("file size is too small")
         return nil
       }
 
-      if mmap.size > Self.kMaxFileSize {
+      if buf.count > Self.kMaxFileSize {
         GenmaiLog.error("file size is too big.")
         return nil
       }
 
-      let buf = mmap.buffer
       // copy salt
-      salt = Array(buf[0..<Self.kSaltSize])
+      salt = Array(buf.prefix(Self.kSaltSize))
 
       // copy body
-      output = Array(buf[Self.kSaltSize...])
+      output = Array(buf.dropFirst(Self.kSaltSize))
     }
 
     if !decrypt(salt, &output) {
@@ -67,7 +65,7 @@ open class EncryptedStringStorage: StringStorageInterface, @unchecked Sendable {
     return output
   }
 
-  open func save(_ input: [UInt8]) -> Bool {
+  public func save(_ input: [UInt8]) -> Bool {
     // Generate salt.
     var random = Random()
     let salt = random.byteString(Self.kSaltSize)
@@ -107,7 +105,7 @@ open class EncryptedStringStorage: StringStorageInterface, @unchecked Sendable {
     save(Array(input.utf8))
   }
 
-  open func encrypt(_ salt: [UInt8], _ data: inout [UInt8]) -> Bool {
+  public func encrypt(_ salt: [UInt8], _ data: inout [UInt8]) -> Bool {
     guard let password = PasswordManager.getPassword() else {
       GenmaiLog.error("PasswordManager::GetPassword() failed")
       return false
@@ -132,7 +130,7 @@ open class EncryptedStringStorage: StringStorageInterface, @unchecked Sendable {
     return true
   }
 
-  open func decrypt(_ salt: [UInt8], _ data: inout [UInt8]) -> Bool {
+  public func decrypt(_ salt: [UInt8], _ data: inout [UInt8]) -> Bool {
     guard let password = PasswordManager.getPassword() else {
       GenmaiLog.error("PasswordManager::GetPassword() failed")
       return false

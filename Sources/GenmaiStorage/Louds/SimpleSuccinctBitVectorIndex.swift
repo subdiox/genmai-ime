@@ -2,15 +2,16 @@
 // (3.35.6354).
 //
 // The C++ lower-bound caches hold `const int*` pointers into `index_`; here
-// they hold offsets into `index`. The bit data is not owned (same as C++): the
-// caller must keep the memory alive while the index is used.
+// they hold offsets into `index`. The C++ class views caller-owned memory;
+// here the bits are an immutable `Data` (typically a slice of a memory-mapped
+// file, so nothing is copied), read through its `Span`.
+
+import Foundation
+import GenmaiBase
 
 /// This is simple(naive) implementation of succinct bit vector.
-public struct SimpleSuccinctBitVectorIndex: @unchecked Sendable {
-  // @unchecked Sendable: `data` points to immutable (typically memory-mapped)
-  // bytes owned by the caller; the index itself is never mutated after init().
-
-  private var data: UnsafeRawPointer?
+public struct SimpleSuccinctBitVectorIndex: Sendable {
+  private var data = Data()
   private var length = 0
   private let chunkSize: Int
   private var index: [Int] = []
@@ -31,15 +32,17 @@ public struct SimpleSuccinctBitVectorIndex: @unchecked Sendable {
     self.chunkSize = chunkSize
   }
 
-  /// Initializes the index. This type doesn't have the ownership of the
-  /// memory pointed by data, so it is caller's responsibility to manage its
-  /// life time. The 'data' needs to be aligned to 32-bits.
+  /// Initializes the index from the first `length` bytes of `data`. (The C++
+  /// version takes a pointer to memory it doesn't own; `Data` shares the
+  /// memory instead of copying it.) The length needs to be a multiple of 4.
   public mutating func initialize(
-    _ data: UnsafeRawPointer, _ length: Int, _ lb0CacheSize: Int = 0, _ lb1CacheSize: Int = 0
+    _ data: Data, _ length: Int, _ lb0CacheSize: Int = 0, _ lb1CacheSize: Int = 0
   ) {
+    let data = data.prefix(length)
+    precondition(data.count == length, "the bit vector image is shorter than \(length) bytes")
     self.data = data
     self.length = length
-    Self.initIndex(data, length, chunkSize, &index)
+    Self.initIndex(data.span, length, chunkSize, &index)
 
     // TODO(noriyukit): Currently, we simply use uniform increment width for
     // lower bound cache.  Nonuniform increment width may improve performance.
@@ -59,7 +62,7 @@ public struct SimpleSuccinctBitVectorIndex: @unchecked Sendable {
   /// Resets the internal state, especially releases the allocated memory
   /// for the index used internally.
   public mutating func reset() {
-    data = nil
+    data = Data()
     length = 0
     index.removeAll()
     lb0CacheIncrement = 1
@@ -73,7 +76,7 @@ public struct SimpleSuccinctBitVectorIndex: @unchecked Sendable {
   ///     76543210
   @inline(__always)
   public func get(_ index: Int) -> Int {
-    Int((data.unsafelyUnwrapped.load(fromByteOffset: index / 8, as: UInt8.self) >> (index % 8)) & 1)
+    Int((data.span[index / 8] >> (index % 8)) & 1)
   }
 
   /// Returns the number of 0-bit in [0, n) bits of data.
@@ -81,22 +84,20 @@ public struct SimpleSuccinctBitVectorIndex: @unchecked Sendable {
 
   /// Returns the number of 1-bit in [0, n) bits of data.
   public func rank1(_ n: Int) -> Int {
-    let data = data.unsafelyUnwrapped
+    let data = data.span
     // Look up pre-computed 1-bits for the preceding chunks.
     let numChunks = n / (chunkSize * 8)
     var result = index[numChunks]
 
     // Count 1-bits for remaining "words".
     result += Self.count1Bits(
-      data + numChunks * chunkSize, (n / 32) - numChunks * (chunkSize / 4))
+      data, numChunks * chunkSize, (n / 32) - numChunks * (chunkSize / 4))
 
     // Count 1-bits for remaining "bits".
     if n % 32 > 0 {
       let offset = 4 * (n / 32)
       let shift = UInt32(32 - n % 32)
-      result +=
-        (data.loadUnaligned(fromByteOffset: offset, as: UInt32.self) << shift)
-        .nonzeroBitCount
+      result += (data.loadLittleEndian(UInt32.self, at: offset) << shift).nonzeroBitCount
     }
 
     return result
@@ -107,7 +108,7 @@ public struct SimpleSuccinctBitVectorIndex: @unchecked Sendable {
   public func select0(_ n: Int) -> Int {
     assert(n > 0)
     var n = n
-    let data = data.unsafelyUnwrapped
+    let data = data.span
 
     // Narrow down the range of |index_| on which lower bound is performed.
     var lb0CacheIndex = n / lb0CacheIncrement
@@ -125,7 +126,7 @@ public struct SimpleSuccinctBitVectorIndex: @unchecked Sendable {
     // Linear search on remaining "words"
     var ptr = (chunkIndex * chunkSize) & ~3
     while true {
-      let bitCount = (~data.loadUnaligned(fromByteOffset: ptr, as: UInt32.self)).nonzeroBitCount
+      let bitCount = (~data.loadLittleEndian(UInt32.self, at: ptr)).nonzeroBitCount
       if bitCount >= n {
         break
       }
@@ -136,7 +137,7 @@ public struct SimpleSuccinctBitVectorIndex: @unchecked Sendable {
     // Select the n-th 0-bit in the word: clear the lowest (n - 1) 1-bits of
     // the inverted word, then the target position is the number of trailing
     // zeros.
-    var word = ~data.loadUnaligned(fromByteOffset: ptr, as: UInt32.self)
+    var word = ~data.loadLittleEndian(UInt32.self, at: ptr)
     while n > 1 {
       word &= word &- 1
       n -= 1
@@ -149,7 +150,7 @@ public struct SimpleSuccinctBitVectorIndex: @unchecked Sendable {
   public func select1(_ n: Int) -> Int {
     assert(n > 0)
     var n = n
-    let data = data.unsafelyUnwrapped
+    let data = data.span
 
     // Narrow down the range of |index_| on which lower bound is performed.
     var lb1CacheIndex = n / lb1CacheIncrement
@@ -167,7 +168,7 @@ public struct SimpleSuccinctBitVectorIndex: @unchecked Sendable {
     // Linear search on remaining "words"
     var ptr = (chunkIndex * chunkSize) & ~3
     while true {
-      let bitCount = data.loadUnaligned(fromByteOffset: ptr, as: UInt32.self).nonzeroBitCount
+      let bitCount = data.loadLittleEndian(UInt32.self, at: ptr).nonzeroBitCount
       if bitCount >= n {
         break
       }
@@ -177,7 +178,7 @@ public struct SimpleSuccinctBitVectorIndex: @unchecked Sendable {
 
     // Select the n-th 1-bit in the word: clear the lowest (n - 1) 1-bits, then
     // the target position is the number of trailing zeros.
-    var word = data.loadUnaligned(fromByteOffset: ptr, as: UInt32.self)
+    var word = data.loadLittleEndian(UInt32.self, at: ptr)
     while n > 1 {
       word &= word &- 1
       n -= 1
@@ -243,20 +244,20 @@ public struct SimpleSuccinctBitVectorIndex: @unchecked Sendable {
     return first
   }
 
-  /// Returns 1-bits in the data to length 32-bit words.
+  /// Returns 1-bits in `length` 32-bit words of the data from byte `start`.
   /// Processes in 64-bit words as much as possible for speed.
   @inline(__always)
-  private static func count1Bits(_ data: UnsafeRawPointer, _ length: Int) -> Int {
+  private static func count1Bits(_ data: Span<UInt8>, _ start: Int, _ length: Int) -> Int {
     var numBits = 0
-    var offset = 0
+    var offset = start
     var length = length
     while length >= 2 {
-      numBits += data.loadUnaligned(fromByteOffset: offset, as: UInt64.self).nonzeroBitCount
+      numBits += data.loadLittleEndian(UInt64.self, at: offset).nonzeroBitCount
       offset += 8
       length -= 2
     }
     if length == 1 {
-      numBits += data.loadUnaligned(fromByteOffset: offset, as: UInt32.self).nonzeroBitCount
+      numBits += data.loadLittleEndian(UInt32.self, at: offset).nonzeroBitCount
     }
     return numBits
   }
@@ -264,7 +265,7 @@ public struct SimpleSuccinctBitVectorIndex: @unchecked Sendable {
   /// Stores index (the cumulative number of the 1-bits from begin of each
   /// chunk).
   private static func initIndex(
-    _ data: UnsafeRawPointer, _ length: Int, _ chunkSize: Int, _ index: inout [Int]
+    _ data: Span<UInt8>, _ length: Int, _ chunkSize: Int, _ index: inout [Int]
   ) {
     assert(chunkSize >= 4)
     assert(chunkSize.nonzeroBitCount == 1, "\(chunkSize)")
@@ -283,7 +284,7 @@ public struct SimpleSuccinctBitVectorIndex: @unchecked Sendable {
     var remainingNumWords = length / 4
     while remainingNumWords > 0 {
       index.append(numBits)
-      numBits += count1Bits(data + offset, min(chunkSize / 4, remainingNumWords))
+      numBits += count1Bits(data, offset, min(chunkSize / 4, remainingNumWords))
       offset += chunkSize
       remainingNumWords -= chunkSize / 4
     }

@@ -1,5 +1,6 @@
 // Port of mozc/src/storage/louds/louds_trie_test.cc (3.35.6354).
 
+import Foundation
 import Testing
 
 @testable import GenmaiStorage
@@ -57,15 +58,12 @@ private let kParams: [LoudsTrieCacheSizeParam] = {
   return params
 }()
 
-private func openTrie(_ builder: LoudsTrieBuilder, _ param: LoudsTrieCacheSizeParam) -> (
-  LoudsTrie, ImageBuffer
-) {
-  let image = ImageBuffer(builder.image)
+private func openTrie(_ builder: LoudsTrieBuilder, _ param: LoudsTrieCacheSizeParam) -> LoudsTrie {
   let trie = LoudsTrie()
   trie.open(
-    image.pointer, param.loudsLb0CacheSize, param.loudsLb1CacheSize,
+    Data(builder.image), param.loudsLb0CacheSize, param.loudsLb1CacheSize,
     param.loudsSelect0CacheSize, param.loudsSelect1CacheSize, param.termvecLb1CacheSize)
-  return (trie, image)
+  return trie
 }
 
 @Suite struct LoudsTrieTest {
@@ -91,8 +89,7 @@ private func openTrie(_ builder: LoudsTrieBuilder, _ param: LoudsTrieCacheSizePa
     builder.add("bd")
     builder.build()
 
-    let (trie, image) = openTrie(builder, param)
-    defer { withExtendedLifetime(image) {} }
+    let trie = openTrie(builder, param)
 
     // Walk the trie in BFS order and check properties at each node.
 
@@ -303,8 +300,7 @@ private func openTrie(_ builder: LoudsTrieBuilder, _ param: LoudsTrieCacheSizePa
     builder.add("bcx")
     builder.build()
 
-    let (trie, image) = openTrie(builder, param)
-    defer { withExtendedLifetime(image) {} }
+    let trie = openTrie(builder, param)
 
     #expect(trie.hasKey("a".utf8))
     #expect(trie.hasKey("abc".utf8))
@@ -337,9 +333,9 @@ private func openTrie(_ builder: LoudsTrieBuilder, _ param: LoudsTrieCacheSizePa
     builder.add("bcx")
 
     builder.build()
-    let image = ImageBuffer(builder.image)
+    let image = Data(builder.image)
     let trie = LoudsTrie()
-    trie.open(image.pointer)
+    trie.open(image)
 
     #expect(trie.exactSearch("a".utf8) == builder.getId("a"))
     #expect(trie.exactSearch("abc".utf8) == builder.getId("abc"))
@@ -359,7 +355,6 @@ private func openTrie(_ builder: LoudsTrieBuilder, _ param: LoudsTrieCacheSizePa
     #expect(trie.exactSearch("bca".utf8) == -1)
     #expect(trie.exactSearch("bcxyz".utf8) == -1)
     trie.close()
-    withExtendedLifetime(image) {}
   }
 
   @Test(arguments: kParams)
@@ -375,8 +370,7 @@ private func openTrie(_ builder: LoudsTrieBuilder, _ param: LoudsTrieCacheSizePa
     builder.add([0x01, 0xFF, 0xFF])
     builder.build()
 
-    let (trie, image) = openTrie(builder, param)
-    defer { withExtendedLifetime(image) {} }
+    let trie = openTrie(builder, param)
 
     func run(_ key: [UInt8]) -> [CallbackArgs] {
       var actual: [CallbackArgs] = []
@@ -456,12 +450,9 @@ private func openTrie(_ builder: LoudsTrieBuilder, _ param: LoudsTrieCacheSizePa
     builder.add("ebd")
     builder.build()
 
-    let (trie, image) = openTrie(builder, param)
-    defer { withExtendedLifetime(image) {} }
+    let trie = openTrie(builder, param)
 
-    let buffer = UnsafeMutablePointer<UInt8>.allocate(capacity: LoudsTrie.kMaxDepth + 1)
-    defer { buffer.deallocate() }
-    func restore(_ id: Int) -> [UInt8] { Array(trie.restoreKeyString(id, buffer)) }
+    func restore(_ id: Int) -> [UInt8] { trie.restoreKeyString(keyId: id) }
     for word in ["aa", "ab", "abc", "abcd", "abcde", "abcdef", "abcea", "abcef", "abd", "ebd"] {
       #expect(restore(builder.getId(word)) == bytes(word))
     }

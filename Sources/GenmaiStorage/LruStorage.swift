@@ -5,20 +5,21 @@
 //   size * ([fingerprint: u64][last access time: u32][value: value_size bytes])
 //
 // Deviations:
-// - C++ `char*` item pointers become byte offsets into the mapped region, and
+// - The C++ code memory-maps the file read-write and modifies the mapping.
+//   Here the file image is a `[UInt8]` read when the storage is opened, and
+//   every modified byte range is written back to the file at once (the same
+//   bytes at the same offsets), so the file is updated like the mapping.
+// - C++ `char*` item pointers become byte offsets into the image, and
 //   std::list<char*> becomes an index-based doubly linked list (`ItemList`)
 //   whose node handles are stable like std::list iterators.
-// - Lookup returns an UnsafeRawBufferPointer of value_size bytes into the
-//   mapped file (valid until the storage is modified or closed), or nil.
-// - Values passed to insert/tryInsert/write are byte buffers; insert copies
+// - lookupBytes returns a copy of the value_size bytes (C++ returns a pointer
+//   into the mapping), or nil.
+// - Values passed to insert/tryInsert/write are byte arrays; insert copies
 //   value_size bytes (shorter inputs are zero padded instead of reading past
 //   the end as the C++ code would).
 
+import Foundation
 import GenmaiBase
-
-#if canImport(Darwin)
-  import Darwin
-#endif
 
 public final class LruStorage {
   /// The byte length used to store fingerprint and timestamp for each item.
@@ -38,14 +39,17 @@ public final class LruStorage {
   private var valueSizeStorage = 0
   private var sizeStorage = 0
   private var seedStorage: UInt32 = 0
-  // Offsets into `mmap`.
+  // Offsets into `image`.
   private var nextItem = 0
   private var begin = 0
   private var end = 0
   private var filenameStorage = ""
   private var lruList = ItemList()  // Front is the most recently used data.
   private var lruMap: [UInt64: Int] = [:]  // fp -> lruList node handle
-  private var mmap: Mmap?
+  /// The file contents (C++: the read-write mapping of the file).
+  private var image: [UInt8] = []
+  /// The open file, to which modified ranges of `image` are written.
+  private var file: FileHandle?
 
   public init() {}
 
@@ -105,9 +109,9 @@ public final class LruStorage {
 
     var image: [UInt8] = []
     image.reserveCapacity(kFileHeaderSize + (kItemHeaderSize + valueSize) * size)
-    withUnsafeBytes(of: UInt32(valueSize).littleEndian) { image.append(contentsOf: $0) }
-    withUnsafeBytes(of: UInt32(size).littleEndian) { image.append(contentsOf: $0) }
-    withUnsafeBytes(of: seed.littleEndian) { image.append(contentsOf: $0) }
+    image.appendLittleEndian(UInt32(valueSize))
+    image.appendLittleEndian(UInt32(size))
+    image.appendLittleEndian(seed)
     // Each item: fp = 0, last_access_time = 0, value = '\0' * value_size.
     image.append(contentsOf: repeatElement(0, count: (kItemHeaderSize + valueSize) * size))
     ofs.write(image)
@@ -120,16 +124,26 @@ public final class LruStorage {
 
   @discardableResult
   public func open(_ filename: String) -> Bool {
-    let mapped: Mmap
+    close()
+    let opened: FileHandle
+    let contents: Data
     do {
-      mapped = try Mmap.map(filename, .readWrite)
+      opened = try FileHandle(forUpdating: URL(filePath: filename))
+      contents = try opened.readToEnd() ?? Data()
     } catch {
       GenmaiLog.error("Cannot open \(filename) with read+write mode: \(error)")
       return false
     }
-    mmap = mapped
+    if contents.isEmpty {
+      // Mapping of zero byte is invalid.
+      try? opened.close()
+      GenmaiLog.error("Cannot open \(filename) with read+write mode: the file is empty")
+      return false
+    }
+    file = opened
+    image = Array(contents)
 
-    if mapped.size < 8 {
+    if image.count < 8 {
       GenmaiLog.error("file size is too small")
       return false
     }
@@ -140,7 +154,15 @@ public final class LruStorage {
 
   public func close() {
     filenameStorage = ""
-    mmap = nil
+    if let file {
+      do {
+        try file.close()
+      } catch {
+        GenmaiLog.error("Cannot close the LRU file: \(error)")
+      }
+    }
+    file = nil
+    image = []
     lruList.clear()
     lruMap.removeAll()
   }
@@ -229,29 +251,23 @@ public final class LruStorage {
 
   // MARK: - Lookup
 
-  /// Looks up elements by key. Returns value_size bytes in the mapped region.
-  public func lookup(_ key: some StringProtocol, lastAccessTime: inout UInt32)
-    -> UnsafeRawBufferPointer?
-  {
-    let fp = legacyFingerprintWithSeed(key, seedStorage)
-    guard let node = lruMap[fp] else {
+  /// Looks up elements by key. Returns the value_size bytes of the value.
+  public func lookupBytes(_ key: some StringProtocol, lastAccessTime: inout UInt32) -> [UInt8]? {
+    guard let ptr = find(key) else {
       return nil
     }
-    let ptr = lruList[node]
     lastAccessTime = getTimeStamp(ptr)
     return getValue(ptr)
   }
 
-  public func lookup(_ key: some StringProtocol) -> UnsafeRawBufferPointer? {
-    var lastAccessTime: UInt32 = 0
-    return lookup(key, lastAccessTime: &lastAccessTime)
+  public func lookupBytes(_ key: some StringProtocol) -> [UInt8]? {
+    find(key).map(getValue)
   }
 
   /// A safer lookup for string values (the buffers returned by above
   /// lookup()'s are not null terminated.) Returns empty if not found.
   public func lookupAsString(_ key: some StringProtocol) -> [UInt8] {
-    guard let ptr = lookup(key) else { return [] }
-    return Array(ptr)
+    lookupBytes(key) ?? []
   }
 
   /// Returns all the values.  The order is new to old (first is the most
@@ -261,26 +277,25 @@ public final class LruStorage {
     // Iterate data from the most recently used element to the least recently
     // used element.
     for ptr in lruList {
-      values.append(Array(getValue(ptr)))
+      values.append(getValue(ptr))
     }
     return values
   }
 
   // MARK: - Mutation
 
-  /// Clears all LRU cache.  The mapped file is also initialized
+  /// Clears all LRU cache.  The file is also initialized
   @discardableResult
   public func clear() -> Bool {
     // Don't need to clear the page if the lru list is empty
-    guard let mmap, !mmap.isEmpty, !lruList.isEmpty else {
+    guard file != nil, !image.isEmpty, !lruList.isEmpty else {
       return true
     }
     let offset = 4 + 4 + 4  // sizeof(value_size_) + sizeof(size_) + sizeof(seed_)
-    if offset >= mmap.size {  // should not happen
+    if offset >= image.count {  // should not happen
       return false
     }
-    let buf = mmap.mutableBuffer
-    memset(buf.baseAddress! + offset, 0, buf.count - offset)
+    fill(offset..<image.count)
     lruList.clear()
     lruMap.removeAll()
     openRegion()
@@ -307,19 +322,19 @@ public final class LruStorage {
       return false
     }
 
-    guard let mmap, let otherMmap = storage.mmap else {
+    guard file != nil, storage.file != nil else {
       return false
     }
-    let base = UnsafeRawPointer(mmap.mutableBuffer.baseAddress!)
-    let otherBase = otherMmap.buffer.baseAddress!
+    let otherImage = storage.image
 
-    var ary: [UnsafeRawPointer] = []
+    // (image, offset) of every item.
+    var ary: [(image: [UInt8], offset: Int)] = []
 
     // this file
     do {
       var p = begin
       while p < end {
-        ary.append(base + p)
+        ary.append((image, p))
         p += itemSize
       }
     }
@@ -328,21 +343,22 @@ public final class LruStorage {
     do {
       var p = storage.begin
       while p < storage.end {
-        ary.append(otherBase + p)
+        ary.append((otherImage, p))
         p += itemSize
       }
     }
 
-    Self.stableSortByTimeStamp(&ary)
+    ary = Self.stableSortByTimeStamp(ary) { $0.image.loadLittleEndian(UInt32.self, at: $0.offset + 8) }
 
     var buf: [UInt8] = []
     var seen = Set<UInt64>()  // remove duplicated entries.
     for item in ary {
-      if !seen.insert(item.loadUnaligned(as: UInt64.self)).inserted {
+      if !seen.insert(item.image.loadLittleEndian(UInt64.self, at: item.offset)).inserted {
         continue
       }
-      buf.append(contentsOf: UnsafeRawBufferPointer(start: item, count: itemSize))
+      buf.append(contentsOf: item.image[item.offset..<(item.offset + itemSize)])
     }
+    ary = []
 
     let oldSize = end - begin
     let newSize = min(buf.count, oldSize)
@@ -350,13 +366,11 @@ public final class LruStorage {
     // TODO(taku): this part is not atomic.
     // If the converter process is killed while memcpy or memset is running,
     // the storage data will be broken.
-    let dst = mmap.mutableBuffer.baseAddress! + begin
-    buf.withUnsafeBytes { src in
-      dst.copyMemory(from: src.baseAddress!, byteCount: newSize)
-    }
+    image.replaceSubrange(begin..<(begin + newSize), with: buf[0..<newSize])
     if newSize < oldSize {
-      memset(dst + newSize, 0, oldSize - newSize)
+      image.replaceSubrange((begin + newSize)..<(begin + oldSize), with: repeatElement(0, count: oldSize - newSize))
     }
+    persist(begin..<(begin + oldSize))
 
     return openRegion()
   }
@@ -376,8 +390,8 @@ public final class LruStorage {
 
   /// Inserts a key value pair.
   @discardableResult
-  public func insert(_ key: some StringProtocol, _ value: UnsafeRawBufferPointer?) -> Bool {
-    guard let value, mmap != nil else {
+  public func insert(_ key: some StringProtocol, _ value: [UInt8]?) -> Bool {
+    guard let value, file != nil else {
       return false
     }
     let fp = legacyFingerprintWithSeed(key, seedStorage)
@@ -390,7 +404,7 @@ public final class LruStorage {
       return true
     }
 
-    // If the LRU is full or we run out of the mmap region, drop the least
+    // If the LRU is full or we run out of the region, drop the least
     // recently used element (actually, the least recently used element is
     // overwritten with new data).
     if lruMap.count >= sizeStorage || nextItem == end {
@@ -403,7 +417,7 @@ public final class LruStorage {
       return true
     }
 
-    // A new item can be assigned in the mmap region.
+    // A new item can be assigned in the region.
     if nextItem < end {
       update(nextItem, fp, value)
       let node = lruList.pushFront(nextItem)
@@ -419,11 +433,6 @@ public final class LruStorage {
   }
 
   @discardableResult
-  public func insert(_ key: some StringProtocol, _ value: [UInt8]) -> Bool {
-    value.withUnsafeBytes { insert(key, $0) }
-  }
-
-  @discardableResult
   public func insert(_ key: some StringProtocol, _ value: String) -> Bool {
     insert(key, Array(value.utf8))
   }
@@ -431,18 +440,13 @@ public final class LruStorage {
   /// Inserts a key value pair only if |key| already exists.
   /// CAUTION: despite the name, it does nothing if there's no value of |key|.
   @discardableResult
-  public func tryInsert(_ key: some StringProtocol, _ value: UnsafeRawBufferPointer) -> Bool {
+  public func tryInsert(_ key: some StringProtocol, _ value: [UInt8]) -> Bool {
     let fp = legacyFingerprintWithSeed(key, seedStorage)
     if let node = lruMap[fp] {
       update(lruList[node], fp, value)
       lruList.moveToFront(node)
     }
     return true
-  }
-
-  @discardableResult
-  public func tryInsert(_ key: some StringProtocol, _ value: [UInt8]) -> Bool {
-    value.withUnsafeBytes { tryInsert(key, $0) }
   }
 
   /// Deletes the element if exists.  Returns false on failure (it's not
@@ -458,7 +462,7 @@ public final class LruStorage {
   /// elements.
   @discardableResult
   public func deleteElementsBefore(_ timestamp: UInt32) -> Int {
-    guard let mmap, !mmap.isEmpty, begin < end else {
+    guard file != nil, !image.isEmpty, begin < end else {
       return 0
     }
     var numDeleted = 0
@@ -483,17 +487,15 @@ public final class LruStorage {
   /// This data will not update the index of the storage.
   public func write(_ i: Int, _ fp: UInt64, _ value: [UInt8], _ lastAccessTime: UInt32) {
     assert(i < sizeStorage)
-    let buf = mmap!.mutableBuffer
-    var ptr = begin + i * itemSize
-    buf.storeBytes(of: fp.littleEndian, toByteOffset: ptr, as: UInt64.self)
-    ptr += 8
-    buf.storeBytes(of: lastAccessTime.littleEndian, toByteOffset: ptr, as: UInt32.self)
-    ptr += 4
+    let ptr = begin + i * itemSize
+    image.storeLittleEndian(fp, at: ptr)
+    image.storeLittleEndian(lastAccessTime, at: ptr + 8)
     if value.count == valueSizeStorage {
-      value.withUnsafeBytes { src in
-        (buf.baseAddress! + ptr).copyMemory(from: src.baseAddress!, byteCount: src.count)
-      }
+      let start = ptr + Self.kItemHeaderSize
+      image.replaceSubrange(start..<(start + value.count), with: value)
+      persist(ptr..<(ptr + itemSize))
     } else {
+      persist(ptr..<(ptr + Self.kItemHeaderSize))
       GenmaiLog.error("value size is not \(valueSizeStorage) byte.")
     }
   }
@@ -507,68 +509,86 @@ public final class LruStorage {
   public func read(_ i: Int) -> (fp: UInt64, value: [UInt8], lastAccessTime: UInt32) {
     assert(i < sizeStorage)
     let ptr = begin + i * itemSize
-    return (getFP(ptr), Array(getValue(ptr)), getTimeStamp(ptr))
+    return (getFP(ptr), getValue(ptr), getTimeStamp(ptr))
   }
 
   // MARK: - Private
 
-  private var base: UnsafeMutableRawPointer { mmap.unsafelyUnwrapped.mutableBuffer.baseAddress! }
+  /// The offset of the item for `key`, if any.
+  private func find(_ key: some StringProtocol) -> Int? {
+    let fp = legacyFingerprintWithSeed(key, seedStorage)
+    return lruMap[fp].map { lruList[$0] }
+  }
 
   private func getFP(_ ptr: Int) -> UInt64 {
-    UInt64(littleEndian: base.loadUnaligned(fromByteOffset: ptr, as: UInt64.self))
+    image.loadLittleEndian(UInt64.self, at: ptr)
   }
 
   private func getTimeStamp(_ ptr: Int) -> UInt32 {
-    UInt32(littleEndian: base.loadUnaligned(fromByteOffset: ptr + 8, as: UInt32.self))
+    image.loadLittleEndian(UInt32.self, at: ptr + 8)
   }
 
-  private func getValue(_ ptr: Int) -> UnsafeRawBufferPointer {
-    UnsafeRawBufferPointer(start: base + ptr + Self.kItemHeaderSize, count: valueSizeStorage)
+  private func getValue(_ ptr: Int) -> [UInt8] {
+    let start = ptr + Self.kItemHeaderSize
+    return Array(image[start..<(start + valueSizeStorage)])
   }
 
   private static func currentTimeStamp() -> UInt32 {
     UInt32(truncatingIfNeeded: Clock.getUnixSeconds())
   }
 
-  private func update(_ ptr: Int) {
-    base.storeBytes(of: Self.currentTimeStamp().littleEndian, toByteOffset: ptr + 8, as: UInt32.self)
+  /// Writes `image[range]` to the file (C++: the mapping is modified).
+  private func persist(_ range: Range<Int>) {
+    guard let file, !range.isEmpty else { return }
+    do {
+      try file.seek(toOffset: UInt64(range.lowerBound))
+      try file.write(contentsOf: image[range])
+    } catch {
+      GenmaiLog.error("Cannot write the LRU file \(filenameStorage): \(error)")
+    }
   }
 
-  private func update(_ ptr: Int, _ fp: UInt64, _ value: UnsafeRawBufferPointer) {
-    base.storeBytes(of: fp.littleEndian, toByteOffset: ptr, as: UInt64.self)
-    base.storeBytes(of: Self.currentTimeStamp().littleEndian, toByteOffset: ptr + 8, as: UInt32.self)
-    let dst = base + ptr + Self.kItemHeaderSize
+  /// Zero-fills `image[range]` and the file.
+  private func fill(_ range: Range<Int>) {
+    image.replaceSubrange(range, with: repeatElement(0, count: range.count))
+    persist(range)
+  }
+
+  private func update(_ ptr: Int) {
+    image.storeLittleEndian(Self.currentTimeStamp(), at: ptr + 8)
+    persist((ptr + 8)..<(ptr + 12))
+  }
+
+  private func update(_ ptr: Int, _ fp: UInt64, _ value: [UInt8]) {
+    image.storeLittleEndian(fp, at: ptr)
+    image.storeLittleEndian(Self.currentTimeStamp(), at: ptr + 8)
+    let dst = ptr + Self.kItemHeaderSize
     let n = min(value.count, valueSizeStorage)
-    if n > 0 {
-      dst.copyMemory(from: value.baseAddress!, byteCount: n)
-    }
+    image.replaceSubrange(dst..<(dst + n), with: value[0..<n])
     if n < valueSizeStorage {
-      memset(dst + n, 0, valueSizeStorage - n)
+      image.replaceSubrange((dst + n)..<(dst + valueSizeStorage), with: repeatElement(0, count: valueSizeStorage - n))
     }
+    persist(ptr..<(ptr + itemSize))
   }
 
   /// std::stable_sort with CompareByTimeStamp (newer first).
-  private static func stableSortByTimeStamp(_ ary: inout [UnsafeRawPointer]) {
-    func ts(_ p: UnsafeRawPointer) -> UInt32 {
-      UInt32(littleEndian: p.loadUnaligned(fromByteOffset: 8, as: UInt32.self))
-    }
-    let keyed = ary.enumerated().map { (offset: $0.offset, ts: ts($0.element), ptr: $0.element) }
-    ary = keyed.sorted { a, b in
+  private static func stableSortByTimeStamp<T>(_ ary: [T], _ timeStamp: (T) -> UInt32) -> [T] {
+    let keyed = ary.enumerated().map { (offset: $0.offset, ts: timeStamp($0.element), item: $0.element) }
+    return keyed.sorted { a, b in
       a.ts != b.ts ? a.ts > b.ts : a.offset < b.offset
-    }.map(\.ptr)
+    }.map(\.item)
   }
 
-  /// Initializes this LRU from the mapped region (C++ Open(char*, size_t)).
+  /// Initializes this LRU from the file image (C++ Open(char*, size_t)).
   @discardableResult
   private func openRegion() -> Bool {
-    guard let mmap else { return false }
-    let buf = mmap.buffer
+    guard file != nil else { return false }
     begin = 0
-    end = buf.count
+    end = image.count
 
-    valueSizeStorage = Int(UInt32(littleEndian: buf.loadUnaligned(fromByteOffset: 0, as: UInt32.self)))
-    sizeStorage = Int(UInt32(littleEndian: buf.loadUnaligned(fromByteOffset: 4, as: UInt32.self)))
-    seedStorage = UInt32(littleEndian: buf.loadUnaligned(fromByteOffset: 8, as: UInt32.self))
+    valueSizeStorage = Int(image.loadLittleEndian(UInt32.self, at: 0))
+    sizeStorage = Int(image.loadLittleEndian(UInt32.self, at: 4))
+    seedStorage = image.loadLittleEndian(UInt32.self, at: 8)
     begin = 12
 
     if valueSizeStorage % 4 != 0 {
@@ -586,25 +606,23 @@ public final class LruStorage {
       return false
     }
 
-    if mmap.size != Self.kFileHeaderSize + itemSize * sizeStorage {
+    if image.count != Self.kFileHeaderSize + itemSize * sizeStorage {
       GenmaiLog.error("LRU file is broken")
       return false
     }
 
-    let basePtr = buf.baseAddress!
-    var ary: [UnsafeRawPointer] = []
+    var ary: [Int] = []
     var p = begin
     while p < end {
-      ary.append(basePtr + p)
+      ary.append(p)
       p += itemSize
     }
-    Self.stableSortByTimeStamp(&ary)
+    ary = Self.stableSortByTimeStamp(ary, getTimeStamp)
 
     lruList.clear()
     lruMap.removeAll()
     var next: Int? = nil
-    for item in ary {
-      let offset = item - basePtr
+    for offset in ary {
       if getTimeStamp(offset) != 0 {
         let node = lruList.pushBack(offset)
         lruMap[getFP(offset)] = node
@@ -631,14 +649,14 @@ public final class LruStorage {
 
   /// Actual implementation of delete() methods.
   private func delete(_ fp: UInt64, _ node: Int) -> Bool {
-    // Determine the last element in the mmap region.
+    // Determine the last element in the region.
     if nextItem < begin + itemSize {
       GenmaiLog.error("next_item_ points to invalid location (broken?)")
       return false
     }
     nextItem -= itemSize
 
-    // Backup the location of mmap region to which another element will be
+    // Backup the location of the region to which another element will be
     // moved.
     let deletedItemPos = lruList[node]
 
@@ -646,12 +664,13 @@ public final class LruStorage {
     lruMap.removeValue(forKey: fp)
     lruList.erase(node)
 
-    let base = base
     if nextItem != deletedItemPos {
       // Move the region for the last element to the deleted location.  Then,
-      // update the LRU structure for the moved element (the pointer to mmap
-      // region in the list node is updated.)
-      (base + deletedItemPos).copyMemory(from: base + nextItem, byteCount: itemSize)
+      // update the LRU structure for the moved element (the offset in the
+      // list node is updated.)
+      let moved = Array(image[nextItem..<(nextItem + itemSize)])
+      image.replaceSubrange(deletedItemPos..<(deletedItemPos + itemSize), with: moved)
+      persist(deletedItemPos..<(deletedItemPos + itemSize))
       let movedFp = getFP(nextItem)
       if let movedNode = lruMap[movedFp] {
         lruList[movedNode] = deletedItemPos
@@ -659,9 +678,39 @@ public final class LruStorage {
     }
 
     // Clear the region for the next_item_.
-    memset(base + nextItem, 0, itemSize)
+    fill(nextItem..<(nextItem + itemSize))
 
     return true
+  }
+}
+
+// MARK: - Raw buffer interface (kept for callers that still use raw memory)
+
+extension LruStorage {
+  /// Looks up elements by key. Returns value_size bytes inside the storage's
+  /// image, valid until the storage is modified or closed (as the C++ pointer
+  /// into the mapping). Prefer `lookupBytes(_:lastAccessTime:)`.
+  public func lookup(_ key: some StringProtocol, lastAccessTime: inout UInt32)
+    -> UnsafeRawBufferPointer?
+  {
+    guard let ptr = find(key) else {
+      return nil
+    }
+    lastAccessTime = getTimeStamp(ptr)
+    return rawValue(ptr)
+  }
+
+  /// See `lookup(_:lastAccessTime:)`. Prefer `lookupBytes(_:)`.
+  public func lookup(_ key: some StringProtocol) -> UnsafeRawBufferPointer? {
+    find(key).map(rawValue)
+  }
+
+  /// Raw memory of the value at `ptr` inside `image`, whose storage stays at
+  /// the same address while it is only modified in place (the image is never
+  /// resized or copied while open).
+  private func rawValue(_ ptr: Int) -> UnsafeRawBufferPointer {
+    let start = ptr + Self.kItemHeaderSize
+    return image.withUnsafeBytes { UnsafeRawBufferPointer(rebasing: $0[start..<(start + valueSizeStorage)]) }
   }
 }
 

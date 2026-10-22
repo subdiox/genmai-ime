@@ -1,6 +1,7 @@
 // Port of mozc/src/storage/louds/simple_succinct_bit_vector_index_test.cc
 // (3.35.6354).
 
+import Foundation
 import Testing
 
 @testable import GenmaiStorage
@@ -22,10 +23,10 @@ private let kParams: [BitVectorCacheSizeParam] = [
 @Suite struct SimpleSuccinctBitVectorIndexTest {
   @Test(arguments: kParams)
   func rank(_ param: BitVectorCacheSizeParam) {
-    let kData = ImageBuffer([0x00, 0x00, 0xFF, 0xFF, 0x00, 0x00, 0xFF, 0xFF])
+    let kData = Data([0x00, 0x00, 0xFF, 0xFF, 0x00, 0x00, 0xFF, 0xFF])
     var bitVector = SimpleSuccinctBitVectorIndex()
 
-    bitVector.initialize(kData.pointer, 8, param.first, param.second)
+    bitVector.initialize(kData, 8, param.first, param.second)
     #expect(bitVector.num0Bits == 32)
     #expect(bitVector.num1Bits == 32)
     #expect(bitVector.rank0(0) == 0)
@@ -50,15 +51,14 @@ private let kParams: [BitVectorCacheSizeParam] = [
       #expect(bitVector.rank0(i) == 32, "\(i)")
       #expect(bitVector.rank1(i) == i - 32, "\(i)")
     }
-    withExtendedLifetime(kData) {}
   }
 
   @Test(arguments: kParams)
   func select(_ param: BitVectorCacheSizeParam) {
-    let kData = ImageBuffer([0x00, 0x00, 0xFF, 0xFF, 0x00, 0x00, 0xFF, 0xFF])
+    let kData = Data([0x00, 0x00, 0xFF, 0xFF, 0x00, 0x00, 0xFF, 0xFF])
     var bitVector = SimpleSuccinctBitVectorIndex()
 
-    bitVector.initialize(kData.pointer, 8, param.first, param.second)
+    bitVector.initialize(kData, 8, param.first, param.second)
     #expect(bitVector.num0Bits == 32)
     #expect(bitVector.num1Bits == 32)
 
@@ -74,16 +74,15 @@ private let kParams: [BitVectorCacheSizeParam] = [
     for i in 17...32 {
       #expect(bitVector.select1(i) == i + 31, "\(i)")
     }
-    withExtendedLifetime(kData) {}
   }
 
   @Test(arguments: kParams)
   func pattern1(_ param: BitVectorCacheSizeParam) {
     // Repeat the bit pattern '0b10101010'.
-    let data = ImageBuffer([UInt8](repeating: 0xAA, count: 1024))
+    let data = Data([UInt8](repeating: 0xAA, count: 1024))
 
     var bitVector = SimpleSuccinctBitVectorIndex()
-    bitVector.initialize(data.pointer, data.count, param.first, param.second)
+    bitVector.initialize(data, data.count, param.first, param.second)
     #expect(bitVector.num0Bits == 4 * 1024)
     #expect(bitVector.num1Bits == 4 * 1024)
 
@@ -117,16 +116,15 @@ private let kParams: [BitVectorCacheSizeParam] = [
       check(bitVector.select1(i + 1), i * 2 + 1, "select1 \(i)")
     }
     #expect(failures.isEmpty, "\(failures.prefix(10))")
-    withExtendedLifetime(data) {}
   }
 
   @Test(arguments: kParams)
   func pattern2(_ param: BitVectorCacheSizeParam) {
     // Repeat the bit pattern '0b11001100'.
-    let data = ImageBuffer([UInt8](repeating: 0xCC, count: 1024))
+    let data = Data([UInt8](repeating: 0xCC, count: 1024))
 
     var bitVector = SimpleSuccinctBitVectorIndex()
-    bitVector.initialize(data.pointer, data.count, param.first, param.second)
+    bitVector.initialize(data, data.count, param.first, param.second)
     #expect(bitVector.num0Bits == 4 * 1024)
     #expect(bitVector.num1Bits == 4 * 1024)
 
@@ -159,6 +157,5 @@ private let kParams: [BitVectorCacheSizeParam] = [
       check(bitVector.select1(i + 1), (i * 2 + 1) + ((i + 1) % 2), "select1 \(i)")
     }
     #expect(failures.isEmpty, "\(failures.prefix(10))")
-    withExtendedLifetime(data) {}
   }
 }

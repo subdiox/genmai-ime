@@ -2,7 +2,7 @@
 //
 // Elements are reference types (C++ `Element*`), allocated in blocks exactly
 // like the C++ code so that the free-list behavior is the same. The blocks own
-// the elements; the list links are unowned(unsafe) references.
+// the elements; the list links are unowned references.
 //
 // API mapping:
 // - Lookup / LookupWithoutInsert return a copy of the value (Value?).
@@ -18,18 +18,40 @@ public final class LruCache<Key: Hashable, Value>: Sequence {
   /// free list is singly-linked and only uses the next pointer, while
   /// the LRU list is doubly-linked and uses both next and prev.
   public final class Element {
-    public internal(set) unowned(unsafe) var next: Element?
-    public internal(set) unowned(unsafe) var prev: Element?
-    public internal(set) var key: Key!
+    public internal(set) unowned var next: Element?
+    public internal(set) unowned var prev: Element?
+    var storedKey: Key?
     var storedValue: Value?
 
     init() {}
 
+    /// The key. Set by `insert(key)`; the C++ code reads an unspecified key
+    /// of an element that was never inserted.
+    public var key: Key {
+      guard let storedKey else {
+        preconditionFailure("LruCache.Element.key read before insert(key)")
+      }
+      return storedKey
+    }
+
     /// The value. Must be set after `insert(key)` before it is read.
     public var value: Value {
-      get { storedValue! }
+      get {
+        guard let storedValue else {
+          preconditionFailure("LruCache.Element.value read before it was set")
+        }
+        return storedValue
+      }
       set { storedValue = newValue }
-      _modify { yield &storedValue! }
+      _modify {
+        guard var value = storedValue else {
+          preconditionFailure("LruCache.Element.value modified before it was set")
+        }
+        // Keep the value uniquely referenced while it is modified in place.
+        storedValue = nil
+        defer { storedValue = value }
+        yield &value
+      }
     }
   }
 
@@ -54,9 +76,9 @@ public final class LruCache<Key: Hashable, Value>: Sequence {
   private static var kMaxBlocks: Int { 10 }
 
   private var table: [Key: Element] = [:]
-  private unowned(unsafe) var freeList: Element? = nil  // singly linked list of Element
-  private unowned(unsafe) var lruHead: Element? = nil  // head of doubly linked list of Element
-  private unowned(unsafe) var lruTail: Element? = nil  // tail of doubly linked list of Element
+  private unowned var freeList: Element? = nil  // singly linked list of Element
+  private unowned var lruHead: Element? = nil  // head of doubly linked list of Element
+  private unowned var lruTail: Element? = nil  // tail of doubly linked list of Element
   // blocks of Element, with each block being twice as big as the previous
   // block.  This allows the cache to use a small amount of memory when it
   // contains few items, but still have low malloc overhead per insert.  The
@@ -101,22 +123,22 @@ public final class LruCache<Key: Hashable, Value>: Sequence {
   /// Caller needs to set the value
   @discardableResult
   public func insert(_ key: Key) -> Element {
-    var e = lookupInternal(key)
-    if let found = e {
+    if let found = lookupInternal(key) {
       let erased = evict(found)
       precondition(erased)
     }
 
-    e = nextFreeElement()
+    var e = nextFreeElement()
     if e == nil {
       // no free elements, I have to replace an existing element
       let erased = evict(lruTail)
       precondition(erased)
       e = nextFreeElement()
-      precondition(e != nil)
     }
-    let element = e!
-    element.key = key
+    guard let element = e else {
+      preconditionFailure("LruCache has no free element after eviction")
+    }
+    element.storedKey = key
     table[key] = element
     pushLRUHead(element)
 

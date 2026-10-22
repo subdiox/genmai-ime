@@ -16,13 +16,15 @@ private func makeTempFileOrDie() -> TempFile {
   }
 }
 
-private func loadUInt32(_ buf: UnsafeRawBufferPointer?) -> UInt32? {
+private func loadUInt32(_ buf: [UInt8]?) -> UInt32? {
   guard let buf else { return nil }
-  return buf.loadUnaligned(as: UInt32.self)
+  return buf.loadLittleEndian(UInt32.self, at: 0)
 }
 
 private func uint32Bytes(_ v: UInt32) -> [UInt8] {
-  withUnsafeBytes(of: v) { Array($0) }
+  var bytes: [UInt8] = []
+  bytes.appendLittleEndian(v)
+  return bytes
 }
 
 private func runTest(_ storage: LruStorage, _ size: Int) throws {
@@ -50,8 +52,8 @@ private func runTest(_ storage: LruStorage, _ size: Int) throws {
   var failures: [String] = []
   for i in 0..<size {
     let v1 = cache.lookup(values[i].0)
-    let v2 = loadUInt32(storage.lookup(values[i].0, lastAccessTime: &lastAccessTime))
-    let v3 = valueList[i].withUnsafeBytes { $0.loadUnaligned(as: UInt32.self) }
+    let v2 = loadUInt32(storage.lookupBytes(values[i].0, lastAccessTime: &lastAccessTime))
+    let v3 = valueList[i].loadLittleEndian(UInt32.self, at: 0)
     if v1 != values[i].1 || v2 != values[i].1 || v3 != values[i].1 {
       failures.append("\(i): \(String(describing: v1)) \(String(describing: v2)) \(v3) != \(values[i].1)")
     }
@@ -59,7 +61,7 @@ private func runTest(_ storage: LruStorage, _ size: Int) throws {
 
   for i in size..<values.count {
     let v1 = cache.lookup(values[i].0)
-    let v2 = storage.lookup(values[i].0, lastAccessTime: &lastAccessTime)
+    let v2 = storage.lookupBytes(values[i].0, lastAccessTime: &lastAccessTime)
     if v1 != nil || v2 != nil {
       failures.append("\(i) should be evicted")
     }
@@ -110,7 +112,7 @@ private func getValuesInStorageOrder(_ storage: LruStorage) -> [[UInt8]] {
       for j in 0..<size {
         let key = UInt64.random(in: .min ... .max, using: &gen)
         let n = Int32.random(in: 0..<Int32.max, using: &gen)
-        let value = withUnsafeBytes(of: n) { Array($0) }
+        let value = uint32Bytes(UInt32(bitPattern: n))
         let lastAccessTime = UInt32.random(in: 0..<100000, using: &gen)
         entries.append((key, lastAccessTime, value))
         storage.write(j, key, value, lastAccessTime)
@@ -245,13 +247,13 @@ private func getValuesInStorageOrder(_ storage: LruStorage) -> [[UInt8]] {
 
   @Test func invalidFileOpenTest() {
     let storage = LruStorage()
-    #expect(!storage.insert("test", nil as UnsafeRawBufferPointer?))
+    #expect(!storage.insert("test", nil as [UInt8]?))
 
     let file = makeTempFileOrDie()
 
     // cannot open
     #expect(!storage.open(file.path))
-    #expect(!storage.insert("test", nil as UnsafeRawBufferPointer?))
+    #expect(!storage.insert("test", nil as [UInt8]?))
   }
 
   @Test func openOrCreateTest() throws {
@@ -270,7 +272,7 @@ private func getValuesInStorageOrder(_ storage: LruStorage) -> [[UInt8]] {
         "Corrupted file should be replaced with new one.")
       let v: UInt32 = 823
       storage.insert("test", uint32Bytes(v))
-      let result = loadUInt32(storage.lookup("test"))
+      let result = loadUInt32(storage.lookupBytes("test"))
       #expect(result == v)
     }
   }
@@ -307,7 +309,7 @@ private func getValuesInStorageOrder(_ storage: LruStorage) -> [[UInt8]] {
       #expect(storage.lookupAsString("0000") == bytes("aaaa"))
       #expect(storage.lookupAsString("1111") == bytes("bbbb"))
       #expect(storage.lookupAsString("2222") == bytes("cccc"))
-      #expect(storage.lookup("3333") == nil)
+      #expect(storage.lookupBytes("3333") == nil)
 
       // Remove the element ("1111", "bbbb") in the middle.  The current
       // last element, ("2222", "cccc") should be moved to keep contiguity.
@@ -315,8 +317,8 @@ private func getValuesInStorageOrder(_ storage: LruStorage) -> [[UInt8]] {
       #expect(storage.usedSize == 2)
       #expect(storage.lookupAsString("0000") == bytes("aaaa"))
       #expect(storage.lookupAsString("2222") == bytes("cccc"))
-      #expect(storage.lookup("1111") == nil)
-      #expect(storage.lookup("3333") == nil)
+      #expect(storage.lookupBytes("1111") == nil)
+      #expect(storage.lookupBytes("3333") == nil)
       expected = ["aaaa", "cccc"].map(bytes)
       #expect(getValuesInStorageOrder(storage) == expected)
 
@@ -326,8 +328,8 @@ private func getValuesInStorageOrder(_ storage: LruStorage) -> [[UInt8]] {
       #expect(storage.lookupAsString("0000") == bytes("aaaa"))
       #expect(storage.lookupAsString("2222") == bytes("cccc"))
       #expect(storage.lookupAsString("4444") == bytes("eeee"))
-      #expect(storage.lookup("1111") == nil)
-      #expect(storage.lookup("3333") == nil)
+      #expect(storage.lookupBytes("1111") == nil)
+      #expect(storage.lookupBytes("3333") == nil)
       expected = ["aaaa", "cccc", "eeee"].map(bytes)
       #expect(getValuesInStorageOrder(storage) == expected)
 
@@ -336,29 +338,29 @@ private func getValuesInStorageOrder(_ storage: LruStorage) -> [[UInt8]] {
       #expect(storage.usedSize == 2)
       #expect(storage.lookupAsString("2222") == bytes("cccc"))
       #expect(storage.lookupAsString("4444") == bytes("eeee"))
-      #expect(storage.lookup("0000") == nil)
-      #expect(storage.lookup("1111") == nil)
-      #expect(storage.lookup("3333") == nil)
+      #expect(storage.lookupBytes("0000") == nil)
+      #expect(storage.lookupBytes("1111") == nil)
+      #expect(storage.lookupBytes("3333") == nil)
       expected = ["eeee", "cccc"].map(bytes)  // "eeee" was moved to the position of "aaaa".
       #expect(getValuesInStorageOrder(storage) == expected)
 
       // Remove ("4444", "eeee")
       #expect(storage.delete("4444"))
       #expect(storage.usedSize == 1)
-      #expect(storage.lookup("0000") == nil)
-      #expect(storage.lookup("1111") == nil)
-      #expect(storage.lookup("3333") == nil)
-      #expect(storage.lookup("4444") == nil)
+      #expect(storage.lookupBytes("0000") == nil)
+      #expect(storage.lookupBytes("1111") == nil)
+      #expect(storage.lookupBytes("3333") == nil)
+      #expect(storage.lookupBytes("4444") == nil)
       expected = ["cccc"].map(bytes)
       #expect(getValuesInStorageOrder(storage) == expected)
 
       #expect(storage.delete("2222"))
       #expect(storage.usedSize == 0)
-      #expect(storage.lookup("0000") == nil)
-      #expect(storage.lookup("1111") == nil)
-      #expect(storage.lookup("2222") == nil)
-      #expect(storage.lookup("3333") == nil)
-      #expect(storage.lookup("4444") == nil)
+      #expect(storage.lookupBytes("0000") == nil)
+      #expect(storage.lookupBytes("1111") == nil)
+      #expect(storage.lookupBytes("2222") == nil)
+      #expect(storage.lookupBytes("3333") == nil)
+      #expect(storage.lookupBytes("4444") == nil)
     }
   }
 
