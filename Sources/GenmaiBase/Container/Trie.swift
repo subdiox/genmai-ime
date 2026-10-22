@@ -20,13 +20,15 @@ public final class Trie<T> {
       self.data = data
       return
     }
-    var res = findSubTrie(key)
-    if res.trie == nil {
-      let t = Trie<T>()
-      res.trie = t
-      trie[res.firstChar] = t
+    let res = findSubTrie(key)
+    let subTrie: Trie<T>
+    if let t = res.trie {
+      subTrie = t
+    } else {
+      subTrie = Trie<T>()
+      trie[res.firstChar] = subTrie
     }
-    res.trie!.addEntry(res.rest, data)
+    subTrie.addEntry(res.rest, data)
   }
 
   /// Returns true if this node became empty (and may be removed).

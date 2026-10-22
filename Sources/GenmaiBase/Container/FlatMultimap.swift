@@ -3,9 +3,9 @@
 /// Read-only multimap that is backed by a sorted array.
 public struct FlatMultimap<K, V> {
   private let entries: [(K, V)]
-  private let cmpKey: (K, K) -> Bool
+  private let cmpKey: @Sendable (K, K) -> Bool
 
-  public init(_ entries: [(K, V)], by cmpKey: @escaping (K, K) -> Bool) {
+  public init(_ entries: [(K, V)], by cmpKey: @escaping @Sendable (K, K) -> Bool) {
     // The C++ uses std::sort, which is not stable. A stable sort is used here;
     // EqualSpan does not guarantee the order of entries anyway.
     var e = entries
@@ -25,13 +25,13 @@ public struct FlatMultimap<K, V> {
   }
 }
 
-extension FlatMultimap where K: Comparable {
+extension FlatMultimap where K: Comparable & SendableMetatype {
   public init(_ entries: [(K, V)]) {
     self.init(entries, by: { $0 < $1 })
   }
 }
 
-extension FlatMultimap where K: StringProtocol {
+extension FlatMultimap where K: StringProtocol & SendableMetatype {
   /// Creates a multimap ordered bytewise by the UTF-8 of the keys.
   public init(byteOrdered entries: [(K, V)]) {
     self.init(entries, by: { $0.bytesLess($1) })
@@ -40,4 +40,4 @@ extension FlatMultimap where K: StringProtocol {
 
 // The comparator is a pure function, so the container is immutable and safe to
 // share when the elements are Sendable.
-extension FlatMultimap: @unchecked Sendable where K: Sendable, V: Sendable {}
+extension FlatMultimap: Sendable where K: Sendable, V: Sendable {}

@@ -10,16 +10,16 @@ import Testing
   final class Tracker {
     var paths: [String] = []
 
-    func createFile(_ t: TempDirectory) -> TempFile {
-      let f = try! t.createTempFile()
+    func createFile(_ t: TempDirectory) throws -> TempFile {
+      let f = try t.createTempFile()
       #expect(f.path.hasPrefix(t.path))
       #expect(f.path != t.path)
       paths.append(f.path)
       return f
     }
 
-    func createDirectory(_ t: TempDirectory) -> TempDirectory {
-      let d = try! t.createTempDirectory()
+    func createDirectory(_ t: TempDirectory) throws -> TempDirectory {
+      let d = try t.createTempDirectory()
       #expect(d.path.hasPrefix(t.path))
       #expect(d.path != t.path)
       paths.append(d.path)
@@ -42,17 +42,17 @@ import Testing
 
       // Try to write something to a temporary file.
       let kTestContent = "testing temp dir"
-      let tempFile = tracker.createFile(tempDir)
+      let tempFile = try tracker.createFile(tempDir)
       try FileUtil.setContents(tempFile.path, kTestContent)
       #expect(try FileUtil.getContents(tempFile.path) == kTestContent)
 
       // Create some more directories and files.
-      let nestedDir = tracker.createDirectory(tempDir)
-      let nested1 = tracker.createFile(nestedDir)
-      let nested2 = tracker.createFile(nestedDir)
+      let nestedDir = try tracker.createDirectory(tempDir)
+      let nested1 = try tracker.createFile(nestedDir)
+      let nested2 = try tracker.createFile(nestedDir)
       do {
         // Test keep().
-        let dirToKeep = tracker.createDirectory(nestedDir)
+        let dirToKeep = try tracker.createDirectory(nestedDir)
         dirToKeepPath = dirToKeep.path
         #expect(!dirToKeep.keep)
         dirToKeep.keep = true
@@ -64,20 +64,20 @@ import Testing
       let of2 = OutputFileStream(FileUtil.joinPath(nestedDir.path, "test"))
       #expect(of2.good)
       of2.close()
-      let nestedNestedDir = tracker.createDirectory(nestedDir)
-      let nestedNested = tracker.createFile(nestedNestedDir)
+      let nestedNestedDir = try tracker.createDirectory(nestedDir)
+      let nestedNested = try tracker.createFile(nestedNestedDir)
       withExtendedLifetime((tempFile, nested1, nested2, nestedNested, nestedNestedDir)) {}
     }
     // dir_to_keep was kept, but its parent was deleted recursively.
     tracker.verifyDeleted()
   }
 
-  @Test func testTmpDirEnv() {
+  @Test func testTmpDirEnv() throws {
     let tracker = Tracker()
     do {
       // Set a random temp directory to TEST_TMPDIR.
       let tempDir = TempDirectory.default()
-      let testDir = tracker.createDirectory(tempDir)
+      let testDir = try tracker.createDirectory(tempDir)
       let envMock = EnvironMock()
       Environ.withMock(envMock) {
         do {

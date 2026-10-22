@@ -48,28 +48,31 @@ import Foundation
 /// | '\0'           (1 byte)                                             |
 /// +=====================================================================+
 ///
-/// Memory: the array is a view over `data`, like the C++ class over an
-/// `absl::string_view`. The memory must outlive the array unless an `owner`
-/// object keeping it alive is given (e.g. the memory-mapped data set), or the
-/// array was created with `init?(bytes:)`, which owns a copy.
-///
-/// `@unchecked Sendable`: the viewed memory is immutable (read-only mmapped or
-/// owned copy).
-public struct SerializedStringArray: RandomAccessCollection, @unchecked Sendable {
+/// Memory: the array reads its bytes through an immutable `Data` (which may be a slice of a memory-mapped data
+/// set; no copy is made). The raw-pointer APIs (`initialize(_:owner:)`, `set(_:owner:)`, `bytes(at:)`) are kept
+/// for callers that still hold `UnsafeRawBufferPointer`s; they go through `RawBytesView`.
+public struct SerializedStringArray: RandomAccessCollection, Sendable {
   public typealias Index = Int
   public typealias Element = String
 
-  private var data_ = UnsafeRawBufferPointer(start: nil, count: 0)
-  private var owner: AnyObject?
+  private var storage = Data()
+  /// Raw view of `storage` for the pointer-returning compatibility API.
+  private var raw = RawBytesView()
 
   /// Constructs an empty array.
   public init() {}
 
-  /// Initializes the array from an owned copy of `bytes`. Returns nil when the
-  /// data is invalid.
+  /// Initializes the array from a copy of `bytes`. Returns nil when the data
+  /// is invalid.
   public init?(bytes: [UInt8]) {
-    let storage = OwnedBytes(bytes)
-    if !initialize(storage.bytes, owner: storage) {
+    if !initialize(Data(bytes)) {
+      return nil
+    }
+  }
+
+  /// Initializes the array from `data` (not copied). Returns nil when the data is invalid.
+  public init?(data: Data) {
+    if !initialize(data) {
       return nil
     }
   }
@@ -77,10 +80,9 @@ public struct SerializedStringArray: RandomAccessCollection, @unchecked Sendable
   /// Initializes the array from given memory block.  Returns false when the
   /// data is invalid. (C++ `Init`.)
   @discardableResult
-  public mutating func initialize(_ data: UnsafeRawBufferPointer, owner: AnyObject? = nil) -> Bool {
+  public mutating func initialize(_ data: Data) -> Bool {
     if SerializedStringArray.verifyData(data) {
-      data_ = data
-      self.owner = owner
+      set(data, RawBytesView(data))
       return true
     }
     clear()
@@ -88,18 +90,43 @@ public struct SerializedStringArray: RandomAccessCollection, @unchecked Sendable
   }
 
   /// Initializes the array from given memory block without verifying data.
-  public mutating func set(_ data: UnsafeRawBufferPointer, owner: AnyObject? = nil) {
+  public mutating func set(_ data: Data) {
     assert(SerializedStringArray.verifyData(data))
-    data_ = data
-    self.owner = owner
+    set(data, RawBytesView(data))
+  }
+
+  /// Initializes the array from memory owned by the caller (valid while `owner` is alive, or forever when it
+  /// is nil). Returns false when the data is invalid. Compatibility API for raw buffers.
+  @discardableResult
+  public mutating func initialize(_ data: UnsafeRawBufferPointer, owner: AnyObject? = nil) -> Bool {
+    let view = RawBytesView(borrowing: data, owner: owner)
+    if SerializedStringArray.verifyData(view.data) {
+      set(view.data, view)
+      return true
+    }
+    clear()
+    return false
+  }
+
+  /// Initializes the array from memory owned by the caller without verifying data. Compatibility API for raw
+  /// buffers.
+  public mutating func set(_ data: UnsafeRawBufferPointer, owner: AnyObject? = nil) {
+    let view = RawBytesView(borrowing: data, owner: owner)
+    assert(SerializedStringArray.verifyData(view.data))
+    set(view.data, view)
+  }
+
+  private mutating func set(_ data: Data, _ view: RawBytesView) {
+    storage = data
+    raw = view
   }
 
   /// The number of elements.
   public var size: Int {
     // The first 4 bytes of data stores the number of elements in this array
     // in little endian order.
-    if data_.isEmpty { return 0 }
-    return Int(UInt32(littleEndian: data_.loadUnaligned(fromByteOffset: 0, as: UInt32.self)))
+    if storage.isEmpty { return 0 }
+    return Int(storage.span.loadLittleEndian(UInt32.self, at: 0))
   }
 
   public var count: Int { size }
@@ -108,42 +135,60 @@ public struct SerializedStringArray: RandomAccessCollection, @unchecked Sendable
   public var endIndex: Int { size }
 
   /// The underlying memory block.
-  public var data: UnsafeRawBufferPointer { data_ }
-
-  /// The owner of the memory block, if any.
-  public var dataOwner: AnyObject? { owner }
+  public var data: Data { storage }
 
   public mutating func clear() {
-    data_ = UnsafeRawBufferPointer(start: nil, count: 0)
-    owner = nil
+    storage = Data()
+    raw = RawBytesView()
   }
 
   public mutating func swap(_ other: inout SerializedStringArray) {
     Swift.swap(&self, &other)
   }
 
-  private func offsetAt(_ index: Int) -> Int {
-    Int(UInt32(littleEndian: data_.loadUnaligned(fromByteOffset: 4 + 8 * index, as: UInt32.self)))
+  /// The byte range of the i-th string in `storage` (relative to its start).
+  private func rangeAt(_ index: Int) -> Range<Int> {
+    let s = storage.span
+    let offset = Int(s.loadLittleEndian(UInt32.self, at: 4 + 8 * index))
+    let length = Int(s.loadLittleEndian(UInt32.self, at: 8 + 8 * index))
+    return offset..<(offset + length)
   }
 
-  private func lengthAt(_ index: Int) -> Int {
-    Int(UInt32(littleEndian: data_.loadUnaligned(fromByteOffset: 8 + 8 * index, as: UInt32.self)))
+  /// Returns the bytes of the i-th string (without copying; a slice of `data`).
+  public func data(at i: Int) -> Data {
+    let r = rangeAt(i)
+    let start = storage.startIndex
+    return storage[(start + r.lowerBound)..<(start + r.upperBound)]
   }
 
-  /// Returns the bytes of the i-th string (without copying).
+  /// Returns the bytes of the i-th string (without copying). Valid while this array (or a copy) is alive.
+  /// Compatibility API for raw buffers; new code uses `data(at:)` or `utf8(at:)`.
   public func bytes(at i: Int) -> UnsafeRawBufferPointer {
-    let offset = offsetAt(i)
-    return UnsafeRawBufferPointer(rebasing: data_[offset..<(offset + lengthAt(i))])
+    UnsafeRawBufferPointer(rebasing: raw.buffer[rangeAt(i)])
+  }
+
+  /// Returns a copy of the bytes of the i-th string.
+  public func utf8(at i: Int) -> [UInt8] {
+    [UInt8](data(at: i))
   }
 
   /// Returns the i-th string (decoded as UTF-8).
   public subscript(i: Int) -> String {
-    String(decoding: bytes(at: i), as: UTF8.self)
+    String(decoding: data(at: i), as: UTF8.self)
   }
 
   /// Bytewise three-way comparison of the i-th string with `key`.
   public func compare(at i: Int, with key: some StringProtocol) -> Int {
-    Strings.compareBytes(bytes(at: i), key.utf8)
+    let r = rangeAt(i)
+    let s = storage.span
+    var j = r.lowerBound
+    for b in key.utf8 {
+      if j == r.upperBound { return -1 }
+      let a = s[j]
+      if a != b { return a < b ? -1 : 1 }
+      j += 1
+    }
+    return j == r.upperBound ? 0 : 1
   }
 
   /// std::lower_bound(begin(), end(), key) with bytewise comparison.
@@ -197,13 +242,18 @@ public struct SerializedStringArray: RandomAccessCollection, @unchecked Sendable
   }
 
   /// Checks if the data is a valid array image.
-  public static func verifyData(_ data: UnsafeRawBufferPointer) -> Bool {
+  public static func verifyData(_ data: Data) -> Bool {
+    verifyData(data.span)
+  }
+
+  /// Checks if the data is a valid array image.
+  public static func verifyData(_ data: Span<UInt8>) -> Bool {
     if data.count < 4 {
       // Array size is missing
       return false
     }
     func u32(_ i: Int) -> Int {
-      Int(UInt32(littleEndian: data.loadUnaligned(fromByteOffset: 4 * i, as: UInt32.self)))
+      Int(data.loadLittleEndian(UInt32.self, at: 4 * i))
     }
     let size = u32(0)
 
@@ -236,7 +286,12 @@ public struct SerializedStringArray: RandomAccessCollection, @unchecked Sendable
   }
 
   public static func verifyData(_ data: [UInt8]) -> Bool {
-    data.withUnsafeBytes { verifyData($0) }
+    verifyData(Data(data))
+  }
+
+  /// Compatibility overload for callers that still hold raw buffers (no copy).
+  public static func verifyData(_ data: UnsafeRawBufferPointer) -> Bool {
+    verifyData(RawBytesView(borrowing: data, owner: nil).data)
   }
 
   /// Creates a byte image of |strs|.
@@ -258,10 +313,7 @@ public struct SerializedStringArray: RandomAccessCollection, @unchecked Sendable
     // image.
     var buffer = [UInt8](repeating: 0, count: currentOffset)
     func put(_ value: Int, _ at: Int) {
-      let v = UInt32(value).littleEndian
-      withUnsafeBytes(of: v) { b in
-        for k in 0..<4 { buffer[at + k] = b[k] }
-      }
+      buffer.storeLittleEndian(UInt32(value), at: at)
     }
     put(strs.count, 0)
     for (i, s) in strs.enumerated() {
@@ -283,32 +335,6 @@ public struct SerializedStringArray: RandomAccessCollection, @unchecked Sendable
   /// Writes the byte image of |strs| to `filepath`.
   public static func serializeToFile<S: StringProtocol>(_ strs: [S], _ filepath: String) throws {
     let data = serializeToBuffer(strs)
-    try Data(data).write(to: URL(fileURLWithPath: filepath))
-  }
-}
-
-/// A heap copy of bytes, 8-byte aligned.
-final class OwnedBytes: @unchecked Sendable {
-  let buffer: UnsafeMutableRawBufferPointer
-
-  init(_ bytes: [UInt8]) {
-    let buf = UnsafeMutableRawBufferPointer.allocate(byteCount: max(bytes.count, 1), alignment: 8)
-    bytes.withUnsafeBytes { src in
-      if let base = src.baseAddress, let dst = buf.baseAddress {
-        dst.copyMemory(from: base, byteCount: src.count)
-      }
-    }
-    buffer = buf
-    byteCount = bytes.count
-  }
-
-  private let byteCount: Int
-
-  var bytes: UnsafeRawBufferPointer {
-    UnsafeRawBufferPointer(rebasing: buffer[0..<byteCount])
-  }
-
-  deinit {
-    buffer.deallocate()
+    try Data(data).write(to: URL(filePath: filepath))
   }
 }

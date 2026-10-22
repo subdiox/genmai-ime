@@ -45,7 +45,7 @@ import Testing
       0x63, 0x7c, 0x77, 0x7b, 0xf2, 0x6b, 0x6f, 0xc5, 0x30, 0x01, 0x67, 0x2b,
       0xfe, 0xd7, 0xab, 0x76,
     ]
-    block.withUnsafeMutableBufferPointer { UnverifiedAES256.subBytes($0.baseAddress!) }
+    UnverifiedAES256.subBytes(&block)
     #expect(block == kExpected)
   }
 
@@ -58,7 +58,7 @@ import Testing
       0x52, 0x09, 0x6a, 0xd5, 0x30, 0x36, 0xa5, 0x38, 0xbf, 0x40, 0xa3, 0x9e,
       0x81, 0xf3, 0xd7, 0xfb,
     ]
-    block.withUnsafeMutableBufferPointer { UnverifiedAES256.invSubBytes($0.baseAddress!) }
+    UnverifiedAES256.invSubBytes(&block)
     #expect(block == kExpected)
   }
 
@@ -71,7 +71,7 @@ import Testing
       0x02, 0x07, 0x00, 0x05, 0x06, 0x03, 0x04, 0x01, 0x0a, 0x0f, 0x08, 0x0d,
       0x0e, 0x0b, 0x0c, 0x09,
     ]
-    block.withUnsafeMutableBufferPointer { UnverifiedAES256.mixColumns($0.baseAddress!) }
+    UnverifiedAES256.mixColumns(&block)
     #expect(block == kExpected)
   }
 
@@ -84,7 +84,7 @@ import Testing
       0x0a, 0x0f, 0x08, 0x0d, 0x0e, 0x0b, 0x0c, 0x09, 0x02, 0x07, 0x00, 0x05,
       0x06, 0x03, 0x04, 0x01,
     ]
-    block.withUnsafeMutableBufferPointer { UnverifiedAES256.invMixColumns($0.baseAddress!) }
+    UnverifiedAES256.invMixColumns(&block)
     #expect(block == kExpected)
   }
 
@@ -97,7 +97,7 @@ import Testing
       0x00, 0x05, 0x0a, 0x0f, 0x04, 0x09, 0x0e, 0x03, 0x08, 0x0d, 0x02, 0x07,
       0x0c, 0x01, 0x06, 0x0b,
     ]
-    block.withUnsafeMutableBufferPointer { UnverifiedAES256.shiftRows($0.baseAddress!) }
+    UnverifiedAES256.shiftRows(&block)
     #expect(block == kExpected)
   }
 
@@ -116,9 +116,7 @@ import Testing
       0x92, 0x84, 0x20, 0x87,
     ]
     let keySchedule = UnverifiedAES256.makeKeySchedule(kKey)
-    keySchedule.withUnsafeBufferPointer { w in
-      block.withUnsafeMutableBufferPointer { UnverifiedAES256.transformECB(w.baseAddress!, $0.baseAddress!) }
-    }
+    UnverifiedAES256.transformECB(keySchedule, &block)
     #expect(block == kExpected)
   }
 
@@ -137,9 +135,7 @@ import Testing
       0x66, 0xb5, 0x31, 0xb4,
     ]
     let keySchedule = UnverifiedAES256.makeKeySchedule(kKey)
-    keySchedule.withUnsafeBufferPointer { w in
-      block.withUnsafeMutableBufferPointer { UnverifiedAES256.inverseTransformECB(w.baseAddress!, $0.baseAddress!) }
-    }
+    UnverifiedAES256.inverseTransformECB(keySchedule, &block)
     #expect(block == kExpected)
   }
 
@@ -158,9 +154,7 @@ import Testing
       0x4b, 0x49, 0x60, 0x89,
     ]
     let keySchedule = UnverifiedAES256.makeKeySchedule(kKey)
-    keySchedule.withUnsafeBufferPointer { w in
-      block.withUnsafeMutableBufferPointer { UnverifiedAES256.transformECB(w.baseAddress!, $0.baseAddress!) }
-    }
+    UnverifiedAES256.transformECB(keySchedule, &block)
     #expect(block == kExpected)
   }
 
@@ -179,9 +173,7 @@ import Testing
       0xcc, 0xdd, 0xee, 0xff,
     ]
     let keySchedule = UnverifiedAES256.makeKeySchedule(kKey)
-    keySchedule.withUnsafeBufferPointer { w in
-      block.withUnsafeMutableBufferPointer { UnverifiedAES256.inverseTransformECB(w.baseAddress!, $0.baseAddress!) }
-    }
+    UnverifiedAES256.inverseTransformECB(keySchedule, &block)
     #expect(block == kExpected)
   }
 

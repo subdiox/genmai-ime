@@ -135,16 +135,8 @@ public enum SystemUtil {
 
   /// Returns the user name.
   public static func getUserNameAsString() -> String {
-    var bufsize = sysconf(Int32(_SC_GETPW_R_SIZE_MAX))
-    if bufsize == -1 {
-      bufsize = 1024
-    }
-    var buf = [CChar](repeating: 0, count: bufsize)
-    var pw = passwd()
-    var ppw: UnsafeMutablePointer<passwd>?
-    let r = getpwuid_r(geteuid(), &pw, &buf, buf.count, &ppw)
-    precondition(r == 0 && ppw != nil, "getpwuid_r failed")
-    return String(cString: pw.pw_name)
+    // The C++ code reads pw_name of getpwuid_r(geteuid()); NSUserName() is the same name.
+    NSUserName()
   }
 
   /// Returns the user SID (= user name on non-Windows).

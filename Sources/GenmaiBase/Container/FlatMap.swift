@@ -7,9 +7,9 @@
 /// `String <` uses canonical equivalence.
 public struct FlatMap<K, V> {
   private let entries: [(K, V)]
-  private let cmpKey: (K, K) -> Bool
+  private let cmpKey: @Sendable (K, K) -> Bool
 
-  public init(_ entries: [(K, V)], by cmpKey: @escaping (K, K) -> Bool) {
+  public init(_ entries: [(K, V)], by cmpKey: @escaping @Sendable (K, K) -> Bool) {
     var e = entries
     FlatInternal.sortAndVerifyUnique(&e) { cmpKey($0.0, $1.0) }
     self.entries = e
@@ -23,13 +23,13 @@ public struct FlatMap<K, V> {
   }
 }
 
-extension FlatMap where K: Comparable {
+extension FlatMap where K: Comparable & SendableMetatype {
   public init(_ entries: [(K, V)]) {
     self.init(entries, by: { $0 < $1 })
   }
 }
 
-extension FlatMap where K: StringProtocol {
+extension FlatMap where K: StringProtocol & SendableMetatype {
   /// Creates a map ordered bytewise by the UTF-8 of the keys.
   public init(byteOrdered entries: [(K, V)]) {
     self.init(entries, by: { $0.bytesLess($1) })
@@ -38,7 +38,7 @@ extension FlatMap where K: StringProtocol {
 
 // The comparator is a pure function, so the container is immutable and safe to
 // share when the elements are Sendable.
-extension FlatMap: @unchecked Sendable where K: Sendable, V: Sendable {}
+extension FlatMap: Sendable where K: Sendable, V: Sendable {}
 
 extension Strings {
   /// Bytewise `<` for strings, usable as a comparator.

@@ -162,7 +162,7 @@ public enum Util {
       // ('A' <= codepoint && codepoint <= 'Z') ||
       // ('Ａ' <= codepoint && codepoint <= 'Ｚ')
       if (0x0041 <= codepoint && codepoint <= 0x005A) || (0xFF21 <= codepoint && codepoint <= 0xFF3A) {
-        result.append(Unicode.Scalar(codepoint + kOffsetFromUpperToLower)!)
+        result.append(Unicode.Scalar(codepoint + kOffsetFromUpperToLower) ?? scalar)
         changed = true
       } else {
         result.append(scalar)
@@ -181,7 +181,7 @@ public enum Util {
       // ('a' <= codepoint && codepoint <= 'z') ||
       // ('ａ' <= codepoint && codepoint <= 'ｚ')
       if (0x0061 <= codepoint && codepoint <= 0x007A) || (0xFF41 <= codepoint && codepoint <= 0xFF5A) {
-        result.append(Unicode.Scalar(codepoint - kOffsetFromUpperToLower)!)
+        result.append(Unicode.Scalar(codepoint - kOffsetFromUpperToLower) ?? scalar)
         changed = true
       } else {
         result.append(scalar)
@@ -890,7 +890,7 @@ public enum Util {
       return .unknownScript
     }
 
-    return ScriptType(rawValue: bs.trailingZeroBitCount)!
+    return ScriptType(rawValue: bs.trailingZeroBitCount) ?? .unknownScript
   }
 
   /// Returns the script type of a string. All chars in str must be

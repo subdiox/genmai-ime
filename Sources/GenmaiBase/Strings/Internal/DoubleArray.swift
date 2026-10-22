@@ -32,8 +32,8 @@ extension JapaneseInternal {
   }
 
   static func lookupDoubleArray(
-    _ base: UnsafeBufferPointer<Int16>, _ check: UnsafeBufferPointer<UInt16>,
-    _ key: UnsafeBufferPointer<UInt8>, _ start: Int
+    _ base: [Int16], _ check: [UInt16],
+    _ key: [UInt8], _ start: Int
   ) -> LookupResult {
     var n = 0
     var b = Int(base[0])
@@ -69,7 +69,7 @@ extension JapaneseInternal {
   }
 
   /// Returns the length of the null-terminated string at `index` of `table`.
-  static func tableStringLength(_ table: UnsafeBufferPointer<UInt8>, _ index: Int) -> Int {
+  static func tableStringLength(_ table: [UInt8], _ index: Int) -> Int {
     var len = 0
     while table[index + len] != 0 {
       len += 1
@@ -77,7 +77,7 @@ extension JapaneseInternal {
     return len
   }
 
-  static func advanceInputBy(_ table: UnsafeBufferPointer<UInt8>, _ result: LookupResult, _ len: Int)
+  static func advanceInputBy(_ table: [UInt8], _ result: LookupResult, _ len: Int)
     -> Int
   {
     result.seekto - Int(table[result.index + len + 1])
@@ -87,28 +87,24 @@ extension JapaneseInternal {
   public static func convertUsingDoubleArray(_ rule: JapaneseRule, _ input: [UInt8]) -> [UInt8] {
     var output: [UInt8] = []
     output.reserveCapacity(input.count)
-    rule.doubleArray.base.withUnsafeBufferPointer { base in
-      rule.doubleArray.check.withUnsafeBufferPointer { check in
-        rule.table.withUnsafeBufferPointer { table in
-          input.withUnsafeBufferPointer { key in
-            var mblen = 0
-            var i = 0
-            while i < key.count {
-              let result = lookupDoubleArray(base, check, key, i)
-              if result.seekto > 0 {
-                let len = tableStringLength(table, result.index)
-                output.append(contentsOf: table[result.index..<(result.index + len)])
-                mblen = advanceInputBy(table, result, len)
-              } else {
-                // Not found in the table. Copy from input.
-                mblen = Utf8Internal.oneCharLen(key[i])
-                output.append(contentsOf: key[i..<min(i + mblen, key.count)])
-              }
-              i += mblen
-            }
-          }
-        }
+    let base = rule.doubleArray.base
+    let check = rule.doubleArray.check
+    let table = rule.table
+    let key = input
+    var mblen = 0
+    var i = 0
+    while i < key.count {
+      let result = lookupDoubleArray(base, check, key, i)
+      if result.seekto > 0 {
+        let len = tableStringLength(table, result.index)
+        output.append(contentsOf: table[result.index..<(result.index + len)])
+        mblen = advanceInputBy(table, result, len)
+      } else {
+        // Not found in the table. Copy from input.
+        mblen = Utf8Internal.oneCharLen(key[i])
+        output.append(contentsOf: key[i..<min(i + mblen, key.count)])
       }
+      i += mblen
     }
     return output
   }
@@ -127,31 +123,27 @@ extension JapaneseInternal {
   {
     let bytes = Array(input.utf8)
     var output: [(String, String)] = []
-    rule.doubleArray.base.withUnsafeBufferPointer { base in
-      rule.doubleArray.check.withUnsafeBufferPointer { check in
-        rule.table.withUnsafeBufferPointer { table in
-          bytes.withUnsafeBufferPointer { key in
-            var mblen = 0
-            var i = 0
-            while i < key.count {
-              let result = lookupDoubleArray(base, check, key, i)
-              if result.seekto > 0 {
-                let len = tableStringLength(table, result.index)
-                let s = String(decoding: table[result.index..<(result.index + len)], as: UTF8.self)
-                mblen = advanceInputBy(table, result, len)
-                let piece = key[i..<min(i + mblen, key.count)]
-                output.append((String(decoding: piece, as: UTF8.self), s))
-              } else {
-                // Not found in the table. Copy from input.
-                mblen = Utf8Internal.oneCharLen(key[i])
-                let piece = String(decoding: key[i..<min(i + mblen, key.count)], as: UTF8.self)
-                output.append((piece, piece))
-              }
-              i += mblen
-            }
-          }
-        }
+    let base = rule.doubleArray.base
+    let check = rule.doubleArray.check
+    let table = rule.table
+    let key = bytes
+    var mblen = 0
+    var i = 0
+    while i < key.count {
+      let result = lookupDoubleArray(base, check, key, i)
+      if result.seekto > 0 {
+        let len = tableStringLength(table, result.index)
+        let s = String(decoding: table[result.index..<(result.index + len)], as: UTF8.self)
+        mblen = advanceInputBy(table, result, len)
+        let piece = key[i..<min(i + mblen, key.count)]
+        output.append((String(decoding: piece, as: UTF8.self), s))
+      } else {
+        // Not found in the table. Copy from input.
+        mblen = Utf8Internal.oneCharLen(key[i])
+        let piece = String(decoding: key[i..<min(i + mblen, key.count)], as: UTF8.self)
+        output.append((piece, piece))
       }
+      i += mblen
     }
     return output
   }

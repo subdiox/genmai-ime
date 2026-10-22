@@ -134,14 +134,13 @@ public enum FileUtil {
     guard let input = FileManager.default.contents(atPath: from) else {
       throw StatusError.unknown("Can't open input file \(from)")
     }
-    guard let fp = fopen(to, "wb") else {
+    let output = OutputFileStream(to)
+    if !output.good {
       throw StatusError.unknown("Can't open output file \(to)")
     }
-    let written = input.withUnsafeBytes { buf -> Int in
-      buf.isEmpty ? 0 : fwrite(buf.baseAddress, 1, buf.count, fp)
-    }
-    let closeResult = fclose(fp)
-    if written != input.count || closeResult != 0 {
+    output.write(input)
+    output.close()
+    if !output.good {
       throw StatusError.unknown("Can't write data")
     }
   }
@@ -152,7 +151,7 @@ public enum FileUtil {
     if let mock { return try mock.isEqualFile(filename1, filename2) }
     let mmap1 = try Mmap.map(filename1, .readOnly)
     let mmap2 = try Mmap.map(filename2, .readOnly)
-    return mmap1.buffer.elementsEqual(mmap2.buffer)
+    return mmap1.data == mmap2.data
   }
 
   /// Compares the two filenames point to the same file. Symbolic/hard links

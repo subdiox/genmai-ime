@@ -35,8 +35,9 @@ public struct CivilDay: Hashable, Comparable, Sendable, CustomStringConvertible 
   public init(_ time: Date, _ timeZone: TimeZone) {
     var calendar = Calendar(identifier: .gregorian)
     calendar.timeZone = timeZone
-    let c = calendar.dateComponents([.year, .month, .day], from: time)
-    self.init(c.year!, c.month!, c.day!)
+    self.init(
+      calendar.component(.year, from: time), calendar.component(.month, from: time),
+      calendar.component(.day, from: time))
   }
 
   // Howard Hinnant's days_from_civil.
@@ -69,7 +70,7 @@ public struct CivilDay: Hashable, Comparable, Sendable, CustomStringConvertible 
   /// absl::GetWeekday.
   public var weekday: Weekday {
     // 1970-01-01 was a Thursday (3).
-    Weekday(rawValue: Int(((daysSinceEpoch + 3) % 7 + 7) % 7))!
+    Weekday.allCases[Int(((daysSinceEpoch + 3) % 7 + 7) % 7)]
   }
 
   public static func - (lhs: CivilDay, rhs: CivilDay) -> Int64 {
@@ -146,6 +147,7 @@ public enum DateUtil {
     let kYearKanji = Array("年".utf8)
     let slash = UInt8(ascii: "/")
     let dot = UInt8(ascii: ".")
+    func isDigitOrSeparator(_ c: UInt8) -> Bool { isDigit(c) || c == slash || c == dot }
 
     var explicitYear: Int?
     var month = 0
@@ -167,14 +169,14 @@ public enum DateUtil {
       if endsWith(s, kYearKanji) {
         s = s.dropLast(kYearKanji.count)
         let yearStr = consumeTrailingDigits(&s)
-        if yearStr.count != 4 || (!s.isEmpty && isDigit(s.last!)) {
+        if yearStr.count != 4 || s.last.map(isDigit) == true {
           return nil
         }
         guard let y = simpleAtoi(yearStr) else {
           return nil
         }
         explicitYear = y
-      } else if !s.isEmpty && isDigit(s.last!) {
+      } else if s.last.map(isDigit) == true {
         return nil
       }
       guard let m = simpleAtoi(monthStr), let d = simpleAtoi(dayStr) else {
@@ -197,7 +199,7 @@ public enum DateUtil {
         s = s.dropLast(1)
         let yearStr = consumeTrailingDigits(&s)
         if yearStr.count != 4
-          || (!s.isEmpty && (isDigit(s.last!) || s.last! == slash || s.last! == dot))
+          || s.last.map(isDigitOrSeparator) == true
         {
           return nil
         }
@@ -205,7 +207,7 @@ public enum DateUtil {
           return nil
         }
         explicitYear = y
-      } else if !s.isEmpty && (isDigit(s.last!) || s.last! == slash || s.last! == dot) {
+      } else if s.last.map(isDigitOrSeparator) == true {
         return nil
       }
       guard let m = simpleAtoi(monthStr), let d = simpleAtoi(dayStr) else {

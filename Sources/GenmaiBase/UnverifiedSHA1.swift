@@ -1,5 +1,7 @@
 // Port of mozc/src/base/unverified_sha1.{h,cc} (3.35.6354).
 
+import Foundation
+
 // Note that this implementation is kept just for the backward compatibility
 // so that we can read previously obfuscated data.
 // !!! Not FIPS-certified.
@@ -54,7 +56,7 @@ public enum UnverifiedSHA1 {
 
   // Implements 5.1 Padding the Message / 5.1.1 SHA-1, SHA-224 and SHA-256
   private static func fillMessage(
-    _ source: UnsafeBufferPointer<UInt8>, _ messageIndex: Int, _ dest: inout [UInt8]
+    _ source: Span<UInt8>, _ messageIndex: Int, _ dest: inout [UInt8]
   ) {
     let baseIndex = messageIndex * kMessageBlockBytes
     var cursor = 0
@@ -89,7 +91,7 @@ public enum UnverifiedSHA1 {
   }
 
   /// Returns 20-byte-length SHA1 digest.
-  public static func makeDigest(_ source: UnsafeBufferPointer<UInt8>) -> [UInt8] {
+  public static func makeDigest(_ source: Span<UInt8>) -> [UInt8] {
     // 5.3 Setting the Initial Hash Value / 5.3.1 SHA-1
     var h: [UInt32] = [0x6745_2301, 0xefcd_ab89, 0x98ba_dcfe, 0x1032_5476, 0xc3d2_e1f0]
     var message = [UInt8](repeating: 0, count: kMessageBlockBytes)
@@ -137,9 +139,18 @@ public enum UnverifiedSHA1 {
     return result
   }
 
+  public static func makeDigest(_ source: Data) -> [UInt8] {
+    makeDigest(source.span)
+  }
+
   public static func makeDigest(_ source: some Collection<UInt8>) -> [UInt8] {
-    let array = Array(source)
-    return array.withUnsafeBufferPointer { makeDigest($0) }
+    makeDigest(Data(source).span)
+  }
+
+  /// Compatibility overload for callers that still hold raw buffers (no copy; the caller keeps the memory
+  /// alive for the duration of the call).
+  public static func makeDigest(_ source: UnsafeBufferPointer<UInt8>) -> [UInt8] {
+    makeDigest(source.span)
   }
 
   public static func makeDigest(_ source: String) -> [UInt8] {

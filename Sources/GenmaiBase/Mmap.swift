@@ -1,8 +1,15 @@
 // Port of mozc/src/base/mmap.{h,cc} (3.35.6354). POSIX code path.
 //
 // `Mmap` (alias `MappedFile`) memory-maps a file and exposes the mapped range
-// as UnsafeRawBufferPointer. It unmaps in deinit. The C++ move operations are
+// as `Data` (no copy). It unmaps in deinit. The C++ move operations are
 // replaced by reference semantics (final class).
+//
+// This is the one wrapper around the mmap / mlock C API: it maps with the same
+// flags as the C++ code and mlocks the mapping, which `Data(contentsOf:options:
+// .alwaysMapped)` cannot do (and it cannot map a file for writing). All raw
+// pointer handling of mapped files stays in this file.
+
+import Foundation
 
 #if canImport(Darwin)
   import Darwin
@@ -10,7 +17,8 @@
 
 /// The mapped memory is immutable for READ_ONLY maps and never re-mapped
 /// after initialization, so sharing it across threads is safe as long as
-/// READ_WRITE users synchronize their own writes. Hence @unchecked Sendable.
+/// READ_WRITE users synchronize their own writes. Hence @unchecked Sendable
+/// (the class holds the raw address returned by mmap()).
 public final class Mmap: @unchecked Sendable {
   public enum Mode: Sendable {
     case readOnly
@@ -68,8 +76,10 @@ public final class Mmap: @unchecked Sendable {
     }
     defer { close(fd) }
 
-    var size = size
-    if size == nil {
+    let mappedSize: Int
+    if let size {
+      mappedSize = size
+    } else {
       var st = stat()
       if fstat(fd, &st) == -1 {
         throw StatusError.errno(errno, "fstat failed")
@@ -78,9 +88,8 @@ public final class Mmap: @unchecked Sendable {
       if offset > fileSize {
         throw StatusError.invalidArgument("offset \(offset) exceeds the file size \(fileSize)")
       }
-      size = fileSize - offset
+      mappedSize = fileSize - offset
     }
-    let mappedSize = size!
     if mappedSize == 0 {
       throw StatusError.invalidArgument("Mapping of zero byte is invalid")
     }
@@ -112,19 +121,42 @@ public final class Mmap: @unchecked Sendable {
     munlock(addr, len)
   }
 
-  /// The mapped bytes.
+  /// The mapped bytes, without copying. The `Data` keeps this map alive.
+  public var data: Data {
+    RawBytesView(borrowing: buffer, owner: self).data
+  }
+
+  /// The mapped bytes as a raw buffer, valid while this map is alive. Compatibility API for callers that
+  /// still hold raw buffers; new code uses `data`.
   public var buffer: UnsafeRawBufferPointer {
     UnsafeRawBufferPointer(start: base, count: count)
   }
 
-  /// The mapped bytes for writing (only valid for `.readWrite` maps).
-  public var mutableBuffer: UnsafeMutableRawBufferPointer {
-    UnsafeMutableRawBufferPointer(start: base, count: count)
+  /// Copies `bytes` into the map at byte `offset` (only for `.readWrite` maps; traps when out of range).
+  public func write(_ bytes: [UInt8], at offset: Int) {
+    precondition(offset >= 0 && offset + bytes.count <= count, "write out of the mapped range")
+    let dst = UnsafeMutableRawBufferPointer(start: base, count: count)
+    for (i, b) in bytes.enumerated() {
+      dst[offset + i] = b
+    }
+  }
+
+  /// mlock()s the whole map (see `maybeMLock(_:_:)`).
+  @discardableResult
+  public func maybeMLock() -> Int32 {
+    guard let base else { return -1 }
+    return Mmap.maybeMLock(base, count)
+  }
+
+  /// munlock()s the whole map.
+  @discardableResult
+  public func maybeMUnlock() -> Int32 {
+    guard let base else { return -1 }
+    return Mmap.maybeMUnlock(base, count)
   }
 
   public subscript(i: Int) -> UInt8 {
-    get { buffer[i] }
-    set { mutableBuffer[i] = newValue }
+    data[data.startIndex + i]
   }
 
   public var isEmpty: Bool { count == 0 }

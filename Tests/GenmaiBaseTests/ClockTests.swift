@@ -30,7 +30,8 @@ import Testing
     let abslOffset = tz.secondsFromGMT(for: Date(timeIntervalSince1970: 0))
 
     var epoch: time_t = 24 * 60 * 60  // 1970-01-02 00:00:00 UTC
-    let offset = localtime(&epoch)!.pointee
+    var offset = tm()
+    localtime_r(&epoch, &offset)
     let tmOffset =
       (Int(offset.tm_mday) - 2) * 24 * 60 * 60  // date offset from Jan 2.
       + Int(offset.tm_hour) * 60 * 60  // hour offset from 00 am.

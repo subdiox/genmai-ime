@@ -36,7 +36,7 @@
 //PY out += ['  ]', '',
 //PY         '  /// Decoded embedded files (name, bytes).',
 //PY         '  static let kFileData: [(name: String, data: [UInt8])] = kFileDataBase64.map {',
-//PY         '    ($0.name, [UInt8](Data(base64Encoded: $0.base64)!))',
+//PY         '    ($0.name, Data(base64Encoded: $0.base64).map { [UInt8]($0) } ?? [])',
 //PY         '  }', '}', '']
 //PY open('Sources/GenmaiBase/ConfigFileStreamData.swift', 'w').write('\n'.join(out) + '\n')
 
@@ -154,6 +154,6 @@ enum ConfigFileStreamData {
 
   /// Decoded embedded files (name, bytes).
   static let kFileData: [(name: String, data: [UInt8])] = kFileDataBase64.map {
-    ($0.name, [UInt8](Data(base64Encoded: $0.base64)!))
+    ($0.name, Data(base64Encoded: $0.base64).map { [UInt8]($0) } ?? [])
   }
 }

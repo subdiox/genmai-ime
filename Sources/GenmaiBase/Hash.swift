@@ -8,6 +8,8 @@
 // Note: Mozc is built with -funsigned-char, so bytes are treated as unsigned
 // in the legacy fingerprint.
 
+import Foundation
+
 // MARK: - Public API (base/hash.h)
 
 // New fingerprint functions based on CityHash.
@@ -19,22 +21,29 @@
 /// CityHash64 of the UTF-8 bytes of `str`.
 @inlinable
 public func cityFingerprint(_ str: some StringProtocol) -> UInt64 {
-  var s = String(str)
-  return s.withUTF8 { CityHash.cityHash64($0) }
+  CityHash.cityHash64(Data(str.utf8).span)
 }
 
 /// CityHash64 of raw bytes.
+public func cityFingerprint(bytes: Data) -> UInt64 {
+  CityHash.cityHash64(bytes.span)
+}
+
+/// CityHash64 of raw bytes.
+public func cityFingerprint(bytes: [UInt8]) -> UInt64 {
+  CityHash.cityHash64(Data(bytes).span)
+}
+
+/// CityHash64 of raw bytes. Compatibility overload for callers that still hold raw buffers (the bytes are
+/// copied; the callers hash small serialized protobufs).
 public func cityFingerprint(bytes: UnsafeRawBufferPointer) -> UInt64 {
-  CityHash.cityHash64(
-    UnsafeBufferPointer(
-      start: bytes.baseAddress?.assumingMemoryBound(to: UInt8.self), count: bytes.count))
+  CityHash.cityHash64(Data(bytes).span)
 }
 
 /// CityHash64WithSeed of the UTF-8 bytes of `str`.
 @inlinable
 public func cityFingerprintWithSeed(_ str: some StringProtocol, _ seed: UInt64) -> UInt64 {
-  var s = String(str)
-  return s.withUTF8 { CityHash.cityHash64WithSeed($0, seed) }
+  CityHash.cityHash64WithSeed(Data(str.utf8).span, seed)
 }
 
 // Legacy Fingerprint Functions
@@ -52,22 +61,19 @@ public func legacyFingerprint(_ str: some StringProtocol) -> UInt64 {
 
 /// Calculates 64-bit fingerprint with seed.
 public func legacyFingerprintWithSeed(_ str: some StringProtocol, _ seed: UInt32) -> UInt64 {
-  var s = String(str)
-  return s.withUTF8 { buf in
-    let hi = legacyFingerprint32WithSeed(buf, seed)
-    let lo = legacyFingerprint32WithSeed(buf, kFingerPrintSeed1)
-    var result = UInt64(hi) << 32 | UInt64(lo)
-    if hi == 0 && lo < 2 {
-      result ^= 0x130f_9bef_94a0_a928
-    }
-    return result
+  let bytes = Data(str.utf8)
+  let hi = legacyFingerprint32WithSeed(bytes.span, seed)
+  let lo = legacyFingerprint32WithSeed(bytes.span, kFingerPrintSeed1)
+  var result = UInt64(hi) << 32 | UInt64(lo)
+  if hi == 0 && lo < 2 {
+    result ^= 0x130f_9bef_94a0_a928
   }
+  return result
 }
 
 /// Calculates 32-bit fingerprint.
 public func legacyFingerprint32(_ str: some StringProtocol) -> UInt32 {
-  var s = String(str)
-  return s.withUTF8 { legacyFingerprint32WithSeed($0, kFingerPrint32Seed) }
+  legacyFingerprint32WithSeed(Data(str.utf8).span, kFingerPrint32Seed)
 }
 
 // MARK: - Legacy implementation
@@ -108,7 +114,7 @@ private func mix(_ a: inout UInt32, _ b: inout UInt32, _ c: inout UInt32) {
   c ^= (b >> 15)
 }
 
-private func legacyFingerprint32WithSeed(_ str: UnsafeBufferPointer<UInt8>, _ seed: UInt32) -> UInt32 {
+private func legacyFingerprint32WithSeed(_ str: Span<UInt8>, _ seed: UInt32) -> UInt32 {
   let strLen = UInt32(truncatingIfNeeded: str.count)
   var a: UInt32 = 0x9e37_79b9
   var b: UInt32 = a
@@ -151,13 +157,13 @@ public enum CityHash {
   private static let k2: UInt64 = 0x9ae1_6a3b_2f90_404f
 
   @inline(__always)
-  private static func fetch64(_ s: UnsafePointer<UInt8>, _ i: Int) -> UInt64 {
-    UInt64(littleEndian: UnsafeRawPointer(s + i).loadUnaligned(as: UInt64.self))
+  private static func fetch64(_ s: Span<UInt8>, _ i: Int) -> UInt64 {
+    s.loadLittleEndian(UInt64.self, at: i)
   }
 
   @inline(__always)
-  private static func fetch32(_ s: UnsafePointer<UInt8>, _ i: Int) -> UInt64 {
-    UInt64(UInt32(littleEndian: UnsafeRawPointer(s + i).loadUnaligned(as: UInt32.self)))
+  private static func fetch32(_ s: Span<UInt8>, _ i: Int) -> UInt64 {
+    UInt64(s.loadLittleEndian(UInt32.self, at: i))
   }
 
   @inline(__always)
@@ -186,7 +192,7 @@ public enum CityHash {
     return hashLen16(u, v, kMul)
   }
 
-  private static func hashLen0to16(_ s: UnsafePointer<UInt8>, _ len: Int) -> UInt64 {
+  private static func hashLen0to16(_ s: Span<UInt8>, _ len: Int) -> UInt64 {
     let ulen = UInt64(len)
     if len >= 8 {
       let mul = k2 &+ ulen &* 2
@@ -212,7 +218,7 @@ public enum CityHash {
     return k2
   }
 
-  private static func hashLen17to32(_ s: UnsafePointer<UInt8>, _ len: Int) -> UInt64 {
+  private static func hashLen17to32(_ s: Span<UInt8>, _ len: Int) -> UInt64 {
     let mul = k2 &+ UInt64(len) &* 2
     let a = fetch64(s, 0) &* k1
     let b = fetch64(s, 8)
@@ -240,14 +246,14 @@ public enum CityHash {
 
   @inline(__always)
   private static func weakHashLen32WithSeeds(
-    _ s: UnsafePointer<UInt8>, _ i: Int, _ a: UInt64, _ b: UInt64
+    _ s: Span<UInt8>, _ i: Int, _ a: UInt64, _ b: UInt64
   ) -> (UInt64, UInt64) {
     weakHashLen32WithSeeds(
       fetch64(s, i), fetch64(s, i + 8), fetch64(s, i + 16),
       fetch64(s, i + 24), a, b)
   }
 
-  private static func hashLen33to64(_ s: UnsafePointer<UInt8>, _ len: Int) -> UInt64 {
+  private static func hashLen33to64(_ s: Span<UInt8>, _ len: Int) -> UInt64 {
     let mul = k2 &+ UInt64(len) &* 2
     var a = fetch64(s, 0) &* k2
     var b = fetch64(s, 8)
@@ -268,9 +274,8 @@ public enum CityHash {
     return b &+ x
   }
 
-  public static func cityHash64(_ buf: UnsafeBufferPointer<UInt8>) -> UInt64 {
-    var len = buf.count
-    guard let base = buf.baseAddress, len > 0 else { return k2 }
+  public static func cityHash64(_ base: Span<UInt8>) -> UInt64 {
+    var len = base.count
     if len <= 32 {
       if len <= 16 {
         return hashLen0to16(base, len)
@@ -311,12 +316,12 @@ public enum CityHash {
       hashLen16(v.1, w.1) &+ x)
   }
 
-  public static func cityHash64WithSeed(_ buf: UnsafeBufferPointer<UInt8>, _ seed: UInt64) -> UInt64 {
+  public static func cityHash64WithSeed(_ buf: Span<UInt8>, _ seed: UInt64) -> UInt64 {
     cityHash64WithSeeds(buf, k2, seed)
   }
 
   public static func cityHash64WithSeeds(
-    _ buf: UnsafeBufferPointer<UInt8>, _ seed0: UInt64, _ seed1: UInt64
+    _ buf: Span<UInt8>, _ seed0: UInt64, _ seed1: UInt64
   ) -> UInt64 {
     hashLen16(cityHash64(buf) &- seed0, seed1)
   }

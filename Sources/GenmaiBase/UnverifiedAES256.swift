@@ -62,9 +62,9 @@ public enum UnverifiedAES256 {
 
   private static let kNr = 14
 
-  private static func addRoundKey(_ block: UnsafeMutablePointer<UInt8>, _ roundKey: UnsafePointer<UInt8>) {
+  private static func addRoundKey(_ block: inout [UInt8], _ at: Int, _ w: [UInt8], _ roundKey: Int) {
     for i in 0..<kBlockBytes {
-      block[i] ^= roundKey[i]
+      block[at + i] ^= w[roundKey + i]
     }
   }
 
@@ -75,94 +75,86 @@ public enum UnverifiedAES256 {
     return val >= 0x80 ? (x ^ 0x1b) : x
   }
 
-  private static func mixColumnsImpl(_ column: UnsafeMutablePointer<UInt8>) {
+  private static func mixColumnsImpl(_ block: inout [UInt8], _ at: Int) {
     var a1 = [UInt8](repeating: 0, count: 4)
     var a2 = a1
     var a3 = a1
     for i in 0..<4 {
-      a1[i] = column[i]
+      a1[i] = block[at + i]
       a2[i] = gfP8Mul3(a1[i])
       a3[i] = a2[i] ^ a1[i]
     }
-    column[0] = a2[0] ^ a3[1] ^ a1[2] ^ a1[3]
-    column[1] = a1[0] ^ a2[1] ^ a3[2] ^ a1[3]
-    column[2] = a1[0] ^ a1[1] ^ a2[2] ^ a3[3]
-    column[3] = a3[0] ^ a1[1] ^ a1[2] ^ a2[3]
+    block[at] = a2[0] ^ a3[1] ^ a1[2] ^ a1[3]
+    block[at + 1] = a1[0] ^ a2[1] ^ a3[2] ^ a1[3]
+    block[at + 2] = a1[0] ^ a1[1] ^ a2[2] ^ a3[3]
+    block[at + 3] = a3[0] ^ a1[1] ^ a1[2] ^ a2[3]
   }
 
-  private static func invMixColumnsImpl(_ column: UnsafeMutablePointer<UInt8>) {
+  private static func invMixColumnsImpl(_ block: inout [UInt8], _ at: Int) {
     var a9 = [UInt8](repeating: 0, count: 4)
     var a11 = a9
     var a13 = a9
     var a14 = a9
     for i in 0..<4 {
-      let a1 = column[i]
+      let a1 = block[at + i]
       let a2 = gfP8Mul3(a1)
-      let a2_2 = gfP8Mul3(a2)
-      a9[i] = gfP8Mul3(a2_2) ^ a1
-      a11[i] = gfP8Mul3(a2_2 ^ a1) ^ a1
-      let a2a1_2 = gfP8Mul3(a2 ^ a1)
-      a13[i] = gfP8Mul3(a2a1_2) ^ a1
-      a14[i] = gfP8Mul3(a2a1_2 ^ a1)
+      let a4 = gfP8Mul3(a2)
+      a9[i] = gfP8Mul3(a4) ^ a1
+      a11[i] = gfP8Mul3(a4 ^ a1) ^ a1
+      let a6 = gfP8Mul3(a2 ^ a1)
+      a13[i] = gfP8Mul3(a6) ^ a1
+      a14[i] = gfP8Mul3(a6 ^ a1)
     }
-    column[0] = a14[0] ^ a11[1] ^ a13[2] ^ a9[3]
-    column[1] = a9[0] ^ a14[1] ^ a11[2] ^ a13[3]
-    column[2] = a13[0] ^ a9[1] ^ a14[2] ^ a11[3]
-    column[3] = a11[0] ^ a13[1] ^ a9[2] ^ a14[3]
+    block[at] = a14[0] ^ a11[1] ^ a13[2] ^ a9[3]
+    block[at + 1] = a9[0] ^ a14[1] ^ a11[2] ^ a13[3]
+    block[at + 2] = a13[0] ^ a9[1] ^ a14[2] ^ a11[3]
+    block[at + 3] = a11[0] ^ a13[1] ^ a9[2] ^ a14[3]
   }
 
   /// Does AES256 CBC transformation in place. `block.count` must be a multiple
   /// of kBlockBytes.
   public static func transformCBC(key: [UInt8], iv: [UInt8], block: inout [UInt8]) {
     precondition(block.count % kBlockBytes == 0)
-    block.withUnsafeMutableBufferPointer {
-      transformCBC(key: key, iv: iv, block: $0.baseAddress!, blockCount: $0.count / kBlockBytes)
-    }
+    transformCBC(key: key, iv: iv, block: &block, blockCount: block.count / kBlockBytes)
   }
 
   /// Does AES256 CBC inverse transformation in place.
   public static func inverseTransformCBC(key: [UInt8], iv: [UInt8], block: inout [UInt8]) {
     precondition(block.count % kBlockBytes == 0)
-    block.withUnsafeMutableBufferPointer {
-      inverseTransformCBC(key: key, iv: iv, block: $0.baseAddress!, blockCount: $0.count / kBlockBytes)
-    }
+    inverseTransformCBC(key: key, iv: iv, block: &block, blockCount: block.count / kBlockBytes)
   }
 
-  public static func transformCBC(
-    key: [UInt8], iv: [UInt8], block: UnsafeMutablePointer<UInt8>, blockCount: Int
-  ) {
+  /// Does AES256 CBC transformation in place on the first `blockCount` blocks of `block`.
+  public static func transformCBC(key: [UInt8], iv: [UInt8], block: inout [UInt8], blockCount: Int) {
     precondition(key.count == kKeyBytes && iv.count == kBlockBytes)
+    precondition(blockCount * kBlockBytes <= block.count)
     let w = makeKeySchedule(key)
     var vec = iv
-    w.withUnsafeBufferPointer { w in
-      for i in 0..<blockCount {
-        let src = block + i * kBlockBytes
-        for j in 0..<kBlockBytes {
-          src[j] ^= vec[j]
-        }
-        transformECB(w.baseAddress!, src)
-        for j in 0..<kBlockBytes { vec[j] = src[j] }
+    for i in 0..<blockCount {
+      let src = i * kBlockBytes
+      for j in 0..<kBlockBytes {
+        block[src + j] ^= vec[j]
       }
+      transformECB(w, &block, src)
+      for j in 0..<kBlockBytes { vec[j] = block[src + j] }
     }
   }
 
-  public static func inverseTransformCBC(
-    key: [UInt8], iv: [UInt8], block: UnsafeMutablePointer<UInt8>, blockCount: Int
-  ) {
+  /// Does AES256 CBC inverse transformation in place on the first `blockCount` blocks of `block`.
+  public static func inverseTransformCBC(key: [UInt8], iv: [UInt8], block: inout [UInt8], blockCount: Int) {
     precondition(key.count == kKeyBytes && iv.count == kBlockBytes)
+    precondition(blockCount * kBlockBytes <= block.count)
     let w = makeKeySchedule(key)
     var prevBlock = iv
     var original = [UInt8](repeating: 0, count: kBlockBytes)
-    w.withUnsafeBufferPointer { w in
-      for i in 0..<blockCount {
-        let current = block + i * kBlockBytes
-        for j in 0..<kBlockBytes { original[j] = current[j] }
-        inverseTransformECB(w.baseAddress!, current)
-        for j in 0..<kBlockBytes {
-          current[j] ^= prevBlock[j]
-        }
-        prevBlock = original
+    for i in 0..<blockCount {
+      let current = i * kBlockBytes
+      for j in 0..<kBlockBytes { original[j] = block[current + j] }
+      inverseTransformECB(w, &block, current)
+      for j in 0..<kBlockBytes {
+        block[current + j] ^= prevBlock[j]
       }
+      prevBlock = original
     }
   }
 
@@ -197,101 +189,101 @@ public enum UnverifiedAES256 {
     return w
   }
 
-  static func subBytes(_ block: UnsafeMutablePointer<UInt8>) {
+  static func subBytes(_ block: inout [UInt8], _ at: Int = 0) {
     for i in 0..<kBlockBytes {
-      block[i] = kSBox[Int(block[i])]
+      block[at + i] = kSBox[Int(block[at + i])]
     }
   }
 
-  static func invSubBytes(_ block: UnsafeMutablePointer<UInt8>) {
+  static func invSubBytes(_ block: inout [UInt8], _ at: Int = 0) {
     for i in 0..<kBlockBytes {
-      block[i] = kInvSBox[Int(block[i])]
+      block[at + i] = kInvSBox[Int(block[at + i])]
     }
   }
 
-  static func mixColumns(_ block: UnsafeMutablePointer<UInt8>) {
+  static func mixColumns(_ block: inout [UInt8], _ at: Int = 0) {
     for i in stride(from: 0, to: kBlockBytes, by: 4) {
-      mixColumnsImpl(block + i)
+      mixColumnsImpl(&block, at + i)
     }
   }
 
-  static func invMixColumns(_ block: UnsafeMutablePointer<UInt8>) {
+  static func invMixColumns(_ block: inout [UInt8], _ at: Int = 0) {
     for i in stride(from: 0, to: kBlockBytes, by: 4) {
-      invMixColumnsImpl(block + i)
+      invMixColumnsImpl(&block, at + i)
     }
   }
 
-  static func shiftRows(_ block: UnsafeMutablePointer<UInt8>) {
+  static func shiftRows(_ block: inout [UInt8], _ at: Int = 0) {
     // Row 0 does not change.
     // Row 1
-    var x = block[1]
-    block[1] = block[5]
-    block[5] = block[9]
-    block[9] = block[13]
-    block[13] = x
+    var x = block[at + 1]
+    block[at + 1] = block[at + 5]
+    block[at + 5] = block[at + 9]
+    block[at + 9] = block[at + 13]
+    block[at + 13] = x
     // Row 2
-    x = block[2]
-    block[2] = block[10]
-    block[10] = x
-    x = block[6]
-    block[6] = block[14]
-    block[14] = x
+    x = block[at + 2]
+    block[at + 2] = block[at + 10]
+    block[at + 10] = x
+    x = block[at + 6]
+    block[at + 6] = block[at + 14]
+    block[at + 14] = x
     // Row 3
-    x = block[3]
-    block[3] = block[15]
-    block[15] = block[11]
-    block[11] = block[7]
-    block[7] = x
+    x = block[at + 3]
+    block[at + 3] = block[at + 15]
+    block[at + 15] = block[at + 11]
+    block[at + 11] = block[at + 7]
+    block[at + 7] = x
   }
 
-  static func invShiftRows(_ block: UnsafeMutablePointer<UInt8>) {
+  static func invShiftRows(_ block: inout [UInt8], _ at: Int = 0) {
     // Row 0 does not change.
     // Row 1
-    var x = block[1]
-    block[1] = block[13]
-    block[13] = block[9]
-    block[9] = block[5]
-    block[5] = x
+    var x = block[at + 1]
+    block[at + 1] = block[at + 13]
+    block[at + 13] = block[at + 9]
+    block[at + 9] = block[at + 5]
+    block[at + 5] = x
     // Row 2
-    x = block[2]
-    block[2] = block[10]
-    block[10] = x
-    x = block[6]
-    block[6] = block[14]
-    block[14] = x
+    x = block[at + 2]
+    block[at + 2] = block[at + 10]
+    block[at + 10] = x
+    x = block[at + 6]
+    block[at + 6] = block[at + 14]
+    block[at + 14] = x
     // Row 3
-    x = block[3]
-    block[3] = block[7]
-    block[7] = block[11]
-    block[11] = block[15]
-    block[15] = x
+    x = block[at + 3]
+    block[at + 3] = block[at + 7]
+    block[at + 7] = block[at + 11]
+    block[at + 11] = block[at + 15]
+    block[at + 15] = x
   }
 
-  static func transformECB(_ w: UnsafePointer<UInt8>, _ block: UnsafeMutablePointer<UInt8>) {
-    addRoundKey(block, w)
+  static func transformECB(_ w: [UInt8], _ block: inout [UInt8], _ at: Int = 0) {
+    addRoundKey(&block, at, w, 0)
     for round in 1..<kNr {
-      subBytes(block)
-      shiftRows(block)
-      mixColumns(block)
-      addRoundKey(block, w + kBlockBytes * round)
+      subBytes(&block, at)
+      shiftRows(&block, at)
+      mixColumns(&block, at)
+      addRoundKey(&block, at, w, kBlockBytes * round)
     }
-    subBytes(block)
-    shiftRows(block)
-    addRoundKey(block, w + kBlockBytes * kNr)
+    subBytes(&block, at)
+    shiftRows(&block, at)
+    addRoundKey(&block, at, w, kBlockBytes * kNr)
   }
 
-  static func inverseTransformECB(_ w: UnsafePointer<UInt8>, _ block: UnsafeMutablePointer<UInt8>) {
-    addRoundKey(block, w + kBlockBytes * kNr)
-    invShiftRows(block)
-    invSubBytes(block)
+  static func inverseTransformECB(_ w: [UInt8], _ block: inout [UInt8], _ at: Int = 0) {
+    addRoundKey(&block, at, w, kBlockBytes * kNr)
+    invShiftRows(&block, at)
+    invSubBytes(&block, at)
     var round = kNr - 1
     while round > 0 {
-      addRoundKey(block, w + kBlockBytes * round)
-      invMixColumns(block)
-      invShiftRows(block)
-      invSubBytes(block)
+      addRoundKey(&block, at, w, kBlockBytes * round)
+      invMixColumns(&block, at)
+      invShiftRows(&block, at)
+      invSubBytes(&block, at)
       round -= 1
     }
-    addRoundKey(block, w)
+    addRoundKey(&block, at, w, 0)
   }
 }

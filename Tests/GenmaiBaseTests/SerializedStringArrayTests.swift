@@ -1,5 +1,6 @@
 // Port of mozc/src/base/container/serialized_string_array_test.cc (3.35.6354).
 
+import Foundation
 import Testing
 
 @testable import GenmaiBase
@@ -11,14 +12,13 @@ import Testing
     #expect(a.size == 0)
   }
 
-  @Test func emptyArray() {
+  @Test func emptyArray() throws {
     let kData: [UInt8] = [0, 0, 0, 0]
     #expect(SerializedStringArray.verifyData(kData))
 
-    let a = SerializedStringArray(bytes: kData)
-    #expect(a != nil)
-    #expect(a!.isEmpty)
-    #expect(a!.size == 0)
+    let a = try #require(SerializedStringArray(bytes: kData))
+    #expect(a.isEmpty)
+    #expect(a.size == 0)
   }
 
   static let kTestData: [UInt8] = cBytes(
@@ -50,7 +50,7 @@ import Testing
     #expect(a[2] == "google")
 
     var b = SerializedStringArray()
-    b.set(a.data, owner: a.dataOwner)
+    b.set(a.data)
     #expect(b.size == 3)
     #expect(b[0] == "Hello")
     #expect(b[1] == "Mozc")
@@ -66,14 +66,16 @@ import Testing
     #expect(a.size == 0)
   }
 
-  @Test func initFromRawBuffer() {
-    Self.kTestData.withUnsafeBytes { raw in
-      var a = SerializedStringArray()
-      let ok = a.initialize(raw)
-      #expect(ok)
-      #expect(Array(a) == ["Hello", "Mozc", "google"])
-      #expect(Array(a.bytes(at: 1)) == Array("Mozc".utf8))
-    }
+  @Test func initFromData() {
+    // A slice that does not start at index 0.
+    let data = (Data([0xff]) + Data(Self.kTestData)).dropFirst()
+    var a = SerializedStringArray()
+    let ok = a.initialize(data)
+    #expect(ok)
+    #expect(Array(a) == ["Hello", "Mozc", "google"])
+    #expect(a.utf8(at: 1) == Array("Mozc".utf8))
+    #expect(Array(a.data(at: 2)) == Array("google".utf8))
+    #expect(Array(a.bytes(at: 1)) == Array("Mozc".utf8))
     // Invalid data.
     var broken = Self.kTestData
     broken[broken.count - 1] = 0x41  // not null-terminated
@@ -83,10 +85,10 @@ import Testing
     #expect(!SerializedStringArray.verifyData([1, 0, 0, 0]))
   }
 
-  @Test func iterator() {
+  @Test func iterator() throws {
     #expect(SerializedStringArray.verifyData(Self.kTestData))
 
-    let a = SerializedStringArray(bytes: Self.kTestData)!
+    let a = try #require(SerializedStringArray(bytes: Self.kTestData))
     do {
       var iter = a.startIndex
       #expect(a.endIndex != iter)

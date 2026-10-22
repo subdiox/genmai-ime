@@ -144,10 +144,7 @@ public enum Encryptor {
       buf[i] = paddingValue
     }
     // For historical reasons, we are using AES256/CBC for obfuscation.
-    buf.withUnsafeMutableBufferPointer {
-      UnverifiedAES256.transformCBC(
-        key: key.key, iv: key.ivBytes, block: $0.baseAddress!, blockCount: encSize / kBlockSize)
-    }
+    UnverifiedAES256.transformCBC(key: key.key, iv: key.ivBytes, block: &buf, blockCount: encSize / kBlockSize)
     return true
   }
 
@@ -167,10 +164,7 @@ public enum Encryptor {
     }
     let size = bufSize
     // For historical reasons, we are using AES256/CBC for obfuscation.
-    buf.withUnsafeMutableBufferPointer {
-      UnverifiedAES256.inverseTransformCBC(
-        key: key.key, iv: key.ivBytes, block: $0.baseAddress!, blockCount: size / kBlockSize)
-    }
+    UnverifiedAES256.inverseTransformCBC(key: key.key, iv: key.ivBytes, block: &buf, blockCount: size / kBlockSize)
     // perform PKCS#5 un-padding
     let paddingValue = buf[size - 1]
     let paddingSize = Int(paddingValue)
