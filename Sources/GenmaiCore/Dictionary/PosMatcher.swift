@@ -31,8 +31,8 @@
 ///
 /// where XXX is replaced by rule names; see data/rules/pos_matcher_rule.def.
 ///
-/// PosMatcher is a view of a table managed by DataManager
-/// (`DataManager.getPosMatcherData()`), so pass it by value.
+/// PosMatcher holds a copy of the (small) table managed by DataManager
+/// (`DataManager.getPosMatcherData()`) for fast lookups; pass it by value.
 ///
 /// Binary format
 ///
@@ -43,10 +43,10 @@
 /// method as (start, end) pairs (IsXXX should return true if id is in one of
 /// the ranges), terminated by a sentinel element 0xFFFF.
 public struct PosMatcher: Sendable {
-  private let data: DataSpan<UInt16>
+  private let data: [UInt16]
 
   public init(_ data: DataSpan<UInt16>) {
-    self.data = data
+    self.data = data.array
   }
 
   // Used by the generated methods.

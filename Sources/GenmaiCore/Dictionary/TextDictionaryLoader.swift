@@ -13,7 +13,7 @@ import GenmaiBase
 open class TextDictionaryLoader {
   /// `--tokens_reserve_size` flag: reserve the specified size of token buffer
   /// in advance.
-  public nonisolated(unsafe) static var tokensReserveSize = 1_400_000
+  public static let tokensReserveSize = 1_400_000
 
   private let zipcodeId: UInt16
   private let isolatedWordId: UInt16

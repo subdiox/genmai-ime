@@ -2,52 +2,56 @@
 //
 // The C++ DataManager hands out `absl::string_view` / `absl::Span<const T>`
 // views into the memory-mapped data set and relies on the DataManager (which
-// owns the Mmap) outliving every consumer. In Swift the views carry a
-// reference to the backing storage (`owner`, e.g. the `Mmap`), so a section
-// stays valid as long as any view of it is alive. No bytes are copied.
+// owns the Mmap) outliving every consumer. In Swift a view holds a `Data` over
+// the backing memory (no copy) whose deallocator keeps the memory alive, so a
+// section stays valid as long as any view of it is alive. The bytes are read
+// through `data.span` (bounds-checked) with the helpers of
+// GenmaiBase/ByteSpan.swift.
 
 import Foundation
 import GenmaiBase
 
 /// A zero-copy view of a block of bytes (C++ `absl::string_view` over binary
-/// data). Keeps `owner` (the memory-mapped file or an owned buffer) alive.
+/// data).
 ///
-/// `@unchecked Sendable`: the viewed memory is immutable (read-only mmap or an
-/// owned copy that is never written after creation).
-public struct DataView: RandomAccessCollection, @unchecked Sendable {
+/// Read the bytes with `data.span` (indices start at 0); take the span once per
+/// loop, not per element.
+public struct DataView: RandomAccessCollection, Sendable {
   public typealias Index = Int
   public typealias Element = UInt8
 
-  /// The viewed bytes. Valid while this view (or another reference to
-  /// `owner`) is alive.
-  public let bytes: UnsafeRawBufferPointer
-  /// The object that owns the memory (e.g. `Mmap`), or nil for static data.
-  public let owner: AnyObject?
+  /// The viewed bytes (`startIndex` is always 0). Shares the backing memory.
+  public let data: Data
+  /// The backing memory, for the pointer-based APIs (see `PinnedBytes`).
+  private let pinned: PinnedBytes?
+  /// Offset of `data` in `pinned`.
+  private let pinnedOffset: Int
 
   /// An empty view (C++ `absl::string_view()` / `""`).
   public static let empty = DataView()
 
   public init() {
-    bytes = UnsafeRawBufferPointer(start: nil, count: 0)
-    owner = nil
+    data = Data()
+    pinned = nil
+    pinnedOffset = 0
   }
 
-  /// Wraps memory owned by `owner`. The caller guarantees that the memory is
-  /// valid while `owner` is alive.
-  public init(bytes: UnsafeRawBufferPointer, owner: AnyObject?) {
-    self.bytes = bytes
-    self.owner = owner
+  private init(_ pinned: PinnedBytes, offset: Int, count: Int) {
+    self.pinned = pinned
+    pinnedOffset = offset
+    data = pinned.makeData(offset, count)
   }
 
   /// A view of the whole memory-mapped file.
   public init(_ mmap: Mmap) {
-    self.init(bytes: mmap.buffer, owner: mmap)
+    let pinned = PinnedBytes(mmap)
+    self.init(pinned, offset: 0, count: pinned.count)
   }
 
   /// Creates a view over an owned, 64-byte aligned copy of `bytes`.
   public init(copying bytes: some Collection<UInt8>) {
-    let storage = DataBuffer(bytes)
-    self.init(bytes: storage.bytes, owner: storage)
+    let pinned = PinnedBytes(copying: bytes)
+    self.init(pinned, offset: 0, count: pinned.count)
   }
 
   /// Creates a view over an owned copy of the UTF-8 bytes of `string`.
@@ -56,55 +60,58 @@ public struct DataView: RandomAccessCollection, @unchecked Sendable {
   }
 
   public var startIndex: Int { 0 }
-  public var endIndex: Int { bytes.count }
-  public var count: Int { bytes.count }
-  public var isEmpty: Bool { bytes.isEmpty }
+  public var endIndex: Int { data.count }
+  public var count: Int { data.count }
+  public var isEmpty: Bool { data.isEmpty }
 
-  public subscript(i: Int) -> UInt8 { bytes[i] }
-
-  /// The start address (C++ `data()`), nil for an empty view without memory.
-  public var baseAddress: UnsafeRawPointer? { bytes.baseAddress }
+  public subscript(i: Int) -> UInt8 { data.span[i] }
 
   /// `absl::ClippedSubstr(view, offset, length)`: the sub-view clipped to the
   /// bounds of this view.
   public func clippedSubstr(_ offset: Int, _ length: Int = Int.max) -> DataView {
     let start = Swift.min(Swift.max(offset, 0), count)
     let len = Swift.min(Swift.max(length, 0), count - start)
-    if bytes.baseAddress == nil {
+    guard let pinned else {
       return self
     }
-    return DataView(bytes: UnsafeRawBufferPointer(rebasing: bytes[start..<(start + len)]), owner: owner)
+    return DataView(pinned, offset: pinnedOffset + start, count: len)
   }
 
   /// Sub-view `[offset, offset + length)`; the range must be in bounds.
   public func slice(_ offset: Int, _ length: Int) -> DataView {
     precondition(offset >= 0 && length >= 0 && offset + length <= count, "DataView.slice out of range")
-    if bytes.baseAddress == nil {
+    guard let pinned else {
       return self
     }
-    return DataView(bytes: UnsafeRawBufferPointer(rebasing: bytes[offset..<(offset + length)]), owner: owner)
+    return DataView(pinned, offset: pinnedOffset + offset, count: length)
   }
 
   /// Little-endian unaligned load (C++ `LoadUnaligned<T>`).
   @inline(__always)
   public func load<T: FixedWidthInteger>(fromByteOffset offset: Int, as type: T.Type = T.self) -> T {
-    T(littleEndian: bytes.loadUnaligned(fromByteOffset: offset, as: T.self))
+    data.span.loadLittleEndian(T.self, at: offset)
   }
 
   /// `MakeAlignedConstSpan<T>(view)`: a typed view, or an empty one when the
   /// data is misaligned or its size is not a multiple of `T`'s size.
   public func span<T: FixedWidthInteger>(_ type: T.Type = T.self) -> DataSpan<T> {
-    DataSpan(Bits.makeAlignedConstSpan(bytes, as: T.self), owner: owner)
+    let size = MemoryLayout<T>.size
+    guard isAligned(to: MemoryLayout<T>.alignment), count >= size, count % size == 0 else {
+      // misaligned data is passed. returns an empty span.
+      return DataSpan()
+    }
+    return DataSpan(self)
   }
 
   /// The bytes decoded as UTF-8 (invalid sequences are replaced by U+FFFD).
   public var string: String {
-    String(decoding: bytes, as: UTF8.self)
+    String(decoding: data, as: UTF8.self)
   }
 
   /// `starts_with` on bytes.
   public func starts(with prefix: some Collection<UInt8>) -> Bool {
     if prefix.count > count { return false }
+    let bytes = data.span
     var i = 0
     for b in prefix {
       if bytes[i] != b { return false }
@@ -114,63 +121,77 @@ public struct DataView: RandomAccessCollection, @unchecked Sendable {
   }
 
   /// Copies the bytes into an array.
-  public var array: [UInt8] { Array(bytes) }
+  public var array: [UInt8] { [UInt8](data) }
+
+  // MARK: Pointer-based interop
+
+  // The pointer-based APIs of GenmaiBase / GenmaiStorage (`SerializedStringArray.set`, `LoudsTrie.open`,
+  // `BitVectorBasedArray`, `ExistenceFilter.read`, `Mmap.maybeMLock`) take raw pointers into the image. Until they
+  // take `Data`, these members hand out the backing memory. The memory stays valid while `owner` is alive.
+
+  /// The viewed bytes as a raw buffer (valid while `owner` is alive).
+  public var bytes: UnsafeRawBufferPointer {
+    pinned?.bytes(pinnedOffset, count) ?? UnsafeRawBufferPointer(start: nil, count: 0)
+  }
+
+  /// The start address (C++ `data()`), nil for an empty view without memory.
+  public var baseAddress: UnsafeRawPointer? { bytes.baseAddress }
+
+  /// The object that keeps the backing memory alive, nil for an empty view.
+  public var owner: AnyObject? { pinned }
+
+  /// Byte offset of `element` (a buffer inside this view, e.g. from
+  /// `BitVectorBasedArray.get`) from the start of this view.
+  public func byteOffset(of element: UnsafeRawBufferPointer) -> Int {
+    guard let start = element.baseAddress, let base = baseAddress else {
+      return 0
+    }
+    return start - base
+  }
+
+  /// The address of byte `offset` modulo `alignment` (the address of an empty
+  /// view is 0).
+  public func misalignment(of offset: Int = 0, to alignment: Int) -> Int {
+    (Int(bitPattern: baseAddress) &+ offset) % alignment
+  }
+
+  /// True if the start address is a multiple of `alignment`.
+  public func isAligned(to alignment: Int) -> Bool {
+    misalignment(to: alignment) == 0
+  }
 }
 
 extension DataView: Equatable {
   /// Byte content equality (C++ `absl::string_view::operator==`).
   public static func == (lhs: DataView, rhs: DataView) -> Bool {
-    if lhs.count != rhs.count { return false }
-    if lhs.count == 0 { return true }
-    return memcmp(lhs.bytes.baseAddress!, rhs.bytes.baseAddress!, lhs.count) == 0
+    lhs.data == rhs.data
   }
 }
 
-/// A zero-copy typed view (C++ `absl::Span<const T>` created by
-/// `MakeAlignedConstSpan`). Elements are stored in little endian.
+/// The backing memory of `DataView`s: a memory-mapped file or an owned,
+/// 64-byte aligned copy.
 ///
-/// `@unchecked Sendable`: the viewed memory is immutable.
-public struct DataSpan<T: FixedWidthInteger>: RandomAccessCollection, @unchecked Sendable {
-  public typealias Index = Int
-  public typealias Element = T
+/// The only place where the views touch raw memory: `Data` cannot wrap memory
+/// it does not own without a pointer, and the pointer-based APIs of
+/// GenmaiBase / GenmaiStorage need a stable address (a small `Data` is stored
+/// inline, so its address is not stable). `@unchecked Sendable`: the memory is
+/// immutable (read-only mmap, or a copy that is never written after `init`)
+/// and freed only in `deinit`.
+private final class PinnedBytes: @unchecked Sendable {
+  private let base: UnsafeRawBufferPointer
+  /// The mapped file, or nil when `base` is owned (allocated in `init`).
+  private let mmap: Mmap?
 
-  /// The typed memory. Valid while this span (or another reference to
-  /// `owner`) is alive.
-  public let buffer: UnsafeBufferPointer<T>
-  public let owner: AnyObject?
-
-  public init() {
-    buffer = UnsafeBufferPointer(start: nil, count: 0)
-    owner = nil
+  init(_ mmap: Mmap) {
+    base = mmap.buffer
+    self.mmap = mmap
   }
 
-  public init(_ buffer: UnsafeBufferPointer<T>, owner: AnyObject?) {
-    self.buffer = buffer
-    self.owner = owner
-  }
-
-  public var startIndex: Int { 0 }
-  public var endIndex: Int { buffer.count }
-  public var count: Int { buffer.count }
-  public var isEmpty: Bool { buffer.isEmpty }
-
-  @inline(__always)
-  public subscript(i: Int) -> T { T(littleEndian: buffer[i]) }
-}
-
-/// Owned, 64-byte aligned heap copy of bytes used as the owner of a
-/// `DataView` that is not backed by a file.
-public final class DataBuffer: @unchecked Sendable {
-  private let storage: UnsafeMutableRawBufferPointer
-  private let byteCount: Int
-
-  public init(_ bytes: some Collection<UInt8>) {
+  init(copying bytes: some Collection<UInt8>) {
     let n = bytes.count
     let storage = UnsafeMutableRawBufferPointer.allocate(byteCount: Swift.max(n, 1), alignment: 64)
     let copied: Void? = bytes.withContiguousStorageIfAvailable { src in
-      if let base = src.baseAddress, n > 0 {
-        storage.baseAddress!.copyMemory(from: base, byteCount: n)
-      }
+      storage.copyMemory(from: UnsafeRawBufferPointer(src))
     }
     if copied == nil {
       var i = 0
@@ -179,17 +200,80 @@ public final class DataBuffer: @unchecked Sendable {
         i += 1
       }
     }
-    self.storage = storage
-    byteCount = n
-  }
-
-  public var bytes: UnsafeRawBufferPointer {
-    UnsafeRawBufferPointer(rebasing: storage[0..<byteCount])
+    base = UnsafeRawBufferPointer(rebasing: storage[0..<n])
+    mmap = nil
   }
 
   deinit {
-    storage.deallocate()
+    if mmap == nil {
+      base.deallocate()
+    }
   }
+
+  var count: Int { base.count }
+
+  func bytes(_ offset: Int, _ count: Int) -> UnsafeRawBufferPointer {
+    UnsafeRawBufferPointer(rebasing: base[offset..<(offset + count)])
+  }
+
+  /// A `Data` over `[offset, offset + count)` without copying; it keeps this
+  /// object alive.
+  func makeData(_ offset: Int, _ count: Int) -> Data {
+    guard count > 0, let start = base.baseAddress else {
+      return Data()
+    }
+    return Data(
+      bytesNoCopy: UnsafeMutableRawPointer(mutating: start + offset), count: count,
+      deallocator: .custom { [self] _, _ in withExtendedLifetime(self) {} })
+  }
+}
+
+/// A zero-copy typed view (C++ `absl::Span<const T>` created by
+/// `MakeAlignedConstSpan`). Elements are stored in little endian.
+public struct DataSpan<T: FixedWidthInteger>: RandomAccessCollection, Sendable {
+  public typealias Index = Int
+  public typealias Element = T
+
+  /// The viewed bytes.
+  public let view: DataView
+
+  public init() {
+    view = .empty
+  }
+
+  init(_ view: DataView) {
+    self.view = view
+  }
+
+  public var startIndex: Int { 0 }
+  public var endIndex: Int { count }
+  public var count: Int { view.count / MemoryLayout<T>.size }
+  public var isEmpty: Bool { count == 0 }
+
+  @inline(__always)
+  public subscript(i: Int) -> T {
+    view.data.span.loadLittleEndian(T.self, at: i * MemoryLayout<T>.size)
+  }
+
+  /// The elements copied into an array (for hot lookups of small tables).
+  public var array: [T] {
+    let bytes = view.data.span
+    let size = MemoryLayout<T>.size
+    var result: [T] = []
+    result.reserveCapacity(count)
+    for i in 0..<count {
+      result.append(bytes.loadLittleEndian(T.self, at: i * size))
+    }
+    return result
+  }
+
+  // MARK: Pointer-based interop (see DataView)
+
+  /// The typed memory (valid while `owner` is alive).
+  public var buffer: UnsafeBufferPointer<T> { Bits.makeAlignedConstSpan(view.bytes, as: T.self) }
+
+  /// The object that keeps the memory alive.
+  public var owner: AnyObject? { view.owner }
 }
 
 extension SerializedStringArray {

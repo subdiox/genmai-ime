@@ -142,7 +142,7 @@ private let kLastTokenFlag: UInt8 = 0x80
 /// `Util::SplitFirstChar32` on raw bytes: decodes the character at `i`.
 /// Returns (codepoint, length) or nil for an ill-formed sequence / end.
 @inline(__always)
-private func splitFirstChar32(_ s: UnsafeBufferPointer<UInt8>, _ i: Int) -> (UInt32, Int)? {
+private func splitFirstChar32(_ s: Span<UInt8>, _ i: Int) -> (UInt32, Int)? {
   let n = s.count - i
   if n <= 0 { return nil }
   let lead = s[i]
@@ -206,64 +206,63 @@ private func splitFirstChar32(_ s: UnsafeBufferPointer<UInt8>, _ i: Int) -> (UIn
   return (result, len)
 }
 
-/// `Util::CodepointToUtf8Append` into a raw buffer; returns the number of
-/// bytes written (0 for U+0000, as in C++).
+/// `Util::CodepointToUtf8Append`: appends the UTF-8 bytes of `c` to `out`
+/// (nothing for U+0000, as in C++).
 @inline(__always)
-private func appendUtf8(_ c: UInt32, _ out: UnsafeMutableBufferPointer<UInt8>, _ pos: Int) -> Int {
+private func appendUtf8(_ c: UInt32, _ out: inout [UInt8]) {
   if c == 0 {
-    return 0
+    return
   }
   if c < 0x80 {
-    out[pos] = UInt8(c)
-    return 1
+    out.append(UInt8(c))
+    return
   }
   if c < 0x800 {
-    out[pos] = UInt8(0xc0 | (c >> 6))
-    out[pos + 1] = UInt8(0x80 | (c & 0x3f))
-    return 2
+    out.append(UInt8(0xc0 | (c >> 6)))
+    out.append(UInt8(0x80 | (c & 0x3f)))
+    return
   }
   if c < 0x10000 {
-    out[pos] = UInt8(0xe0 | (c >> 12))
-    out[pos + 1] = UInt8(0x80 | ((c >> 6) & 0x3f))
-    out[pos + 2] = UInt8(0x80 | (c & 0x3f))
-    return 3
+    out.append(UInt8(0xe0 | (c >> 12)))
+    out.append(UInt8(0x80 | ((c >> 6) & 0x3f)))
+    out.append(UInt8(0x80 | (c & 0x3f)))
+    return
   }
   if c < 0x200000 {
-    out[pos] = UInt8(0xf0 | (c >> 18))
-    out[pos + 1] = UInt8(0x80 | ((c >> 12) & 0x3f))
-    out[pos + 2] = UInt8(0x80 | ((c >> 6) & 0x3f))
-    out[pos + 3] = UInt8(0x80 | (c & 0x3f))
-    return 4
+    out.append(UInt8(0xf0 | (c >> 18)))
+    out.append(UInt8(0x80 | ((c >> 12) & 0x3f)))
+    out.append(UInt8(0x80 | ((c >> 6) & 0x3f)))
+    out.append(UInt8(0x80 | (c & 0x3f)))
+    return
   }
   // Outside of the 21-bit range; never produced by the codec for valid data.
-  let bytes = Util.codepointToUtf8Bytes(c)
-  for (k, b) in bytes.enumerated() {
-    out[pos + k] = b
-  }
-  return bytes.count
+  out.append(contentsOf: Util.codepointToUtf8Bytes(c))
 }
 
-/// Runs `body` over a contiguous byte view of `src`.
+/// Runs `body` over the bytes of `src` (copied into a contiguous array).
 @inline(__always)
-private func withBytes<C: Collection<UInt8>, R>(
-  _ src: C, _ body: (UnsafeBufferPointer<UInt8>) throws -> R
-) rethrows -> R {
-  if let r = try src.withContiguousStorageIfAvailable(body) {
-    return r
-  }
-  return try Array(src).withUnsafeBufferPointer(body)
+private func withSpan<R>(_ src: some Collection<UInt8>, _ body: (Span<UInt8>) -> R) -> R {
+  let array = ContiguousArray(src)
+  return body(array.span)
 }
 
-/// Runs `body` over the UTF-8 bytes of `s` (no copy for native strings).
+/// Runs `body` over the bytes of `src` (no copy).
 @inline(__always)
-private func withUTF8Bytes<R>(_ s: some StringProtocol, _ body: (UnsafeBufferPointer<UInt8>) throws -> R)
-  rethrows -> R
-{
-  if let r = try s.utf8.withContiguousStorageIfAvailable(body) {
-    return r
-  }
-  var str = String(s)
-  return try str.withUTF8(body)
+private func withSpan<R>(_ src: [UInt8], _ body: (Span<UInt8>) -> R) -> R {
+  let slice = src[...]
+  return body(slice.span)
+}
+
+/// Runs `body` over the bytes of `src` (no copy).
+@inline(__always)
+private func withSpan<R>(_ src: ArraySlice<UInt8>, _ body: (Span<UInt8>) -> R) -> R {
+  body(src.span)
+}
+
+/// Runs `body` over the UTF-8 bytes of `s`.
+@inline(__always)
+private func withUTF8Span<R>(_ s: some StringProtocol, _ body: (Span<UInt8>) -> R) -> R {
+  withSpan(s.utf8, body)
 }
 
 // MARK: - Key codec implementation
@@ -293,23 +292,18 @@ private func encodeDecodeKeyChar(_ code: UInt32) -> UInt32 {
   }
 }
 
-/// Writes the encoded/decoded key of `src` into `out` (capacity must be at
-/// least getEncodedDecodedKeyLengthImpl(src)); returns the written length.
+/// Appends the encoded/decoded key of `src` to `out`.
 @inline(__always)
-private func encodeDecodeKeyImpl(_ src: UnsafeBufferPointer<UInt8>, _ out: UnsafeMutableBufferPointer<UInt8>)
-  -> Int
-{
+private func encodeDecodeKeyImpl(_ src: Span<UInt8>, _ out: inout [UInt8]) {
   var i = 0
-  var pos = 0
   while let (code, len) = splitFirstChar32(src, i) {
     i += len
-    pos += appendUtf8(encodeDecodeKeyChar(code), out, pos)
+    appendUtf8(encodeDecodeKeyChar(code), &out)
   }
-  return pos
 }
 
 @inline(__always)
-private func getEncodedDecodedKeyLengthImpl(_ src: UnsafeBufferPointer<UInt8>) -> Int {
+private func getEncodedDecodedKeyLengthImpl(_ src: Span<UInt8>) -> Int {
   var size = src.count
   var i = 0
   while let (code, len) = splitFirstChar32(src, i) {
@@ -336,17 +330,16 @@ private func getEncodedDecodedKeyLengthImpl(_ src: UnsafeBufferPointer<UInt8>) -
 private func keyCodecCapacity(_ n: Int) -> Int { n * 3 }
 
 @inline(__always)
-private func encodeDecodeKeyToBytes(_ src: UnsafeBufferPointer<UInt8>) -> [UInt8] {
-  [UInt8](unsafeUninitializedCapacity: keyCodecCapacity(src.count)) { buf, count in
-    count = encodeDecodeKeyImpl(src, buf)
-  }
+private func encodeDecodeKeyToBytes(_ src: Span<UInt8>) -> [UInt8] {
+  var out: [UInt8] = []
+  out.reserveCapacity(keyCodecCapacity(src.count))
+  encodeDecodeKeyImpl(src, &out)
+  return out
 }
 
 @inline(__always)
-private func encodeDecodeKeyToString(_ src: UnsafeBufferPointer<UInt8>) -> String {
-  String(unsafeUninitializedCapacity: Swift.max(keyCodecCapacity(src.count), 1)) { buf in
-    encodeDecodeKeyImpl(src, buf)
-  }
+private func encodeDecodeKeyToString(_ src: Span<UInt8>) -> String {
+  String(decoding: encodeDecodeKeyToBytes(src), as: UTF8.self)
 }
 
 // MARK: - Token encoding helpers
@@ -493,7 +486,7 @@ private func readFlags(_ val: UInt8) -> UInt8 {
 }
 
 @inline(__always)
-private func decodeCost(_ ptr: UnsafePointer<UInt8>, _ tokenInfo: inout TokenInfo, _ offset: inout Int) {
+private func decodeCost(_ ptr: Span<UInt8>, _ tokenInfo: inout TokenInfo, _ offset: inout Int) {
   if ptr[offset] & kSmallCostFlag != 0 {
     tokenInfo.token.cost = Int(ptr[offset] & kSmallCostMask) << 8
     offset += 1
@@ -505,7 +498,7 @@ private func decodeCost(_ ptr: UnsafePointer<UInt8>, _ tokenInfo: inout TokenInf
 
 @inline(__always)
 private func decodePos(
-  _ ptr: UnsafePointer<UInt8>, _ flags: UInt8, _ tokenInfo: inout TokenInfo, _ offset: inout Int
+  _ ptr: Span<UInt8>, _ flags: UInt8, _ tokenInfo: inout TokenInfo, _ offset: inout Int
 ) {
   let posFlag = flags & kPosTypeFlagMask
   switch posFlag {
@@ -532,7 +525,7 @@ private func decodePos(
 
 @inline(__always)
 private func decodeValueInfo(
-  _ ptr: UnsafePointer<UInt8>, _ flags: UInt8, _ tokenInfo: inout TokenInfo, _ offset: inout Int
+  _ ptr: Span<UInt8>, _ flags: UInt8, _ tokenInfo: inout TokenInfo, _ offset: inout Int
 ) {
   let valueFlag = flags & kValueTypeFlagMask
   switch valueFlag {
@@ -558,7 +551,7 @@ private func decodeValueInfo(
 
 // Get value id only for reverse conversion
 @inline(__always)
-private func readValueInfo(_ ptr: UnsafePointer<UInt8>, _ flags: UInt8, _ valueId: inout Int, _ offset: inout Int) {
+private func readValueInfo(_ ptr: Span<UInt8>, _ flags: UInt8, _ valueId: inout Int, _ offset: inout Int) {
   valueId = -1
   let valueFlag = flags & kValueTypeFlagMask
   if valueFlag == kNormalValueFlag {
@@ -577,11 +570,9 @@ private func readValueInfo(_ ptr: UnsafePointer<UInt8>, _ flags: UInt8, _ valueI
 // MARK: - Value codec implementation
 
 @inline(__always)
-private func encodeValueImpl(_ src: UnsafeBufferPointer<UInt8>, _ dst: UnsafeMutableBufferPointer<UInt8>) -> Int {
-  var pos = 0
+private func encodeValueImpl(_ src: Span<UInt8>, _ dst: inout [UInt8]) {
   @inline(__always) func push(_ b: Int) {
-    dst[pos] = UInt8(truncatingIfNeeded: b)
-    pos += 1
+    dst.append(UInt8(truncatingIfNeeded: b))
   }
   var i = 0
   while let (cp, len) = splitFirstChar32(src, i) {
@@ -634,12 +625,10 @@ private func encodeValueImpl(_ src: UnsafeBufferPointer<UInt8>, _ dst: UnsafeMut
       push(c & 255)
     }
   }
-  return pos
 }
 
 @inline(__always)
-private func decodeValueImpl(_ src: UnsafeBufferPointer<UInt8>, _ dst: UnsafeMutableBufferPointer<UInt8>) -> Int {
-  var out = 0
+private func decodeValueImpl(_ src: Span<UInt8>, _ dst: inout [UInt8]) {
   var p = 0
   let end = src.count
   // Reads past the end yield 0 (C++ reads the terminator / adjacent memory of
@@ -691,9 +680,8 @@ private func decodeValueImpl(_ src: UnsafeBufferPointer<UInt8>, _ dst: UnsafeMut
     } else {
       // "should never come here"
     }
-    out += appendUtf8(UInt32(truncatingIfNeeded: c), dst, out)
+    appendUtf8(UInt32(truncatingIfNeeded: c), &dst)
   }
-  return out
 }
 
 /// Every encoded value byte decodes to at most 3 UTF-8 bytes, except the
@@ -723,44 +711,65 @@ public struct SystemDictionaryCodec: Sendable {
 
   /// Compresses key string into small bytes.
   public func encodeKey(_ src: some StringProtocol) -> [UInt8] {
-    withUTF8Bytes(src) { encodeDecodeKeyToBytes($0) }
+    withUTF8Span(src) { encodeDecodeKeyToBytes($0) }
   }
 
   /// Byte version of encodeKey.
   public func encodeKey(bytes src: some Collection<UInt8>) -> [UInt8] {
-    withBytes(src) { encodeDecodeKeyToBytes($0) }
+    withSpan(src) { encodeDecodeKeyToBytes($0) }
+  }
+
+  /// Byte version of encodeKey.
+  public func encodeKey(bytes src: ArraySlice<UInt8>) -> [UInt8] {
+    withSpan(src) { encodeDecodeKeyToBytes($0) }
   }
 
   /// Decompress key string.
-  public func decodeKey(_ src: UnsafeBufferPointer<UInt8>) -> String {
+  public func decodeKey(_ src: Span<UInt8>) -> String {
     encodeDecodeKeyToString(src)
   }
 
+  public func decodeKey(_ src: [UInt8]) -> String {
+    withSpan(src) { encodeDecodeKeyToString($0) }
+  }
+
+  public func decodeKey(_ src: ArraySlice<UInt8>) -> String {
+    withSpan(src) { encodeDecodeKeyToString($0) }
+  }
+
   public func decodeKey(_ src: some Collection<UInt8>) -> String {
-    withBytes(src) { encodeDecodeKeyToString($0) }
+    withSpan(src) { encodeDecodeKeyToString($0) }
   }
 
   /// Decompress key string into bytes.
   public func decodeKeyBytes(_ src: some Collection<UInt8>) -> [UInt8] {
-    withBytes(src) { encodeDecodeKeyToBytes($0) }
+    withSpan(src) { encodeDecodeKeyToBytes($0) }
   }
 
   /// Returns the length of encoded key string.
   public func getEncodedKeyLength(_ src: some StringProtocol) -> Int {
-    withUTF8Bytes(src) { getEncodedDecodedKeyLengthImpl($0) }
+    withUTF8Span(src) { getEncodedDecodedKeyLengthImpl($0) }
   }
 
   public func getEncodedKeyLength(bytes src: some Collection<UInt8>) -> Int {
-    withBytes(src) { getEncodedDecodedKeyLengthImpl($0) }
+    withSpan(src) { getEncodedDecodedKeyLengthImpl($0) }
   }
 
   /// Returns the length of decoded key string.
-  public func getDecodedKeyLength(_ src: UnsafeBufferPointer<UInt8>) -> Int {
+  public func getDecodedKeyLength(_ src: Span<UInt8>) -> Int {
     getEncodedDecodedKeyLengthImpl(src)
   }
 
+  public func getDecodedKeyLength(_ src: [UInt8]) -> Int {
+    withSpan(src) { getEncodedDecodedKeyLengthImpl($0) }
+  }
+
+  public func getDecodedKeyLength(_ src: ArraySlice<UInt8>) -> Int {
+    withSpan(src) { getEncodedDecodedKeyLengthImpl($0) }
+  }
+
   public func getDecodedKeyLength(_ src: some Collection<UInt8>) -> Int {
-    withBytes(src) { getEncodedDecodedKeyLengthImpl($0) }
+    withSpan(src) { getEncodedDecodedKeyLengthImpl($0) }
   }
 
   // MARK: Value
@@ -779,41 +788,50 @@ public struct SystemDictionaryCodec: Sendable {
 
   /// Compresses value string into small bytes.
   public func encodeValue(_ src: some StringProtocol) -> [UInt8] {
-    withUTF8Bytes(src) { s in
-      // Each UTF-8 byte produces at most 2 output bytes (ASCII 1 -> 2).
-      [UInt8](unsafeUninitializedCapacity: s.count * 2) { buf, count in
-        count = encodeValueImpl(s, buf)
-      }
-    }
+    withUTF8Span(src) { encodeValueToBytes($0) }
   }
 
   /// Byte version of encodeValue.
   public func encodeValue(bytes src: some Collection<UInt8>) -> [UInt8] {
-    withBytes(src) { s in
-      [UInt8](unsafeUninitializedCapacity: s.count * 2) { buf, count in
-        count = encodeValueImpl(s, buf)
-      }
-    }
+    withSpan(src) { encodeValueToBytes($0) }
+  }
+
+  /// Byte version of encodeValue.
+  public func encodeValue(bytes src: ArraySlice<UInt8>) -> [UInt8] {
+    withSpan(src) { encodeValueToBytes($0) }
+  }
+
+  private func encodeValueToBytes(_ src: Span<UInt8>) -> [UInt8] {
+    // Each UTF-8 byte produces at most 2 output bytes (ASCII 1 -> 2).
+    var out: [UInt8] = []
+    out.reserveCapacity(src.count * 2)
+    encodeValueImpl(src, &out)
+    return out
   }
 
   /// Decompress value string.
-  public func decodeValue(_ src: UnsafeBufferPointer<UInt8>) -> String {
-    String(unsafeUninitializedCapacity: decodeValueCapacity(src.count)) { buf in
-      decodeValueImpl(src, buf)
-    }
+  public func decodeValue(_ src: Span<UInt8>) -> String {
+    String(decoding: decodeValueToBytes(src), as: UTF8.self)
+  }
+
+  public func decodeValue(_ src: [UInt8]) -> String {
+    withSpan(src) { decodeValue($0) }
   }
 
   public func decodeValue(_ src: some Collection<UInt8>) -> String {
-    withBytes(src) { decodeValue($0) }
+    withSpan(src) { decodeValue($0) }
   }
 
   /// Decompress value into bytes (no UTF-8 repair).
   public func decodeValueBytes(_ src: some Collection<UInt8>) -> [UInt8] {
-    withBytes(src) { s in
-      [UInt8](unsafeUninitializedCapacity: decodeValueCapacity(s.count)) { buf, count in
-        count = decodeValueImpl(s, buf)
-      }
-    }
+    withSpan(src) { decodeValueToBytes($0) }
+  }
+
+  private func decodeValueToBytes(_ src: Span<UInt8>) -> [UInt8] {
+    var out: [UInt8] = []
+    out.reserveCapacity(decodeValueCapacity(src.count))
+    decodeValueImpl(src, &out)
+    return out
   }
 
   // MARK: Tokens
@@ -864,13 +882,15 @@ public struct SystemDictionaryCodec: Sendable {
     return buff
   }
 
-  /// Decompress a token. Returns false if the token is the last token for a
-  /// certain key. Only the fields encoded in the token are written (see
-  /// TokenDecodeIterator).
+  /// Decompress the token at byte `start` of `bytes`. Returns false if the
+  /// token is the last token for a certain key. Only the fields encoded in the
+  /// token are written (see TokenDecodeIterator).
   @inline(__always)
-  public func decodeToken(_ ptr: UnsafePointer<UInt8>, _ tokenInfo: inout TokenInfo, _ readBytes: inout Int)
-    -> Bool
-  {
+  public func decodeToken(
+    _ bytes: Span<UInt8>, at start: Int, _ tokenInfo: inout TokenInfo, _ readBytes: inout Int
+  ) -> Bool {
+    // A token is at most 9 bytes.
+    let ptr = bytes.extracting(start..<Swift.min(start + 9, bytes.count))
     let flags = readFlags(ptr[0])
     if flags & kSpellingCorrectionFlag != 0 {
       tokenInfo.token.attributes = Token.Attribute.spellingCorrection
@@ -889,9 +909,11 @@ public struct SystemDictionaryCodec: Sendable {
   /// If the token have value id, assign it to |value_id| otherwise assign -1.
   /// Return false if a token is the last token for a certain key.
   @inline(__always)
-  public func readTokenForReverseLookup(_ ptr: UnsafePointer<UInt8>, _ valueId: inout Int, _ readBytes: inout Int)
-    -> Bool
-  {
+  public func readTokenForReverseLookup(
+    _ bytes: Span<UInt8>, at start: Int, _ valueId: inout Int, _ readBytes: inout Int
+  ) -> Bool {
+    // A token is at most 9 bytes.
+    let ptr = bytes.extracting(start..<Swift.min(start + 9, bytes.count))
     let flags = readFlags(ptr[0])
     var offset = 1
     // Read pos

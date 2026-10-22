@@ -34,9 +34,9 @@ struct NBestGeneratorTests {
   private func getEndNode(
     _ request: ConversionRequest, _ segments: Segments, _ beginNode: Node, _ group: [UInt16],
     _ isSingleSegment: Bool
-  ) -> Node {
+  ) throws -> Node {
     var endNode: Node? = nil
-    var node = beginNode.next!
+    var node = try #require(beginNode.next)
     while let next = node.next {
       endNode = next
       if converter.isSegmentEndNode(request.options(), segments, node, group, isSingleSegment) {
@@ -44,7 +44,7 @@ struct NBestGeneratorTests {
       }
       node = next
     }
-    return endNode!
+    return try #require(endNode)
   }
 
   /// MakeLattice + MakeGroup + Viterbi.
@@ -74,7 +74,7 @@ struct NBestGeneratorTests {
 
     let kSingleSegment = false  // For 'normal' conversion
     let beginNode = lattice.bosNode
-    let endNode = getEndNode(request, segments, beginNode, group, kSingleSegment)
+    let endNode = try getEndNode(request, segments, beginNode, group, kSingleSegment)
     do {
       nbestGenerator.reset(beginNode, endNode, .init(boundaryMode: .strict))
       let resultSegment = Segment()
@@ -109,7 +109,7 @@ struct NBestGeneratorTests {
 
     let kSingleSegment = true  // For real time conversion
     let beginNode = lattice.bosNode
-    let endNode = getEndNode(request, segments, beginNode, group, kSingleSegment)
+    let endNode = try getEndNode(request, segments, beginNode, group, kSingleSegment)
     do {
       nbestGenerator.reset(beginNode, endNode, .init(boundaryMode: .strict))
       let resultSegment = Segment()
@@ -141,7 +141,7 @@ struct NBestGeneratorTests {
     let nbestGenerator = createNBestGenerator(lattice, request)
 
     let beginNode = lattice.bosNode
-    let endNode = getEndNode(request, segments, beginNode, group, true)
+    let endNode = try getEndNode(request, segments, beginNode, group, true)
 
     nbestGenerator.reset(
       beginNode, endNode,
@@ -179,7 +179,7 @@ struct NBestGeneratorTests {
     #expect(segs[2].contentValue == "行きたい")
   }
 
-  @Test func noPartialCandidateBetweenAlphabets() {
+  @Test func noPartialCandidateBetweenAlphabets() throws {
     let segments = Segments()
     let kInput = "AAA"
     addSegment(segments, kInput, .free)
@@ -189,7 +189,7 @@ struct NBestGeneratorTests {
     let nbestGenerator = createNBestGenerator(lattice, request)
 
     let beginNode = lattice.bosNode
-    let endNode = getEndNode(request, segments, beginNode, group, true)
+    let endNode = try getEndNode(request, segments, beginNode, group, true)
 
     // Since the test dictionary contains "A", partial candidates "A" and "AA" can
     // be generated but they should be suppressed because they are split between
@@ -204,7 +204,7 @@ struct NBestGeneratorTests {
     #expect(hasSingleCandidate(resultSegment, valueIs("AAA")))
   }
 
-  @Test func noAlphabetsConnection2Nodes() {
+  @Test func noAlphabetsConnection2Nodes() throws {
     let segments = Segments()
     let kText = "eupho"
     addSegment(segments, kText, .free)
@@ -214,7 +214,7 @@ struct NBestGeneratorTests {
     let nbestGenerator = createNBestGenerator(lattice, request)
 
     let beginNode = lattice.bosNode
-    let endNode = getEndNode(request, segments, beginNode, group, true)
+    let endNode = try getEndNode(request, segments, beginNode, group, true)
     nbestGenerator.reset(
       beginNode, endNode,
       .init(boundaryMode: .onlyEdge, candidateMode: NBestGenerator.CandidateMode.fillInnerSegmentInfo))
@@ -236,7 +236,7 @@ struct NBestGeneratorTests {
     let nbestGenerator = createNBestGenerator(lattice, request)
 
     let beginNode = lattice.bosNode
-    let endNode = getEndNode(request, segments, beginNode, group, true)
+    let endNode = try getEndNode(request, segments, beginNode, group, true)
     nbestGenerator.reset(
       beginNode, endNode,
       .init(boundaryMode: .onlyEdge, candidateMode: NBestGenerator.CandidateMode.fillInnerSegmentInfo))
@@ -271,13 +271,13 @@ struct NBestGeneratorTests {
 
     // Skip HIS_NODE(s) to find the begin_node for the conversion segment.
     var beginNode = lattice.bosNode
-    var node = lattice.bosNode.next!
-    while node.next != nil && node.nodeType == .hisNode {
+    var node = try #require(lattice.bosNode.next)
+    while let next = node.next, node.nodeType == .hisNode {
       beginNode = node
-      node = node.next!
+      node = next
     }
 
-    let endNode = getEndNode(request, segments, beginNode, group, false)
+    let endNode = try getEndNode(request, segments, beginNode, group, false)
     nbestGenerator.reset(beginNode, endNode, .init(boundaryMode: .strict))
     let resultSegment = Segment()
     nbestGenerator.setCandidates(request.options(), "", 10, resultSegment)
@@ -298,7 +298,7 @@ struct NBestGeneratorTests {
     let (lattice, group) = build(segments, "あんけーとひかえる", request)
     let nbestGenerator = createNBestGenerator(lattice, request)
     let beginNode = lattice.bosNode
-    let endNode = getEndNode(request, segments, beginNode, group, false)
+    let endNode = try getEndNode(request, segments, beginNode, group, false)
     nbestGenerator.reset(beginNode, endNode, .init(boundaryMode: .strict))
     let resultSegment = Segment()
     nbestGenerator.setCandidates(request.options(), "", 10, resultSegment)

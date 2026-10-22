@@ -542,7 +542,8 @@ public final class Segments {
 
     let candsSize = previousSegment.candidatesSize
     for i in 0..<candsSize {
-      let candidate = segment.insertCandidate(i)!
+      let candidate = Candidate()
+      segment.insertCandidate(i, candidate)
       candidate.assign(from: previousSegment.candidate(i))
     }
     segment.metaCandidates = previousSegment.metaCandidates.map { $0.copy() }

@@ -199,17 +199,16 @@ private struct CodecFixture {
   func decodeTokens(_ codec: SystemDictionaryCodec, _ image: [UInt8]) -> [TokenInfo] {
     var tokens: [TokenInfo] = []
     var offset = 0
-    image.withUnsafeBufferPointer { ptr in
-      while offset < image.count {
-        var readBytes = 0
-        var tokenInfo = TokenInfo(Token())
-        let more = codec.decodeToken(ptr.baseAddress! + offset, &tokenInfo, &readBytes)
-        tokens.append(tokenInfo)
-        if !more {
-          break
-        }
-        offset += readBytes
+    let bytes = image[...]
+    while offset < image.count {
+      var readBytes = 0
+      var tokenInfo = TokenInfo(Token())
+      let more = codec.decodeToken(bytes.span, at: offset, &tokenInfo, &readBytes)
+      tokens.append(tokenInfo)
+      if !more {
+        break
       }
+      offset += readBytes
     }
     return tokens
   }
@@ -226,21 +225,20 @@ private struct CodecFixture {
   func checkReadTokens(_ codec: SystemDictionaryCodec, _ encoded: [UInt8]) {
     var readNum = 0
     var offset = 0
-    encoded.withUnsafeBufferPointer { ptr in
-      while true {
-        var readByte = 0
-        var valueId = -1
-        let isLastToken = !codec.readTokenForReverseLookup(ptr.baseAddress! + offset, &valueId, &readByte)
-        if sourceTokens[readNum].valueType == .defaultValue {
-          #expect(valueId == sourceTokens[readNum].idInValueTrie)
-        } else {
-          #expect(valueId == -1)
-        }
-        offset += readByte
-        readNum += 1
-        if isLastToken {
-          break
-        }
+    let bytes = encoded[...]
+    while true {
+      var readByte = 0
+      var valueId = -1
+      let isLastToken = !codec.readTokenForReverseLookup(bytes.span, at: offset, &valueId, &readByte)
+      if sourceTokens[readNum].valueType == .defaultValue {
+        #expect(valueId == sourceTokens[readNum].idInValueTrie)
+      } else {
+        #expect(valueId == -1)
+      }
+      offset += readByte
+      readNum += 1
+      if isLastToken {
+        break
       }
     }
     #expect(readNum == sourceTokens.count)

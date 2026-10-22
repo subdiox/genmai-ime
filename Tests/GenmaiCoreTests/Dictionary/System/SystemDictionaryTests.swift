@@ -66,7 +66,7 @@ private final class LookupPrefixTestCallback: SysDicCallbackBase {
 
 @Suite(.enabled(if: SystemDictionaryTestSupport.hasMockData, "mock_genmai.data is missing (run Tools/build_oracle.sh)"))
 struct SystemDictionaryTests {
-  private var textTokens: [Token] { Support.fixture!.tokens }
+  private var textTokens: [Token] { Support.fixture?.tokens ?? [] }
 
   @Test func callback() throws {
     let tokens = [tok("star", "star"), tok("start", "start"), tok("starting", "starting")]

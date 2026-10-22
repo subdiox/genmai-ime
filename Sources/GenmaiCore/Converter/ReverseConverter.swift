@@ -41,7 +41,7 @@ func tryNormalizingKeyAsMathExpression(_ s: some StringProtocol, _ key: inout St
   return true
 }
 
-public final class ReverseConverter: @unchecked Sendable {
+public final class ReverseConverter: Sendable {
   private let immutableConverter: any ImmutableConverterInterface
 
   public init(_ immutableConverter: any ImmutableConverterInterface) {

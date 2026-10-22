@@ -58,7 +58,8 @@ struct DataManagerOssDataSetTest {
     #expect(components.count == 3)
     #expect(components.first == Version.getGenmaiEngineVersion())
     #expect(components.last == "oss")
-    #expect(version == reader.get("version")!.string)
+    let versionSection = try #require(reader.get("version"))
+    #expect(version == versionSection.string)
 
     // Typed spans are non-empty (i.e. aligned and of valid size).
     #expect(!dm.getPosMatcherData().isEmpty)
@@ -67,18 +68,24 @@ struct DataManagerOssDataSetTest {
     #expect(!userPos.tokenArray.isEmpty && userPos.tokenArray.count % 8 == 0)
     #expect(SerializedStringArray.verifyData(userPos.stringArray))
     #expect(!dm.getConnectorData().isEmpty)
-    #expect(dm.getSystemDictionaryData() == reader.get("dict")!)
-    #expect(dm.getSuggestionFilterData().count == reader.get("sugg")!.count / 4)
+    let dictSection = try #require(reader.get("dict"))
+    #expect(dm.getSystemDictionaryData() == dictSection)
+    let suggSection = try #require(reader.get("sugg"))
+    #expect(dm.getSuggestionFilterData().count == suggSection.count / 4)
     let collocation = dm.getCollocationData()
     #expect(!collocation.collocation.isEmpty && !collocation.collocationSuppression.isEmpty)
-    #expect(dm.getPosGroupData().count == reader.get("posg")!.count)
+    let posgSection = try #require(reader.get("posg"))
+    #expect(dm.getPosGroupData().count == posgSection.count)
 
     let segmenter = dm.getSegmenterData()
     #expect(segmenter.lNumElements > 0 && segmenter.rNumElements > 0)
-    #expect(segmenter.lTable.count == reader.get("segmenter_ltable")!.count / 2)
-    #expect(segmenter.rTable.count == reader.get("segmenter_rtable")!.count / 2)
+    let segmenterLtableSection = try #require(reader.get("segmenter_ltable"))
+    #expect(segmenter.lTable.count == segmenterLtableSection.count / 2)
+    let segmenterRtableSection = try #require(reader.get("segmenter_rtable"))
+    #expect(segmenter.rTable.count == segmenterRtableSection.count / 2)
     #expect(segmenter.bitarrayData.count * 8 >= segmenter.lNumElements * segmenter.rNumElements)
-    #expect(segmenter.boundaryData.count == reader.get("bdry")!.count / 2)
+    let bdrySection = try #require(reader.get("bdry"))
+    #expect(segmenter.boundaryData.count == bdrySection.count / 2)
     // Every compressed id is within the compressed size.
     #expect(segmenter.lTable.allSatisfy { Int($0) < segmenter.lNumElements })
     #expect(segmenter.rTable.allSatisfy { Int($0) < segmenter.rNumElements })
@@ -89,7 +96,9 @@ struct DataManagerOssDataSetTest {
     #expect(suffix.tokenArray.count == 12 * suffixKeys.size)
 
     let rc = dm.getReadingCorrectionData()
-    #expect(SerializedStringArray(rc.valueArray)!.size == SerializedStringArray(rc.errorArray)!.size)
+    let valueArray = try #require(SerializedStringArray(rc.valueArray))
+    let errorArray = try #require(SerializedStringArray(rc.errorArray))
+    #expect(valueArray.size == errorArray.size)
 
     for (name, data) in [
       ("symbol", dm.getSymbolRewriterData()), ("emoticon", dm.getEmoticonRewriterData()),

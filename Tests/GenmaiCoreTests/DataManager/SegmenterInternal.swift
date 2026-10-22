@@ -23,7 +23,9 @@ struct SegmenterInternal {
     for line in try lines(idFile) {
       let fields = line.split(whereSeparator: { $0 == " " || $0 == "\t" })
       if fields.count < 2 { continue }
-      let id = Int(fields[0])!
+      guard let id = Int(fields[0]) else {
+        throw StatusError.invalidArgument("invalid id: \(line)")
+      }
       pos[String(fields[1])] = id
       maxId = max(id, maxId)
     }
@@ -50,14 +52,15 @@ struct SegmenterInternal {
     throws -> [ClosedRange<Int>]?
   {
     if pattern == "*" { return nil }
-    let regex = try NSRegularExpression(pattern: pattern.replacingOccurrences(of: "*", with: "[^,]+"))
+    let regex = try Regex(pattern.replacingOccurrences(of: "*", with: "[^,]+")).matchingSemantics(.unicodeScalar)
     var ranges: [ClosedRange<Int>] = []
     var minId = -1
     var maxId = -1
     for p in sortedKeys {
-      let id = pos[p]!
-      let ns = p as NSString
-      if regex.firstMatch(in: p, options: .anchored, range: NSRange(location: 0, length: ns.length)) != nil {
+      guard let id = pos[p] else {
+        preconditionFailure("sortedKeys are the keys of pos")
+      }
+      if p.prefixMatch(of: regex) != nil {
         if minId == -1 {
           minId = id
           maxId = id

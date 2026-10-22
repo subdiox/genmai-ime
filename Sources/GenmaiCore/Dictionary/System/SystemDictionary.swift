@@ -30,6 +30,7 @@
 // - The ReverseLookupIndex stores its per-value-id result arrays in one flat
 //   array with offsets (same contents and order as the C++ arrays).
 
+import Foundation
 import GenmaiBase
 import GenmaiStorage
 import Synchronization
@@ -82,16 +83,37 @@ private func buildHiraganaExpansionTable(_ codec: SystemDictionaryCodec, _ encod
   }
 }
 
-@inline(__always)
-private func getTokenArrayPtr(_ tokenArray: BitVectorBasedArray, _ keyId: Int) -> UnsafePointer<UInt8> {
-  tokenArray.get(keyId).baseAddress!.assumingMemoryBound(to: UInt8.self)
+/// The token section: the image of the BitVectorBasedArray of the encoded
+/// tokens of each key.
+private struct TokenArray: Sendable {
+  let array: BitVectorBasedArray
+  let image: DataView
+
+  init(_ image: DataView) {
+    var array = BitVectorBasedArray()
+    if let base = image.baseAddress {
+      array.open(base)
+    }
+    self.array = array
+    self.image = image
+  }
+
+  /// The section bytes (read the tokens with `bytes.span`).
+  var bytes: Data { image.data }
+
+  /// The byte offset of the encoded tokens of `keyId` in `bytes`
+  /// (`token_array_->Get(key_id)`).
+  @inline(__always)
+  func offset(_ keyId: Int) -> Int {
+    image.byteOffset(of: array.get(keyId))
+  }
 }
 
 /// Creates a String from the first `length` bytes of `bytes` (a prefix that
 /// ends at a character boundary).
 @inline(__always)
-private func makeString(_ bytes: UnsafeBufferPointer<UInt8>, _ length: Int) -> String {
-  String(decoding: UnsafeBufferPointer(rebasing: bytes[0..<length]), as: UTF8.self)
+private func makeString(_ bytes: [UInt8], _ length: Int) -> String {
+  String(decoding: bytes[0..<length], as: UTF8.self)
 }
 
 // Iterator for scanning token array.
@@ -118,7 +140,9 @@ private struct TokenScanIterator {
   }
 
   private let codec: SystemDictionaryCodec
-  private let encodedTokensPtr: UnsafePointer<UInt8>
+  /// The token section and the offset of the first token in it.
+  private let tokens: Data
+  private let base: Int
   private let terminationFlag: UInt8
   private var state: State = .hasNext
   private(set) var result = Result()
@@ -126,10 +150,11 @@ private struct TokenScanIterator {
   private var tokensOffset = 0
   private var index = 0
 
-  init(_ codec: SystemDictionaryCodec, _ tokenArray: BitVectorBasedArray) {
+  init(_ codec: SystemDictionaryCodec, _ tokenArray: TokenArray) {
     self.codec = codec
     terminationFlag = codec.getTokensTerminationFlag()
-    encodedTokensPtr = getTokenArrayPtr(tokenArray, 0)
+    tokens = tokenArray.bytes
+    base = tokenArray.offset(0)
     nextInternal()
   }
 
@@ -143,7 +168,8 @@ private struct TokenScanIterator {
   }
 
   private mutating func nextInternal() {
-    if encodedTokensPtr[offset] == terminationFlag {
+    let bytes = tokens.span
+    if bytes[base + offset] == terminationFlag {
       state = .done
       return
     }
@@ -152,7 +178,7 @@ private struct TokenScanIterator {
     result.index = index
     result.tokensOffset = tokensOffset
     let isLastToken = !codec.readTokenForReverseLookup(
-      encodedTokensPtr + offset, &result.valueId, &readBytes)
+      bytes, at: base + offset, &result.valueId, &readBytes)
     if isLastToken {
       var tokensSize = offset + readBytes - tokensOffset
       if tokensSize < kMinTokenArrayBlobSize {
@@ -176,8 +202,7 @@ private struct ReverseLookupResult: Sendable {
 }
 
 /// `SystemDictionary::ReverseLookupCache`.
-private final class ReverseLookupCache: @unchecked Sendable {
-  // @unchecked Sendable: never mutated after it is published.
+private struct ReverseLookupCache: Sendable {
   var results: [Int: [ReverseLookupResult]] = [:]
 
   func isAvailable(_ idSet: Set<Int>) -> Bool {
@@ -186,7 +211,7 @@ private final class ReverseLookupCache: @unchecked Sendable {
     idSet.allSatisfy { results[$0] != nil }
   }
 
-  func emplace(_ id: Int, _ result: ReverseLookupResult) {
+  mutating func emplace(_ id: Int, _ result: ReverseLookupResult) {
     results[id, default: []].append(result)
   }
 }
@@ -197,7 +222,7 @@ private final class ReverseLookupIndex: Sendable {
   private let offsets: [Int]
   private let flat: [ReverseLookupResult]
 
-  init(_ codec: SystemDictionaryCodec, _ tokenArray: BitVectorBasedArray) {
+  init(_ codec: SystemDictionaryCodec, _ tokenArray: TokenArray) {
     // Gets id size.
     var valueIdMax = -1
     do {
@@ -250,7 +275,7 @@ private final class ReverseLookupIndex: Sendable {
     self.flat = flat
   }
 
-  func fillResultMap(_ idSet: Set<Int>, _ resultMap: ReverseLookupCache) {
+  func fillResultMap(_ idSet: Set<Int>, _ resultMap: inout ReverseLookupCache) {
     for id in idSet.sorted() {
       for i in offsets[id]..<offsets[id + 1] {
         resultMap.emplace(id, flat[i])
@@ -296,9 +321,9 @@ private final class ReverseLookupCallbackWrapper: DictionaryCallback {
 }
 
 /// `mozc::dictionary::SystemDictionary`.
-public final class SystemDictionary: DictionaryInterface, @unchecked Sendable {
-  // @unchecked Sendable: all lookup state is immutable after build(); the
-  // reverse lookup cache is guarded by a lock.
+public final class SystemDictionary: DictionaryInterface, Sendable {
+  // All lookup state is immutable after build(); the reverse lookup cache is
+  // guarded by a mutex.
 
   /// System dictionary options represented as bitwise enum.
   public struct Options: OptionSet, Sendable {
@@ -344,11 +369,11 @@ public final class SystemDictionary: DictionaryInterface, @unchecked Sendable {
 
     /// Builds and returns system dictionary.
     public func build() throws -> SystemDictionary {
-      let instance = SystemDictionary(SystemDictionaryCodec(), DictionaryFileCodec())
+      let dictionaryFile = DictionaryFile(DictionaryFileCodec())
 
       switch input {
       case .filename(let filename):
-        try instance.dictionaryFile.openFromFile(filename)
+        try dictionaryFile.openFromFile(filename)
       case .image(let image):
         // Make the dictionary not to be paged out.
         // We don't check the return value because the process doesn't necessarily
@@ -358,10 +383,13 @@ public final class SystemDictionary: DictionaryInterface, @unchecked Sendable {
         if let base = image.baseAddress {
           _ = Mmap.maybeMLock(base, image.count)
         }
-        try instance.dictionaryFile.openFromImage(image)
+        try dictionaryFile.openFromImage(image)
       }
 
-      if !instance.openDictionaryFile(options.contains(.enableReverseLookupIndex)) {
+      guard
+        let instance = SystemDictionary(
+          SystemDictionaryCodec(), dictionaryFile, options.contains(.enableReverseLookupIndex))
+      else {
         throw StatusError.unknown("Failed to create system dictionary")
       }
 
@@ -371,35 +399,32 @@ public final class SystemDictionary: DictionaryInterface, @unchecked Sendable {
 
   private let keyTrie = LoudsTrie()
   private let _valueTrie = LoudsTrie()
-  private var tokenArray = BitVectorBasedArray()
-  private var frequentPos = UnsafeBufferPointer<UInt32>(start: nil, count: 0)
+  private let tokenArray: TokenArray
+  private let frequentPos: [UInt32]
   private let codec: SystemDictionaryCodec
-  private let fileCodec: DictionaryFileCodec
-  private var hiraganaExpansionTable = KeyExpansionTable()
+  private let hiraganaExpansionTable: KeyExpansionTable
   private let dictionaryFile: DictionaryFile
   /// Keeps the section images (and through them the mapped file / image
-  /// owner) alive.
-  private var sectionImages: [DataView] = []
+  /// owner) alive: the tries read them in place.
+  private let sectionImages: [DataView]
   private let reverseLookupCache = Mutex<ReverseLookupCache?>(nil)
-  private var reverseLookupIndex: ReverseLookupIndex?
+  private let reverseLookupIndex: ReverseLookupIndex?
 
-  private init(_ codec: SystemDictionaryCodec, _ fileCodec: DictionaryFileCodec) {
+  /// `SystemDictionary::OpenDictionaryFile`: nil when the sections are missing
+  /// or broken.
+  private init?(
+    _ codec: SystemDictionaryCodec, _ dictionaryFile: DictionaryFile, _ enableReverseLookupIndex: Bool
+  ) {
     self.codec = codec
-    self.fileCodec = fileCodec
-    dictionaryFile = DictionaryFile(fileCodec)
-  }
-
-  public var valueTrie: LoudsTrie { _valueTrie }
-
-  private func openDictionaryFile(_ enableReverseLookupIndex: Bool) -> Bool {
+    self.dictionaryFile = dictionaryFile
     guard let keyImage = dictionaryFile.getSection(codec.getSectionNameForKey()),
       let valueImage = dictionaryFile.getSection(codec.getSectionNameForValue()),
       let tokenImage = dictionaryFile.getSection(codec.getSectionNameForTokens()),
       let frequentPosImage = dictionaryFile.getSection(codec.getSectionNameForPos()),
       let keyBase = keyImage.baseAddress, let valueBase = valueImage.baseAddress,
-      let tokenBase = tokenImage.baseAddress
+      !tokenImage.isEmpty
     else {
-      return false
+      return nil
     }
     sectionImages = [keyImage, valueImage, tokenImage, frequentPosImage]
 
@@ -408,35 +433,28 @@ public final class SystemDictionary: DictionaryInterface, @unchecked Sendable {
       kKeyTrieSelect1CacheSize, kKeyTrieTermvecCacheSize)
     {
       GenmaiLog.error("cannot open key trie")
-      return false
+      return nil
     }
 
+    var hiraganaExpansionTable = KeyExpansionTable()
     buildHiraganaExpansionTable(codec, &hiraganaExpansionTable)
+    self.hiraganaExpansionTable = hiraganaExpansionTable
 
     if !_valueTrie.open(
       valueBase, kValueTrieLb0CacheSize, kValueTrieLb1CacheSize, kValueTrieSelect0CacheSize,
       kValueTrieSelect1CacheSize, kValueTrieTermvecCacheSize)
     {
       GenmaiLog.error("can not open value trie")
-      return false
+      return nil
     }
 
-    tokenArray.open(tokenBase)
-    frequentPos = frequentPosImage.span(UInt32.self).buffer
+    tokenArray = TokenArray(tokenImage)
+    frequentPos = frequentPosImage.span(UInt32.self).array
 
-    if enableReverseLookupIndex {
-      initReverseLookupIndex()
-    }
-
-    return true
+    reverseLookupIndex = enableReverseLookupIndex ? ReverseLookupIndex(codec, tokenArray) : nil
   }
 
-  private func initReverseLookupIndex() {
-    if reverseLookupIndex != nil {
-      return
-    }
-    reverseLookupIndex = ReverseLookupIndex(codec, tokenArray)
-  }
+  public var valueTrie: LoudsTrie { _valueTrie }
 
   // MARK: - DictionaryInterface
 
@@ -476,10 +494,10 @@ public final class SystemDictionary: DictionaryInterface, @unchecked Sendable {
     // true.
 
     // Get the block of tokens for this key.
-    let encodedTokensPtr = getTokenArrayPtr(tokenArray, keyId)
+    let encodedTokensOffset = tokenArray.offset(keyId)
 
     // Check tokens.
-    var iter = TokenDecodeIterator(codec, _valueTrie, frequentPos, key, encodedTokensPtr)
+    var iter = TokenDecodeIterator(codec, _valueTrie, frequentPos, key, tokenArray.bytes, encodedTokensOffset)
     while !iter.done() {
       if value.bytesEqual(iter.token.value) {
         return true
@@ -576,66 +594,61 @@ public final class SystemDictionary: DictionaryInterface, @unchecked Sendable {
     result.reserveCapacity(kLookupLimit)
     collectPredictiveNodesInBfsOrder(encodedKey, table, kLookupLimit, &result)
 
-    // Reused buffer inside the following loop.
-    withUnsafeTemporaryAllocation(of: UInt8.self, capacity: LoudsTrie.kMaxDepth + 1) { buffer in
-      let encodedActualKeyBuffer = buffer.baseAddress!
-      outer: for state in result {
-        // Computes the actual key.  For example:
-        // key = "くー"
-        // encoded_actual_key = encode("ぐーぐる")  [expanded]
-        // encoded_actual_key_prediction_suffix = encode("ぐる")
-        let encodedActualKey = keyTrie.restoreKeyString(state.node, encodedActualKeyBuffer)
-        let suffixStart = Swift.min(encodedKey.count, encodedActualKey.count)
-        let encodedActualKeyPredictionSuffix = UnsafeBufferPointer(
-          rebasing: encodedActualKey[suffixStart...])
+    outer: for state in result {
+      // Computes the actual key.  For example:
+      // key = "くー"
+      // encoded_actual_key = encode("ぐーぐる")  [expanded]
+      // encoded_actual_key_prediction_suffix = encode("ぐる")
+      let encodedActualKey = keyTrie.restoreKeyString(state.node)
+      let suffixStart = Swift.min(encodedKey.count, encodedActualKey.count)
+      let encodedActualKeyPredictionSuffix = encodedActualKey[suffixStart...]
 
-        // decoded_key = "くーぐる" (= key + prediction suffix)
-        let decodedKey = key + codec.decodeKey(encodedActualKeyPredictionSuffix)
-        switch callback.onKey(decodedKey) {
-        case .traverseDone:
+      // decoded_key = "くーぐる" (= key + prediction suffix)
+      let decodedKey = key + codec.decodeKey(encodedActualKeyPredictionSuffix)
+      switch callback.onKey(decodedKey) {
+      case .traverseDone:
+        return
+      case .traverseNextKey:
+        continue outer
+      case .traverseCull:
+        fatalError("Culling is not implemented.")
+      case .traverseContinue:
+        break
+      }
+
+      let actualKey: String
+      if state.numExpanded > 0 {
+        actualKey = codec.decodeKey(encodedActualKey)
+      } else {
+        actualKey = decodedKey
+      }
+      switch callback.onActualKey(decodedKey, actualKey, state.numExpanded) {
+      case .traverseDone:
+        return
+      case .traverseNextKey:
+        continue outer
+      case .traverseCull:
+        fatalError("Culling is not implemented.")
+      case .traverseContinue:
+        break
+      }
+
+      let keyId = keyTrie.getKeyIdOfTerminalNode(state.node)
+      var iter = TokenDecodeIterator(
+        codec, _valueTrie, frequentPos, actualKey, tokenArray.bytes, tokenArray.offset(keyId))
+      while !iter.done() {
+        // Note: TokenDecodeIterator reuses its internal Token instance
+        // (especially token.value) across iterations when decoding tokens
+        // with SAME_AS_PREV_VALUE; the callback receives a copy.
+        let r = callback.onToken(decodedKey, actualKey, iter.token)
+        if r == .traverseDone {
           return
-        case .traverseNextKey:
-          continue outer
-        case .traverseCull:
-          fatalError("Culling is not implemented.")
-        case .traverseContinue:
+        }
+        if r == .traverseNextKey {
           break
         }
-
-        let actualKey: String
-        if state.numExpanded > 0 {
-          actualKey = codec.decodeKey(encodedActualKey)
-        } else {
-          actualKey = decodedKey
-        }
-        switch callback.onActualKey(decodedKey, actualKey, state.numExpanded) {
-        case .traverseDone:
-          return
-        case .traverseNextKey:
-          continue outer
-        case .traverseCull:
-          fatalError("Culling is not implemented.")
-        case .traverseContinue:
-          break
-        }
-
-        let keyId = keyTrie.getKeyIdOfTerminalNode(state.node)
-        var iter = TokenDecodeIterator(
-          codec, _valueTrie, frequentPos, actualKey, getTokenArrayPtr(tokenArray, keyId))
-        while !iter.done() {
-          // Note: TokenDecodeIterator reuses its internal Token instance
-          // (especially token.value) across iterations when decoding tokens
-          // with SAME_AS_PREV_VALUE; the callback receives a copy.
-          let r = callback.onToken(decodedKey, actualKey, iter.token)
-          if r == .traverseDone {
-            return
-          }
-          if r == .traverseNextKey {
-            break
-          }
-          assert(r != .traverseCull, "Not implemented")
-          iter.next()
-        }
+        assert(r != .traverseCull, "Not implemented")
+        iter.next()
       }
     }
   }
@@ -656,60 +669,56 @@ public final class SystemDictionary: DictionaryInterface, @unchecked Sendable {
     _ key: String, _ encodedKey: [UInt8], _ callback: any DictionaryCallback,
     _ tokenFilter: (TokenInfo) -> Bool
   ) {
-    var key = key
-    key.withUTF8 { keyBytes in
-      encodedKey.withUnsafeBufferPointer { encodedKeyBytes in
-        var node = LoudsTrie.Node()
-        var i = 0
-        while i < encodedKeyBytes.count {
-          if !keyTrie.moveToChildByLabel(encodedKeyBytes[i], &node) {
-            return
-          }
-          i += 1  // Increment here for next loop and |encoded_prefix| defined below.
-          if !keyTrie.isTerminalNode(node) {
-            continue
-          }
-          let encodedPrefix = UnsafeBufferPointer(rebasing: encodedKeyBytes[0..<i])
-          let prefix = makeString(
-            keyBytes, Swift.min(codec.getDecodedKeyLength(encodedPrefix), keyBytes.count))
+    let keyBytes = Array(key.utf8)
+    var node = LoudsTrie.Node()
+    var i = 0
+    while i < encodedKey.count {
+      if !keyTrie.moveToChildByLabel(encodedKey[i], &node) {
+        return
+      }
+      i += 1  // Increment here for next loop and |encoded_prefix| defined below.
+      if !keyTrie.isTerminalNode(node) {
+        continue
+      }
+      let encodedPrefix = encodedKey[0..<i]
+      let prefix = makeString(
+        keyBytes, Swift.min(codec.getDecodedKeyLength(encodedPrefix), keyBytes.count))
 
-          switch callback.onKey(prefix) {
-          case .traverseDone, .traverseCull:
-            return
-          case .traverseNextKey:
-            continue
-          case .traverseContinue:
-            break
-          }
+      switch callback.onKey(prefix) {
+      case .traverseDone, .traverseCull:
+        return
+      case .traverseNextKey:
+        continue
+      case .traverseContinue:
+        break
+      }
 
-          switch callback.onActualKey(prefix, prefix, 0) {
-          case .traverseDone, .traverseCull:
-            return
-          case .traverseNextKey:
-            continue
-          case .traverseContinue:
-            break
-          }
+      switch callback.onActualKey(prefix, prefix, 0) {
+      case .traverseDone, .traverseCull:
+        return
+      case .traverseNextKey:
+        continue
+      case .traverseContinue:
+        break
+      }
 
-          let keyId = keyTrie.getKeyIdOfTerminalNode(node)
-          var iter = TokenDecodeIterator(
-            codec, _valueTrie, frequentPos, prefix, getTokenArrayPtr(tokenArray, keyId))
-          while !iter.done() {
-            let tokenInfo = iter.get()
-            if !tokenFilter(tokenInfo) {
-              iter.next()
-              continue
-            }
-            let res = callback.onToken(prefix, prefix, tokenInfo.token)
-            if res == .traverseDone || res == .traverseCull {
-              return
-            }
-            if res == .traverseNextKey {
-              break
-            }
-            iter.next()
-          }
+      let keyId = keyTrie.getKeyIdOfTerminalNode(node)
+      var iter = TokenDecodeIterator(
+        codec, _valueTrie, frequentPos, prefix, tokenArray.bytes, tokenArray.offset(keyId))
+      while !iter.done() {
+        let tokenInfo = iter.get()
+        if !tokenFilter(tokenInfo) {
+          iter.next()
+          continue
         }
+        let res = callback.onToken(prefix, prefix, tokenInfo.token)
+        if res == .traverseDone || res == .traverseCull {
+          return
+        }
+        if res == .traverseNextKey {
+          break
+        }
+        iter.next()
       }
     }
   }
@@ -737,9 +746,9 @@ public final class SystemDictionary: DictionaryInterface, @unchecked Sendable {
   //     absl::string_view(actual_key_buffer, key_pos) is the matched prefix using
   //     key expansion.
   private func lookupPrefixWithKeyExpansionImpl(
-    _ key: UnsafeBufferPointer<UInt8>, _ encodedKey: UnsafeBufferPointer<UInt8>,
+    _ key: [UInt8], _ encodedKey: [UInt8],
     _ table: KeyExpansionTable, _ callback: any DictionaryCallback, _ node: LoudsTrie.Node,
-    _ keyPos: Int, _ numExpanded: Int, _ actualKeyBuffer: UnsafeMutablePointer<UInt8>
+    _ keyPos: Int, _ numExpanded: Int, _ actualKeyBuffer: inout [UInt8]
   ) -> DictionaryCallbackResult {
     // This do-block handles a terminal node and callback.  do-block is used to
     // break the block and continue to the subsequent traversal phase.
@@ -748,7 +757,7 @@ public final class SystemDictionary: DictionaryInterface, @unchecked Sendable {
         break terminal
       }
 
-      let encodedPrefix = UnsafeBufferPointer(rebasing: encodedKey[0..<keyPos])
+      let encodedPrefix = encodedKey[0..<keyPos]
       let prefix = makeString(key, Swift.min(codec.getDecodedKeyLength(encodedPrefix), key.count))
       var result = callback.onKey(prefix)
       if result == .traverseDone || result == .traverseCull {
@@ -758,7 +767,7 @@ public final class SystemDictionary: DictionaryInterface, @unchecked Sendable {
         break terminal  // Go to the traversal phase.
       }
 
-      let encodedActualPrefix = UnsafeBufferPointer(start: actualKeyBuffer, count: keyPos)
+      let encodedActualPrefix = actualKeyBuffer[0..<keyPos]
       let actualPrefix = codec.decodeKey(encodedActualPrefix)
       result = callback.onActualKey(prefix, actualPrefix, numExpanded)
       if result == .traverseDone || result == .traverseCull {
@@ -770,7 +779,7 @@ public final class SystemDictionary: DictionaryInterface, @unchecked Sendable {
 
       let keyId = keyTrie.getKeyIdOfTerminalNode(node)
       var iter = TokenDecodeIterator(
-        codec, _valueTrie, frequentPos, actualPrefix, getTokenArrayPtr(tokenArray, keyId))
+        codec, _valueTrie, frequentPos, actualPrefix, tokenArray.bytes, tokenArray.offset(keyId))
       while !iter.done() {
         result = callback.onToken(prefix, actualPrefix, iter.token)
         if result == .traverseDone || result == .traverseCull {
@@ -797,7 +806,7 @@ public final class SystemDictionary: DictionaryInterface, @unchecked Sendable {
         actualKeyBuffer[keyPos] = c
         let result = lookupPrefixWithKeyExpansionImpl(
           key, encodedKey, table, callback, node, keyPos + 1,
-          numExpanded + (c != currentChar ? 1 : 0), actualKeyBuffer)
+          numExpanded + (c != currentChar ? 1 : 0), &actualKeyBuffer)
         if result == .traverseDone {
           return .traverseDone
         }
@@ -819,18 +828,9 @@ public final class SystemDictionary: DictionaryInterface, @unchecked Sendable {
       return
     }
 
-    var key = key
-    key.withUTF8 { keyBytes in
-      encodedKey.withUnsafeBufferPointer { encodedKeyBytes in
-        withUnsafeTemporaryAllocation(
-          of: UInt8.self, capacity: Swift.max(LoudsTrie.kMaxDepth, encodedKeyBytes.count) + 1
-        ) { actualKeyBuffer in
-          _ = lookupPrefixWithKeyExpansionImpl(
-            keyBytes, encodedKeyBytes, hiraganaExpansionTable, callback, LoudsTrie.Node(), 0, 0,
-            actualKeyBuffer.baseAddress!)
-        }
-      }
-    }
+    var actualKeyBuffer = [UInt8](repeating: 0, count: Swift.max(LoudsTrie.kMaxDepth, encodedKey.count) + 1)
+    _ = lookupPrefixWithKeyExpansionImpl(
+      Array(key.utf8), encodedKey, hiraganaExpansionTable, callback, LoudsTrie.Node(), 0, 0, &actualKeyBuffer)
   }
 
   public func lookupExact(_ key: String, callback: any DictionaryCallback) {
@@ -842,11 +842,11 @@ public final class SystemDictionary: DictionaryInterface, @unchecked Sendable {
     if callback.onKey(key) != .traverseContinue {
       return
     }
-    if callback.onActualKey(key, key, /* num_expanded= */ 0) != .traverseContinue {
+    if callback.onActualKey(key, key, 0) != .traverseContinue {  // num_expanded = 0
       return
     }
     // Callback on each token.
-    var iter = TokenDecodeIterator(codec, _valueTrie, frequentPos, key, getTokenArrayPtr(tokenArray, keyId))
+    var iter = TokenDecodeIterator(codec, _valueTrie, frequentPos, key, tokenArray.bytes, tokenArray.offset(keyId))
     while !iter.done() {
       if callback.onToken(key, key, iter.token) != .traverseContinue {
         break
@@ -876,7 +876,7 @@ public final class SystemDictionary: DictionaryInterface, @unchecked Sendable {
       return
     }
 
-    let reverseLookupCache = ReverseLookupCache()
+    var reverseLookupCache = ReverseLookupCache()
 
     // Iterate each suffix and collect IDs of all substrings.
     var idSet = Set<Int>()
@@ -888,7 +888,7 @@ public final class SystemDictionary: DictionaryInterface, @unchecked Sendable {
       pos += Strings.oneCharLen(bytes[pos])
     }
     // Collect tokens for all IDs.
-    scanTokens(idSet, reverseLookupCache)
+    scanTokens(idSet, &reverseLookupCache)
 
     self.reverseLookupCache.withLock { $0 = reverseLookupCache }
   }
@@ -924,22 +924,22 @@ public final class SystemDictionary: DictionaryInterface, @unchecked Sendable {
 
     let results: ReverseLookupCache
     if let reverseLookupIndex {
-      let nonCachedResults = ReverseLookupCache()
-      reverseLookupIndex.fillResultMap(idSet, nonCachedResults)
+      var nonCachedResults = ReverseLookupCache()
+      reverseLookupIndex.fillResultMap(idSet, &nonCachedResults)
       results = nonCachedResults
     } else if let cachedResults = reverseLookupCache.withLock({ $0 }), cachedResults.isAvailable(idSet) {
       results = cachedResults
     } else {
       // Cache is not available. Get token for each ID.
-      let nonCachedResults = ReverseLookupCache()
-      scanTokens(idSet, nonCachedResults)
+      var nonCachedResults = ReverseLookupCache()
+      scanTokens(idSet, &nonCachedResults)
       results = nonCachedResults
     }
 
     registerReverseLookupResults(idSet, results, callback)
   }
 
-  private func scanTokens(_ idSet: Set<Int>, _ cache: ReverseLookupCache) {
+  private func scanTokens(_ idSet: Set<Int>, _ cache: inout ReverseLookupCache) {
     var iter = TokenScanIterator(codec, tokenArray)
     while !iter.done() {
       let result = iter.get()
@@ -954,29 +954,28 @@ public final class SystemDictionary: DictionaryInterface, @unchecked Sendable {
   private func registerReverseLookupResults(
     _ idSet: Set<Int>, _ cache: ReverseLookupCache, _ callback: any DictionaryCallback
   ) {
-    let encodedTokensPtr = getTokenArrayPtr(tokenArray, 0)
-    withUnsafeTemporaryAllocation(of: UInt8.self, capacity: LoudsTrie.kMaxDepth + 1) { buffer in
-      for valueId in idSet.sorted() {
-        guard let range = cache.results[valueId] else { continue }
-        for reverseResult in range {
-          let encodedKey = keyTrie.restoreKeyString(reverseResult.idInKeyTrie, buffer.baseAddress!)
-          let tokensKey = codec.decodeKey(encodedKey)
-          if callback.onKey(tokensKey) != .traverseContinue {
+    let encodedTokensOffset = tokenArray.offset(0)
+    for valueId in idSet.sorted() {
+      guard let range = cache.results[valueId] else { continue }
+      for reverseResult in range {
+        let encodedKey = keyTrie.restoreKeyString(keyId: reverseResult.idInKeyTrie)
+        let tokensKey = codec.decodeKey(encodedKey)
+        if callback.onKey(tokensKey) != .traverseContinue {
+          continue
+        }
+        var iter = TokenDecodeIterator(
+          codec, _valueTrie, frequentPos, tokensKey, tokenArray.bytes,
+          encodedTokensOffset + reverseResult.tokensOffset)
+        while !iter.done() {
+          let tokenInfo = iter.get()
+          if tokenInfo.token.attributes & Token.Attribute.spellingCorrection != 0
+            || tokenInfo.idInValueTrie != valueId
+          {
+            iter.next()
             continue
           }
-          var iter = TokenDecodeIterator(
-            codec, _valueTrie, frequentPos, tokensKey, encodedTokensPtr + reverseResult.tokensOffset)
-          while !iter.done() {
-            let tokenInfo = iter.get()
-            if tokenInfo.token.attributes & Token.Attribute.spellingCorrection != 0
-              || tokenInfo.idInValueTrie != valueId
-            {
-              iter.next()
-              continue
-            }
-            _ = callback.onToken(tokensKey, tokensKey, tokenInfo.token)
-            iter.next()
-          }
+          _ = callback.onToken(tokensKey, tokensKey, tokenInfo.token)
+          iter.next()
         }
       }
     }

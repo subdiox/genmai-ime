@@ -4,14 +4,14 @@ import GenmaiBase
 
 /// `mozc::Segmenter`: segment boundary rules and boundary penalties.
 ///
-/// `Sendable`: holds immutable views into the data set.
+/// Holds copies of the (small) tables of the data set for fast lookups.
 public struct Segmenter: Sendable {
   private let lNumElements: Int
   private let rNumElements: Int
-  private let lTable: DataSpan<UInt16>
-  private let rTable: DataSpan<UInt16>
-  private let bitarrayData: DataSpan<UInt8>
-  private let boundaryData: DataSpan<UInt16>
+  private let lTable: [UInt16]
+  private let rTable: [UInt16]
+  private let bitarrayData: [UInt8]
+  private let boundaryData: [UInt16]
 
   public init(
     _ lNumElements: Int, _ rNumElements: Int, _ lTable: DataSpan<UInt16>, _ rTable: DataSpan<UInt16>,
@@ -19,10 +19,10 @@ public struct Segmenter: Sendable {
   ) {
     self.lNumElements = lNumElements
     self.rNumElements = rNumElements
-    self.lTable = lTable
-    self.rTable = rTable
-    self.bitarrayData = bitarrayData
-    self.boundaryData = boundaryData
+    self.lTable = lTable.array
+    self.rTable = rTable.array
+    self.bitarrayData = bitarrayData.array
+    self.boundaryData = boundaryData.array
     precondition(lNumElements * rNumElements <= bitarrayData.count * 8)
   }
 
@@ -62,7 +62,7 @@ public struct Segmenter: Sendable {
   @inline(__always)
   public func isBoundary(_ rid: UInt16, _ lid: UInt16) -> Bool {
     let bitarrayIndex = Int(lTable[Int(rid)]) + lNumElements * Int(rTable[Int(lid)])
-    return (bitarrayData.buffer[bitarrayIndex >> 3] >> UInt8(bitarrayIndex & 0x7)) & 1 != 0
+    return (bitarrayData[bitarrayIndex >> 3] >> UInt8(bitarrayIndex & 0x7)) & 1 != 0
   }
 
   public func getPrefixPenalty(_ lid: UInt16) -> Int32 {

@@ -32,8 +32,9 @@ import GenmaiProtocol
 /// search to lookup necessary information efficiently.  Note that there are
 /// tokens having the same POS index.
 ///
-/// `open` (C++ virtual methods) for testing/mocking. `@unchecked Sendable`: the
-/// state is immutable after initialization (subclasses must keep it so).
+/// `open` (C++ virtual methods) for testing/mocking. `@unchecked Sendable` only
+/// because a non-final class cannot be checked: all stored properties are
+/// immutable and Sendable (subclasses must keep it so).
 open class UserPos: @unchecked Sendable {
   public typealias PosType = Genmai_UserDictionary_UserDictionary.PosType
 
@@ -74,25 +75,35 @@ open class UserPos: @unchecked Sendable {
 
   private let tokenArrayData: DataView
   // tokenArrayIndex[posType] = {index to tokenArrayData};
-  private var tokenArrayIndex: [[Int]] = []
-  private var stringArray = SerializedStringArray()
-  private var posList: [String] = []
+  private let tokenArrayIndex: [[Int]]
+  private let stringArray: SerializedStringArray
+  private let posList: [String]
 
   /// Initializes the user pos from the given binary data.
   public init(_ tokenArrayData: DataView, _ stringArrayData: DataView) {
     assert(tokenArrayData.count % 8 == 0)
     self.tokenArrayData = tokenArrayData
-    stringArray.set(stringArrayData.bytes, owner: stringArrayData.owner)
-    initPosList()
+    var stringArray = SerializedStringArray()
+    stringArray.set(stringArrayData)
+    self.stringArray = stringArray
+    (posList, tokenArrayIndex) = Self.initPosList(tokenArrayData, stringArray)
   }
 
   /// For testing.
   public init() {
     tokenArrayData = DataView()
+    tokenArrayIndex = []
+    stringArray = SerializedStringArray()
+    posList = []
   }
 
   @inline(__always)
   private func getTokenArrayData(_ i: Int) -> TokenArrayData {
+    Self.getTokenArrayData(tokenArrayData, i)
+  }
+
+  @inline(__always)
+  private static func getTokenArrayData(_ tokenArrayData: DataView, _ i: Int) -> TokenArrayData {
     let o = i * 8
     return TokenArrayData(
       posIndex: tokenArrayData.load(fromByteOffset: o),
@@ -103,11 +114,16 @@ open class UserPos: @unchecked Sendable {
 
   private var tokenArrayDataSize: Int { tokenArrayData.count / 8 }
 
-  private func initPosList() {
+  /// Returns (pos_list_, token_array_index_).
+  private static func initPosList(
+    _ tokenArrayData: DataView, _ stringArray: SerializedStringArray
+  ) -> ([String], [[Int]]) {
+    let tokenArrayDataSize = tokenArrayData.count / 8
     // make pos_list_.
+    var posList: [String] = []
     var seen = Set<UInt16>()
     for i in 0..<tokenArrayDataSize {
-      let token = getTokenArrayData(i)
+      let token = getTokenArrayData(tokenArrayData, i)
       if !seen.insert(token.posIndex).inserted {
         continue
       }
@@ -117,11 +133,11 @@ open class UserPos: @unchecked Sendable {
     // make token_array_index_
     var posToIndex: [[UInt8]: [Int]] = [:]
     for i in 0..<tokenArrayDataSize {
-      let pos = Array(stringArray.bytes(at: Int(getTokenArrayData(i).posIndex)))
+      let pos = Array(stringArray.bytes(at: Int(getTokenArrayData(tokenArrayData, i).posIndex)))
       posToIndex[pos, default: []].append(i)
     }
 
-    tokenArrayIndex = Array(repeating: [], count: kPosTypeStringTable.count)
+    var tokenArrayIndex = [[Int]](repeating: [], count: kPosTypeStringTable.count)
     for i in 0..<kPosTypeStringTable.count {
       let pos = Array(kPosTypeStringTable[i].0.utf8)
       if let index = posToIndex[pos] {
@@ -130,6 +146,7 @@ open class UserPos: @unchecked Sendable {
         GenmaiLog.error("\(kPosTypeStringTable[i].0) is not defined in the UserPosData")
       }
     }
+    return (posList, tokenArrayIndex)
   }
 
   /// Virtual for testing/mocking.

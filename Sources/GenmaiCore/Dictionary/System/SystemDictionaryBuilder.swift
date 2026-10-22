@@ -97,7 +97,7 @@ public final class SystemDictionaryBuilder {
     var frequentPosBytes: [UInt8] = []
     frequentPosBytes.reserveCapacity(256 * 4)
     for v in frequentPosArray {
-      withUnsafeBytes(of: v.littleEndian) { frequentPosBytes.append(contentsOf: $0) }
+      frequentPosBytes.appendLittleEndian(v)
     }
     let frequentPosSection = DictionaryFileSection(
       image: DataView(copying: frequentPosBytes),
@@ -241,8 +241,7 @@ public final class SystemDictionaryBuilder {
     // Compute the lower threshold of frequency.
     var numFreqPos = 0
     var freqThreshold = Int(Int32.max)
-    for freq in freqMap.keys.sorted(by: >) {
-      let count = freqMap[freq]!
+    for (freq, count) in freqMap.sorted(by: { $0.key > $1.key }) {
       if numFreqPos + count > 255 {
         break
       }
@@ -252,8 +251,7 @@ public final class SystemDictionaryBuilder {
 
     // Collect high frequent pos.
     var freqPosIdx = 0
-    for combinedPos in posMap.keys.sorted() {
-      let freq = posMap[combinedPos]!
+    for (combinedPos, freq) in posMap.sorted(by: { $0.key < $1.key }) {
       if freq >= freqThreshold {
         frequentPos[combinedPos] = freqPosIdx
         freqPosIdx += 1

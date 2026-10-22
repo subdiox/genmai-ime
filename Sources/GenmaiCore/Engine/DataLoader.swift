@@ -137,12 +137,16 @@ final class DataLoaderTaskManager: Sendable {
 
 public final class DataLoader: Sendable {
 
-  public final class Response: @unchecked Sendable {
-    // @unchecked Sendable: handed over from the loader task to the callback.
-    public var response = Genmai_EngineReloadResponse()
-    public var modules: Modules?
+  /// The result of a reload, handed over from the loader task to the
+  /// callback.
+  public final class Response: Sendable {
+    public let response: Genmai_EngineReloadResponse
+    public let modules: Modules?
 
-    public init() {}
+    public init(response: Genmai_EngineReloadResponse = Genmai_EngineReloadResponse(), modules: Modules? = nil) {
+      self.response = response
+      self.modules = modules
+    }
   }
 
   public typealias ReloadedCallback = @Sendable (Response) throws -> Void
@@ -254,9 +258,9 @@ public final class DataLoader: Sendable {
       if let index = state.requests.firstIndex(where: { $0.id == id }) {
         state.requests[index].sequenceId = state.sequenceIdCounter
       } else {
-        state.requests.append(
-          RequestData(id: id, sequenceId: state.sequenceIdCounter, request: request))
-        GenmaiLog.info("New request is registered: \(state.requests.last!)")
+        let requestData = RequestData(id: id, sequenceId: state.sequenceIdCounter, request: request)
+        state.requests.append(requestData)
+        GenmaiLog.info("New request is registered: \(requestData)")
       }
 
       // Sorts the requests so requests[0] stores the request with the highest
@@ -295,11 +299,11 @@ public final class DataLoader: Sendable {
 
   /// Builds new response from `requestData`.
   private func buildResponse(_ requestData: RequestData) -> Response {
-    let result = Response()
-    result.response.status = .dataMissing
+    var result = Genmai_EngineReloadResponse()
+    result.status = .dataMissing
 
     let request = requestData.request
-    result.response.request = request
+    result.request = request
 
     // Initializes DataManager
     let dataManager: DataManager
@@ -311,9 +315,9 @@ public final class DataLoader: Sendable {
         : try DataManager.createFromFile(request.filePath)
     } catch {
       GenmaiLog.error("Failed to load data [\(error)] \(requestData)")
-      result.response.status = DataLoader.convertStatus(error)
-      assert(result.response.status != .reloadReady)
-      return result
+      result.status = DataLoader.convertStatus(error)
+      assert(result.status != .reloadReady)
+      return Response(response: result)
     }
 
     let modules: Modules
@@ -321,14 +325,12 @@ public final class DataLoader: Sendable {
       modules = try Modules.create(dataManager)
     } catch {
       GenmaiLog.error("Failed to load modules [\(error)] \(requestData)")
-      result.response.status = .dataBroken
-      return result
+      result.status = .dataBroken
+      return Response(response: result)
     }
 
-    result.response.status = .reloadReady
-    result.modules = modules
-
-    return result
+    result.status = .reloadReady
+    return Response(response: result, modules: modules)
   }
 
   /// Executed in the loader's task.

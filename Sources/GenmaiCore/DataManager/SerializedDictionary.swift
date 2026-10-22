@@ -109,7 +109,7 @@ public struct SerializedDictionary: RandomAccessCollection, Sendable {
     public var keyIndex: UInt32 { tokenArray.load(fromByteOffset: tokenOffset, as: UInt32.self) }
     public var key: String { stringArray[Int(keyIndex)] }
     /// The key bytes without decoding.
-    public var keyBytes: UnsafeRawBufferPointer { stringArray.bytes(at: Int(keyIndex)) }
+    public var keyBytes: [UInt8] { Array(stringArray.bytes(at: Int(keyIndex))) }
 
     public var valueIndex: UInt32 { tokenArray.load(fromByteOffset: tokenOffset + 4, as: UInt32.self) }
     public var value: String { stringArray[Int(valueIndex)] }
@@ -236,9 +236,9 @@ public struct SerializedDictionary: RandomAccessCollection, Sendable {
     // (Strings are identified by their bytes, as in the C++ btree_map; Swift
     // String equality would merge canonically equivalent strings.)
     var allStrings = Set<[UInt8]>()
-    for key in sortedKeys {
+    for (key, tokens) in dic {
       allStrings.insert(Array(key.utf8))
-      for token in dic[key]! {
+      for token in tokens {
         allStrings.insert(Array(token.value.utf8))
         allStrings.insert(Array(token.description.utf8))
         allStrings.insert(Array(token.additionalDescription.utf8))
@@ -250,16 +250,21 @@ public struct SerializedDictionary: RandomAccessCollection, Sendable {
     for (i, s) in strings.enumerated() {
       indexOf[s] = UInt32(i)
     }
-    func stringIndex(_ s: String) -> UInt32 { indexOf[Array(s.utf8)]! }
+    func stringIndex(_ s: String) -> UInt32 {
+      guard let index = indexOf[Array(s.utf8)] else {
+        preconditionFailure("every string was collected above")
+      }
+      return index
+    }
 
     // Build a token array binary data.
     var buf: [UInt8] = []
     func put<T: FixedWidthInteger>(_ v: T) {
-      withUnsafeBytes(of: v.littleEndian) { buf.append(contentsOf: $0) }
+      buf.appendLittleEndian(v)
     }
     for key in sortedKeys {
       let keyIndex = stringIndex(key)
-      for token in dic[key]! {
+      for token in dic[key, default: []] {
         put(keyIndex)
         put(stringIndex(token.value))
         put(stringIndex(token.description))
@@ -342,7 +347,7 @@ public struct SerializedDictionary: RandomAccessCollection, Sendable {
     // Compare by cost.  (std::sort is not stable; the Swift sort is, which is
     // what libc++'s std::sort yields for the short per-key lists in practice.)
     for key in dic.keys {
-      dic[key]!.sort { $0.cost < $1.cost }
+      dic[key]?.sort { $0.cost < $1.cost }
     }
     return dic
   }

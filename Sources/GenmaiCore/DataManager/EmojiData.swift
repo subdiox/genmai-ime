@@ -1,6 +1,9 @@
 // Port of mozc/src/data_manager/emoji_data.h (3.35.6354).
 
-/// LINT.IfChange: same values as rewriter/gen_emoji_rewriter_data.py.
+/// LINT.IfChange: same values as rewriter/gen_emoji_rewriter_data.py. The
+/// cases keep the upstream names (E0_6, ...): the version numbers read better
+/// with the underscore.
+// swift-format-ignore: AlwaysUseLowerCamelCase
 public enum EmojiVersion: UInt32, Sendable {
   case e0_6 = 0
   case e0_7

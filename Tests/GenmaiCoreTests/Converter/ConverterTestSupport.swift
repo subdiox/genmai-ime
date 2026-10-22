@@ -11,11 +11,11 @@ import GenmaiStorage
 @testable import GenmaiCore
 
 /// mozc::SuggestionFilter (prediction/suggestion_filter.cc) for the tests.
-final class TestSuggestionFilter: SuggestionFilterProtocol, @unchecked Sendable {
+final class TestSuggestionFilter: SuggestionFilterProtocol, Sendable {
   private let filter: ExistenceFilter
 
   init(_ data: DataSpan<UInt32>) throws {
-    filter = try ExistenceFilter.read(UnsafeRawBufferPointer(data.buffer))
+    filter = try ExistenceFilter.read(data.view.bytes)
   }
 
   func isBadSuggestion(_ text: String) -> Bool {
@@ -26,7 +26,7 @@ final class TestSuggestionFilter: SuggestionFilterProtocol, @unchecked Sendable 
 }
 
 /// The parts of engine::Modules needed by ImmutableConverter and Converter.
-final class TestModules: ConverterModules, @unchecked Sendable {
+final class TestModules: ConverterModules {
   let dataManager: DataManager
   let posMatcher: PosMatcher
   let userDictionary: any UserDictionaryInterface
@@ -50,8 +50,13 @@ final class TestModules: ConverterModules, @unchecked Sendable {
     let userDictionary =
       userDictionary
       ?? {
+        // An empty user dictionary: a file that does not exist, never the user dictionary of the
+        // developer's profile (its words would add lattice nodes and break the parity tests).
         let userPosData = dataManager.getUserPosData()
-        return UserDictionary(UserPos(userPosData.tokenArray, userPosData.stringArray), posMatcher)
+        let emptyDictionaryFile = FileManager.default.temporaryDirectory
+          .appendingPathComponent("genmai-test-no-user-dictionary-\(UUID().uuidString).db").path
+        return UserDictionary(
+          UserPos(userPosData.tokenArray, userPosData.stringArray), posMatcher, emptyDictionaryFile)
       }()
     self.userDictionary = userDictionary
     if let dictionary {

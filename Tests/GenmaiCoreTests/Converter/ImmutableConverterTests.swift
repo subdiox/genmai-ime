@@ -173,7 +173,7 @@ struct ImmutableConverterTests {
     // If the first character of a node is `ALPHABET` or `KATAKANA`,
     // `AddCharacterTypeBasedNodes` should create a node of the character
     // type.
-    let node = lattice.beginNodes(0).last!
+    let node = try #require(lattice.beginNodes(0).last)
     #expect(node.key == "カタカナ")
     #expect(node.value == "カタカナ")
   }

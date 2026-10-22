@@ -936,24 +936,25 @@ public final class EngineConverter: EngineConverterInterface {
   /// Try to delete the current selected candidate if |id| is not specified.
   /// Returns false if the candidate was not found or deletion failed.
   public func deleteCandidateFromHistory(_ idIn: Int?) -> Bool {
-    var id = idIn
-    if id == nil {
+    let id: Int
+    if let idIn {
+      if segmentIndex >= segments.conversionSegmentsSize {
+        return false
+      }
+      let segment = segments.conversionSegment(segmentIndex)
+      if !segment.isValidIndex(idIn) {
+        return false
+      }
+      id = idIn
+    } else {
       if !candidateList.focused {
         return false
       }
       let cand = candidateList.focusedCandidate
       id = cand.id
-    } else {
-      if segmentIndex >= segments.conversionSegmentsSize {
-        return false
-      }
-      let segment = segments.conversionSegment(segmentIndex)
-      if !segment.isValidIndex(id!) {
-        return false
-      }
     }
     return converter.deleteCandidateFromHistory(
-      segments, segments.historySegmentsSize + segmentIndex, id!)
+      segments, segments.historySegmentsSize + segmentIndex, id)
   }
 
   func segmentFocusInternal(_ index: Int) {

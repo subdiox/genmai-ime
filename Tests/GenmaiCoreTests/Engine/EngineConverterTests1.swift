@@ -47,7 +47,7 @@ struct EngineConverterTests1 {
     var expectedIndices: [Int] = []
     F.expectSelectedCandidateIndices(converter, expectedIndices)
 
-    f.composer.insertCharacterPreedit(kChars_Aiueo)
+    f.composer.insertCharacterPreedit(kCharsAiueo)
     #expect(converter.convert(f.composer))
     try #require(converter.isActive())
     expectedIndices.append(0)
@@ -62,8 +62,8 @@ struct EngineConverterTests1 {
     let conversion = output.preedit
     #expect(conversion.segment.count == 1)
     #expect(conversion.segment[0].annotation == .highlight)
-    #expect(conversion.segment[0].value == kChars_Aiueo)
-    #expect(conversion.segment[0].key == kChars_Aiueo)
+    #expect(conversion.segment[0].value == kCharsAiueo)
+    #expect(conversion.segment[0].key == kCharsAiueo)
 
     // Converter should be active before submission
     #expect(converter.isActive())
@@ -80,8 +80,8 @@ struct EngineConverterTests1 {
     F.expectSelectedCandidateIndices(converter, expectedIndices)
 
     let result = output.result
-    #expect(result.value == kChars_Aiueo)
-    #expect(result.key == kChars_Aiueo)
+    #expect(result.value == kCharsAiueo)
+    #expect(result.key == kCharsAiueo)
 
     // Converter should be inactive after submission
     #expect(!converter.isActive())
@@ -102,7 +102,7 @@ struct EngineConverterTests1 {
       mockConverter.setStartConversion(segments, true)
     }
 
-    f.composer.insertCharacterPreedit(kChars_Aiueo)
+    f.composer.insertCharacterPreedit(kCharsAiueo)
     #expect(converter.convert(f.composer))
     try #require(converter.isActive())
     #expect(F.isCandidateListVisible(converter))
@@ -121,7 +121,7 @@ struct EngineConverterTests1 {
       mockConverter.setStartConversion(segments, true)
     }
 
-    f.composer.insertCharacterPreedit(kChars_Aiueo)
+    f.composer.insertCharacterPreedit(kCharsAiueo)
     #expect(converter.convert(f.composer))
     try #require(converter.isActive())
     #expect(F.isCandidateListVisible(converter))
@@ -134,7 +134,7 @@ struct EngineConverterTests1 {
     do {
       let segments = Segments()
       F.setAiueo(segments)
-      f.composer.insertCharacterKeyAndPreedit("aiueo", kChars_Aiueo)
+      f.composer.insertCharacterKeyAndPreedit("aiueo", kCharsAiueo)
       F.fillT13Ns(segments, f.composer)
       mockConverter.setStartConversion(segments, true)
     }
@@ -1208,7 +1208,7 @@ struct EngineConverterTests1 {
 
     let expectedIndices: [Int] = []
     F.expectSelectedCandidateIndices(converter, expectedIndices)
-    f.composer.insertCharacterPreedit(kChars_Aiueo)
+    f.composer.insertCharacterPreedit(kCharsAiueo)
     F.expectSelectedCandidateIndices(converter, expectedIndices)
     converter.commitPreedit(f.composer, Genmai_Commands_Context())
     f.composer.reset()
@@ -1223,12 +1223,12 @@ struct EngineConverterTests1 {
       #expect(!output.hasCandidateWindow)
 
       let result = output.result
-      #expect(result.value == kChars_Aiueo)
-      #expect(result.key == kChars_Aiueo)
+      #expect(result.value == kCharsAiueo)
+      #expect(result.key == kCharsAiueo)
 
       #expect(result.tokens.count == 1)
-      #expect(result.tokens.first?.key == kChars_Aiueo)
-      #expect(result.tokens.first?.value == kChars_Aiueo)
+      #expect(result.tokens.first?.key == kCharsAiueo)
+      #expect(result.tokens.first?.value == kCharsAiueo)
       #expect(result.tokens.first?.lid == -1)
       #expect(result.tokens.first?.rid == -1)
     }
@@ -1326,17 +1326,17 @@ struct EngineConverterTests1 {
     let segments = Segments()
     do {  // Initialize mock segments for suggestion
       let segment = segments.addSegment()
-      segment.setKey(kChars_Mo)
+      segment.setKey(kCharsMo)
       var candidate = segment.addCandidate()
-      candidate.value = kChars_Mozukusu
-      candidate.key = kChars_Mozukusu
-      candidate.contentKey = kChars_Mozukusu
+      candidate.value = kCharsMozukusu
+      candidate.key = kCharsMozukusu
+      candidate.contentKey = kCharsMozukusu
       candidate = segment.addCandidate()
-      candidate.value = kChars_Momonga
-      candidate.key = kChars_Momonga
-      candidate.contentKey = kChars_Momonga
+      candidate.value = kCharsMomonga
+      candidate.key = kCharsMomonga
+      candidate.contentKey = kCharsMomonga
     }
-    f.composer.insertCharacterPreedit(kChars_Mo)
+    f.composer.insertCharacterPreedit(kCharsMo)
 
     // Suggestion
     setStartPrediction(mockConverter, segments, true)
@@ -1354,11 +1354,11 @@ struct EngineConverterTests1 {
 
       let preedit = output.preedit
       #expect(preedit.segment.count == 1)
-      #expect(preedit.segment.first?.value == kChars_Mo)
+      #expect(preedit.segment.first?.value == kCharsMo)
 
       let candidateWindow = output.candidateWindow
       #expect(candidateWindow.size == 2)
-      #expect(candidateWindow.candidate.first?.value == kChars_Mozukusu)
+      #expect(candidateWindow.candidate.first?.value == kCharsMozukusu)
       #expect(!candidateWindow.hasFocusedIndex)
       F.expectSelectedCandidateIndices(converter, expectedIndices)
     }
@@ -1395,8 +1395,8 @@ struct EngineConverterTests1 {
       #expect(!output.hasCandidateWindow)
 
       let result = output.result
-      #expect(result.value == kChars_Momonga)
-      #expect(result.key == kChars_Momonga)
+      #expect(result.value == kCharsMomonga)
+      #expect(result.key == kCharsMomonga)
       #expect(F.getState(converter) == EngineConverterState.composition)
       F.expectSelectedCandidateIndices(converter, expectedIndices)
     }
@@ -1409,17 +1409,17 @@ struct EngineConverterTests1 {
     let segments = Segments()
     do {  // Initialize mock segments for suggestion
       let segment = segments.addSegment()
-      segment.setKey(kChars_Mo)
+      segment.setKey(kCharsMo)
       var candidate = segment.addCandidate()
-      candidate.value = kChars_Mozukusu
-      candidate.key = kChars_Mozukusu
-      candidate.contentKey = kChars_Mozukusu
+      candidate.value = kCharsMozukusu
+      candidate.key = kCharsMozukusu
+      candidate.contentKey = kCharsMozukusu
       candidate = segment.addCandidate()
-      candidate.value = kChars_Momonga
-      candidate.key = kChars_Momonga
-      candidate.contentKey = kChars_Momonga
+      candidate.value = kCharsMomonga
+      candidate.key = kCharsMomonga
+      candidate.contentKey = kCharsMomonga
     }
-    f.composer.insertCharacterPreedit(kChars_Mo)
+    f.composer.insertCharacterPreedit(kCharsMo)
 
     // Suggestion
     setStartPrediction(mockConverter, segments, true)
@@ -1464,8 +1464,8 @@ struct EngineConverterTests1 {
       #expect(!output.hasCandidateWindow)
 
       let result = output.result
-      #expect(result.value == kChars_Momonga)
-      #expect(result.key == kChars_Momonga)
+      #expect(result.value == kCharsMomonga)
+      #expect(result.key == kCharsMomonga)
       #expect(F.getState(converter) == EngineConverterState.composition)
     }
   }

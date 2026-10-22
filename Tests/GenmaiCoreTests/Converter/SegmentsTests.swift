@@ -113,7 +113,7 @@ import Testing
     #expect(segments.segmentsSize == 0)
   }
 
-  @Test func candidateTest() {
+  @Test func candidateTest() throws {
     let segment = Segment()
 
     let str = "this is a test"
@@ -174,7 +174,7 @@ import Testing
     #expect(segment.candidatesSize == 2)
 
     // insert
-    cand[1] = segment.insertCandidate(1)!
+    cand[1] = try #require(segment.insertCandidate(1))
     #expect(segment.mutableCandidate(1) === cand[1])
     #expect(segment.mutableCandidate(2) === cand[4])
 

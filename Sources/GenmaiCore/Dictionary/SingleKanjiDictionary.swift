@@ -5,14 +5,15 @@ import GenmaiBase
 /// `mozc::dictionary::SingleKanjiDictionary`.
 ///
 /// Data: `DataManager.getSingleKanjiRewriterData()`. `open` (C++ virtual
-/// methods) for mocking; `@unchecked Sendable`: immutable views of the data
-/// set.
+/// methods) for mocking. `@unchecked Sendable` only because a non-final class
+/// cannot be checked: all stored properties are immutable Sendable views of
+/// the data set.
 open class SingleKanjiDictionary: @unchecked Sendable {
   private let singleKanjiTokenArray: DataView
-  private var singleKanjiStringArray = SerializedStringArray()
-  private var variantTypeArray = SerializedStringArray()
+  private let singleKanjiStringArray: SerializedStringArray
+  private let variantTypeArray: SerializedStringArray
   private let variantTokenArray: DataView
-  private var variantStringArray = SerializedStringArray()
+  private let variantStringArray: SerializedStringArray
 
   // Since nounPrefixDictionary is just a tentative workaround,
   // we copy the SingleKanji structure so that we can remove this workaround
@@ -23,7 +24,10 @@ open class SingleKanjiDictionary: @unchecked Sendable {
 
   public init() {
     singleKanjiTokenArray = DataView()
+    singleKanjiStringArray = SerializedStringArray()
+    variantTypeArray = SerializedStringArray()
     variantTokenArray = DataView()
+    variantStringArray = SerializedStringArray()
     nounPrefixDictionary = nil
   }
 
@@ -37,12 +41,18 @@ open class SingleKanjiDictionary: @unchecked Sendable {
     // Single Kanji token array is an array of uint32_t.  Its size must be
     // multiple of 2; see the comment above lookupKanjiEntries.
     assert(singleKanjiTokenArray.count % (2 * 4) == 0)
-    singleKanjiStringArray.set(stringArrayData.bytes, owner: stringArrayData.owner)
-    variantTypeArray.set(variantTypeArrayData.bytes, owner: variantTypeArrayData.owner)
+    var singleKanjiStringArray = SerializedStringArray()
+    singleKanjiStringArray.set(stringArrayData)
+    self.singleKanjiStringArray = singleKanjiStringArray
+    var variantTypeArray = SerializedStringArray()
+    variantTypeArray.set(variantTypeArrayData)
+    self.variantTypeArray = variantTypeArray
     // Variant token array is an array of uint32_t.  Its size must be multiple
     // of 3; see the comment above generateDescription.
     assert(variantTokenArray.count % (3 * 4) == 0)
-    variantStringArray.set(variantStringArrayData.bytes, owner: variantStringArrayData.owner)
+    var variantStringArray = SerializedStringArray()
+    variantStringArray.set(variantStringArrayData)
+    self.variantStringArray = variantStringArray
     nounPrefixDictionary = SerializedDictionary(
       tokenArray: nounPrefixTokenArrayData, stringArrayData: nounPrefixStringArrayData)
   }

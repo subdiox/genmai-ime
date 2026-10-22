@@ -8,7 +8,7 @@ import GenmaiBase
 /// The part of `mozc::SuggestionFilter` (prediction/suggestion_filter.h) that
 /// CandidateFilter uses. The prediction port's `SuggestionFilter` conforms to
 /// this protocol.
-public protocol SuggestionFilterProtocol {
+public protocol SuggestionFilterProtocol: Sendable {
   func isBadSuggestion(_ text: String) -> Bool
 }
 
@@ -31,8 +31,9 @@ public struct CandidateFilterCandidateId: Hashable {
   }
 
   public func hash(into hasher: inout Hasher) {
-    var value = value
-    value.withUTF8 { hasher.combine(bytes: UnsafeRawBufferPointer($0)) }
+    for byte in value.utf8 {
+      hasher.combine(byte)
+    }
     hasher.combine(lid)
     hasher.combine(rid)
   }
@@ -209,11 +210,13 @@ public final class CandidateFilter {
     }
 
     let candidateSize = seen.count
-    if topCandidate == nil || candidateSize == 0 {
+    let topCandidate: Candidate
+    if let current = self.topCandidate, candidateSize != 0 {
+      topCandidate = current
+    } else {
       topCandidate = candidate
+      self.topCandidate = candidate
     }
-
-    let topCandidate = self.topCandidate!
 
     // "短縮よみ" or "記号,一般" must have only 1 node.  Note that "顔文字" POS
     // from user dictionary is converted to "記号,一般" in Mozc engine.

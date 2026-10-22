@@ -15,20 +15,24 @@ import GenmaiBase
 /// functional word with this dictionary.
 ///
 /// Data: `DataManager.getSuffixDictionaryData()`.
-public final class SuffixDictionary: DictionaryInterface, @unchecked Sendable {
-  // @unchecked Sendable: immutable views of the data set.
+public final class SuffixDictionary: DictionaryInterface, Sendable {
+  // Immutable views of the data set.
 
   // struct TokenArrayData { uint32_t lid, rid, cost; } (12 bytes, packed)
   private static let kTokenArrayDataSize = 12
 
-  private var keyArray = SerializedStringArray()
-  private var valueArray = SerializedStringArray()
+  private let keyArray: SerializedStringArray
+  private let valueArray: SerializedStringArray
   private let tokenArray: DataView
 
   public init(_ keyArrayData: DataView, _ valueArrayData: DataView, _ tokenArrayData: DataView) {
     tokenArray = tokenArrayData
-    keyArray.set(keyArrayData.bytes, owner: keyArrayData.owner)
-    valueArray.set(valueArrayData.bytes, owner: valueArrayData.owner)
+    var keyArray = SerializedStringArray()
+    keyArray.set(keyArrayData)
+    self.keyArray = keyArray
+    var valueArray = SerializedStringArray()
+    valueArray.set(valueArrayData)
+    self.valueArray = valueArray
     assert(keyArray.count == tokenArraySize)
     assert(valueArray.count == tokenArraySize)
   }

@@ -6,6 +6,7 @@
 // SAME_AS_PREV_POS, value stays for SAME_AS_PREV_VALUE), so callers copy the
 // token (Swift value semantics do that implicitly).
 
+import Foundation
 import GenmaiBase
 import GenmaiStorage
 
@@ -18,26 +19,29 @@ public struct TokenDecodeIterator {
 
   private let codec: SystemDictionaryCodec
   private let valueTrie: LoudsTrie
-  private let frequentPos: UnsafeBufferPointer<UInt32>
+  private let frequentPos: [UInt32]
 
   private let key: String
   // Katakana key will be lazily initialized.
   private var keyKatakana = ""
 
   private var state: State = .hasNext
-  private var ptr: UnsafePointer<UInt8>
+  /// The token section and the byte offset of the next token in it.
+  private let tokens: Data
+  private var offset: Int
 
   private var tokenInfo: TokenInfo
 
   public init(
-    _ codec: SystemDictionaryCodec, _ valueTrie: LoudsTrie, _ frequentPos: UnsafeBufferPointer<UInt32>,
-    _ key: String, _ ptr: UnsafePointer<UInt8>
+    _ codec: SystemDictionaryCodec, _ valueTrie: LoudsTrie, _ frequentPos: [UInt32],
+    _ key: String, _ tokens: Data, _ offset: Int
   ) {
     self.codec = codec
     self.valueTrie = valueTrie
     self.frequentPos = frequentPos
     self.key = key
-    self.ptr = ptr
+    self.tokens = tokens
+    self.offset = offset
     var token = Token()
     token.key = key
     tokenInfo = TokenInfo(token)
@@ -64,10 +68,7 @@ public struct TokenDecodeIterator {
   }
 
   private func lookupValue(_ id: Int) -> String {
-    withUnsafeTemporaryAllocation(of: UInt8.self, capacity: LoudsTrie.kMaxDepth + 1) { buffer in
-      let encodedValue = valueTrie.restoreKeyString(id, buffer.baseAddress!)
-      return codec.decodeValue(encodedValue)
-    }
+    codec.decodeValue(valueTrie.restoreKeyString(keyId: id))
   }
 
   private mutating func nextInternal() {
@@ -94,10 +95,10 @@ public struct TokenDecodeIterator {
     // This kind of structure should be packed in the codec or some
     // related but new class.
     var readBytes = 0
-    if !codec.decodeToken(ptr, &tokenInfo, &readBytes) {
+    if !codec.decodeToken(tokens.span, at: offset, &tokenInfo, &readBytes) {
       state = .lastToken
     }
-    ptr += readBytes
+    offset += readBytes
 
     // Fill remaining values.
     switch tokenInfo.valueType {
@@ -121,7 +122,7 @@ public struct TokenDecodeIterator {
     }
 
     if tokenInfo.posType == .frequentPos {
-      let pos = UInt32(littleEndian: frequentPos[tokenInfo.idInFrequentPosMap])
+      let pos = frequentPos[tokenInfo.idInFrequentPosMap]
       tokenInfo.token.lid = UInt16(truncatingIfNeeded: pos >> 16)
       tokenInfo.token.rid = UInt16(truncatingIfNeeded: pos & 0xffff)
     }

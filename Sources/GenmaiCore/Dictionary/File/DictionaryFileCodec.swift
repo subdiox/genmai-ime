@@ -83,7 +83,7 @@ public final class DictionaryFileCodec: Sendable {
         "codec.cc: Insufficient data size: \(image.count) bytes")
     }
     // The image must be aligned at 32-bit boundary.
-    if Int(bitPattern: image.baseAddress) % 4 != 0 {
+    if !image.isAligned(to: 4) {
       throw StatusError.failedPrecondition(
         "codec.cc: memory block of size \(image.count) is not aligned at 32-bit boundary")
     }
@@ -130,7 +130,7 @@ public final class DictionaryFileCodec: Sendable {
           "codec.cc: Section \(sectionIndex): Read pointer will pass the end: offset=\(sectionEnd), image_size=\(image.count)"
         )
       }
-      let fingerprint = Array(image.bytes[ptr..<(ptr + kFingerprintByteLength)])
+      let fingerprint = Array(image.data[ptr..<(ptr + kFingerprintByteLength)])
       ptr += kFingerprintByteLength
       // Add a section with data and fingerprint.  Note that the data size is
       // |data_size| but |ptr| is advanced by |padded_data_size| to skip padding
@@ -150,7 +150,9 @@ public final class DictionaryFileCodec: Sendable {
   public func getSectionName(_ name: some StringProtocol) -> [UInt8] {
     let s = seed.withLock { $0 }
     let nameFp = legacyFingerprintWithSeed(name, UInt32(bitPattern: s))
-    return withUnsafeBytes(of: nameFp.littleEndian) { Array($0) }
+    var name: [UInt8] = []
+    name.appendLittleEndian(nameFp)
+    return name
   }
 
   private func writeHeader(_ ofs: inout [UInt8]) {

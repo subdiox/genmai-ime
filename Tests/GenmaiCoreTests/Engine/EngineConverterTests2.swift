@@ -29,25 +29,25 @@ struct EngineConverterTests2 {
     let segments1 = Segments()
     let segments2 = Segments()
     let suggestionSegments = Segments()
-    let kChars_Kokode = "ここで"
-    let kChars_Hakimonowo = "はきものを"
+    let kCharsKokode = "ここで"
+    let kCharsHakimonowo = "はきものを"
 
     do {  // Initialize mock segments for partial prediction
       let segment = segments1.addSegment()
-      segment.setKey(kChars_Kokode)
+      segment.setKey(kCharsKokode)
       let candidate = segment.addCandidate()
       candidate.value = "此処では"
-      candidate.key = kChars_Kokode
-      candidate.contentKey = kChars_Kokode
+      candidate.key = kCharsKokode
+      candidate.contentKey = kCharsKokode
       candidate.attributes = Attribute.partiallyKeyConsumed
-      candidate.consumedKeySize = UInt32(Util.charsLen(kChars_Kokode))
+      candidate.consumedKeySize = UInt32(Util.charsLen(kCharsKokode))
     }
 
     // Suggestion that matches to the same key by its prefix.
     // Should not be used by partial prediction.
     do {
       let segment = suggestionSegments.addSegment()
-      segment.setKey(kChars_Kokode)
+      segment.setKey(kCharsKokode)
       let candidate = segment.addCandidate()
       candidate.value = "ここでは着物を"
       candidate.key = "ここではきものを"
@@ -57,15 +57,15 @@ struct EngineConverterTests2 {
 
     do {  // Initialize mock segments for prediction
       let segment = segments2.addSegment()
-      segment.setKey(kChars_Hakimonowo)
+      segment.setKey(kCharsHakimonowo)
       let candidate = segment.addCandidate()
       candidate.value = "此処では"
-      candidate.key = kChars_Hakimonowo
-      candidate.contentKey = kChars_Hakimonowo
+      candidate.key = kCharsHakimonowo
+      candidate.contentKey = kCharsHakimonowo
     }
 
     // "ここではきものを|"    ("|" is cursor position)
-    f.composer.insertCharacterPreedit(kChars_Kokode + kChars_Hakimonowo)
+    f.composer.insertCharacterPreedit(kCharsKokode + kCharsHakimonowo)
     f.composer.moveCursorToEnd()
     // Prediction for "ここではきものを".
     let predictionCount1 = CallCounter()
@@ -123,7 +123,7 @@ struct EngineConverterTests2 {
     }
     _ = converter.commitSuggestionById(0, f.composer, Genmai_Commands_Context(), &committedKeySize)
     #expect(partialCount.count == 1)
-    #expect(committedKeySize == Util.charsLen(kChars_Kokode))
+    #expect(committedKeySize == Util.charsLen(kCharsKokode))
     // Indices should be {0} since there is another segment.
     F.expectSelectedCandidateIndices(converter, expectedIndices)
 
@@ -134,7 +134,7 @@ struct EngineConverterTests2 {
 
       let result = output.result
       #expect(result.value == "此処では")
-      #expect(result.key == kChars_Kokode)
+      #expect(result.key == kCharsKokode)
       #expect(F.getState(converter) == S.suggestion)
     }
   }
@@ -147,16 +147,16 @@ struct EngineConverterTests2 {
       // Initialize mock segments for suggestion
       let segments = Segments()
       let segment = segments.addSegment()
-      segment.setKey(kChars_Mo)
+      segment.setKey(kCharsMo)
       var candidate = segment.addCandidate()
-      candidate.value = kChars_Mozukusu
-      candidate.contentKey = kChars_Mozukusu
+      candidate.value = kCharsMozukusu
+      candidate.contentKey = kCharsMozukusu
       candidate = segment.addCandidate()
-      candidate.value = kChars_Momonga
-      candidate.contentKey = kChars_Momonga
+      candidate.value = kCharsMomonga
+      candidate.contentKey = kCharsMomonga
       return segments
     }()
-    f.composer.insertCharacterPreedit(kChars_Mo)
+    f.composer.insertCharacterPreedit(kCharsMo)
 
     // Action 1. Suggest()
     // ["もずくす", "ももんが"] will be suggested.
@@ -189,7 +189,7 @@ struct EngineConverterTests2 {
 
       let candidateWindow = output.candidateWindow
       #expect(candidateWindow.size == 2)
-      #expect(candidateWindow.candidate[0].value == kChars_Mozukusu)
+      #expect(candidateWindow.candidate[0].value == kCharsMozukusu)
       #expect(!candidateWindow.hasFocusedIndex)
     }
 
@@ -232,14 +232,14 @@ struct EngineConverterTests2 {
       // Check the conversion
       let conversion = output.preedit
       #expect(conversion.segment.count == 1)
-      #expect(conversion.segment[0].value == kChars_Mozukusu)
+      #expect(conversion.segment[0].value == kCharsMozukusu)
 
       // Check the candidate list
       let candidateWindow = output.candidateWindow
       // Candidates should be the same as suggestion
       #expect(candidateWindow.size == 2)
-      #expect(candidateWindow.candidate[0].value == kChars_Mozukusu)
-      #expect(candidateWindow.candidate[1].value == kChars_Momonga)
+      #expect(candidateWindow.candidate[0].value == kCharsMozukusu)
+      #expect(candidateWindow.candidate[1].value == kCharsMomonga)
       #expect(candidateWindow.hasFocusedIndex)
       #expect(candidateWindow.focusedIndex == 0)
     }
@@ -274,21 +274,21 @@ struct EngineConverterTests2 {
       let segments = Segments()
       // Initialize mock segments for prediction
       let segment = segments.addSegment()
-      segment.setKey(kChars_Mo)
+      segment.setKey(kCharsMo)
       // From previous suggestion
       var candidate = segment.addCandidate()
-      candidate.value = kChars_Mozukusu
-      candidate.contentKey = kChars_Mozukusu
+      candidate.value = kCharsMozukusu
+      candidate.contentKey = kCharsMozukusu
       candidate = segment.addCandidate()
-      candidate.value = kChars_Momonga
-      candidate.contentKey = kChars_Momonga
+      candidate.value = kCharsMomonga
+      candidate.contentKey = kCharsMomonga
       // From prediction
       candidate = segment.addCandidate()
-      candidate.value = kChars_Mozuku
-      candidate.contentKey = kChars_Mozuku
+      candidate.value = kCharsMozuku
+      candidate.contentKey = kCharsMozuku
       candidate = segment.addCandidate()
-      candidate.value = kChars_Momonga
-      candidate.contentKey = kChars_Momonga
+      candidate.value = kCharsMomonga
+      candidate.contentKey = kCharsMomonga
       candidate = segment.addCandidate()
       candidate.value = "モンドリアン"
       candidate.contentKey = "もんどりあん"
@@ -315,9 +315,9 @@ struct EngineConverterTests2 {
       let candidateWindow = output.candidateWindow
       // Candidates should be merged with the previous suggestions.
       #expect(candidateWindow.size == 4)
-      #expect(candidateWindow.candidate[0].value == kChars_Mozukusu)
-      #expect(candidateWindow.candidate[1].value == kChars_Momonga)
-      #expect(candidateWindow.candidate[2].value == kChars_Mozuku)
+      #expect(candidateWindow.candidate[0].value == kCharsMozukusu)
+      #expect(candidateWindow.candidate[1].value == kCharsMomonga)
+      #expect(candidateWindow.candidate[2].value == kCharsMozuku)
       #expect(candidateWindow.candidate[3].value == "モンドリアン")
       #expect(candidateWindow.hasFocusedIndex)
     }
@@ -417,13 +417,13 @@ struct EngineConverterTests2 {
   private static func makeMoSuggestionSegments() -> Segments {
     let segments = Segments()
     let segment = segments.addSegment()
-    segment.setKey(kChars_Mo)
+    segment.setKey(kCharsMo)
     var candidate = segment.addCandidate()
-    candidate.value = kChars_Mozukusu
-    candidate.contentKey = kChars_Mozukusu
+    candidate.value = kCharsMozukusu
+    candidate.contentKey = kCharsMozukusu
     candidate = segment.addCandidate()
-    candidate.value = kChars_Momonga
-    candidate.contentKey = kChars_Momonga
+    candidate.value = kCharsMomonga
+    candidate.contentKey = kCharsMomonga
     return segments
   }
 
@@ -431,7 +431,7 @@ struct EngineConverterTests2 {
     let f = F()
     // Initialize mock segments for suggestion
     let segments = Self.makeMoSuggestionSegments()
-    f.composer.insertCharacterPreedit(kChars_Mo)
+    f.composer.insertCharacterPreedit(kCharsMo)
 
     do {
       f.request.fillIncognitoCandidateWords = false
@@ -484,7 +484,7 @@ struct EngineConverterTests2 {
     let f = F()
     // Initialize mock segments for suggestion
     let segments = Self.makeMoSuggestionSegments()
-    f.composer.insertCharacterPreedit(kChars_Mo)
+    f.composer.insertCharacterPreedit(kCharsMo)
 
     f.request.fillIncognitoCandidateWords = true
     let mockConverter = MockConverter()
@@ -525,18 +525,18 @@ struct EngineConverterTests2 {
     let segments = Segments()
     do {  // Initialize mock segments for suggestion (internally prediction)
       let segment = segments.addSegment()
-      segment.setKey(kChars_Mo)
+      segment.setKey(kCharsMo)
       var candidate = segment.addCandidate()
-      candidate.value = kChars_Mozuku
-      candidate.contentKey = kChars_Mozuku
+      candidate.value = kCharsMozuku
+      candidate.contentKey = kCharsMozuku
       candidate = segment.addCandidate()
-      candidate.value = kChars_Momonga
-      candidate.contentKey = kChars_Momonga
+      candidate.value = kCharsMomonga
+      candidate.contentKey = kCharsMomonga
       candidate = segment.addCandidate()
       candidate.value = "モンドリアン"
       candidate.contentKey = "もんどりあん"
     }
-    f.composer.insertCharacterPreedit(kChars_Mo)
+    f.composer.insertCharacterPreedit(kCharsMo)
 
     // Suggestion (internally prediction)
     // Use "prediction" mock as this suggestion uses prediction internally.
@@ -560,8 +560,8 @@ struct EngineConverterTests2 {
 
       let candidateWindow = output.candidateWindow
       #expect(candidateWindow.size == 3)
-      #expect(candidateWindow.candidate[0].value == kChars_Mozuku)
-      #expect(candidateWindow.candidate[1].value == kChars_Momonga)
+      #expect(candidateWindow.candidate[0].value == kCharsMozuku)
+      #expect(candidateWindow.candidate[1].value == kCharsMomonga)
       #expect(candidateWindow.candidate[2].value == "モンドリアン")
       #expect(!candidateWindow.hasFocusedIndex)
     }
@@ -571,7 +571,7 @@ struct EngineConverterTests2 {
     let f = F()
     let mockConverter = MockConverter()
     let converter = EngineConverter(mockConverter, f.request, f.config)
-    f.composer.insertCharacterPreedit(kChars_Mo)
+    f.composer.insertCharacterPreedit(kCharsMo)
 
     // Suggestion
     let predictionCount = CallCounter()
@@ -595,7 +595,7 @@ struct EngineConverterTests2 {
     let converter = EngineConverter(mockConverter, f.request, f.config)
 
     f.composer.setInputFieldType(.password)
-    f.composer.insertCharacterPreedit(kChars_Mo)
+    f.composer.insertCharacterPreedit(kCharsMo)
 
     // Suggestion
     let predictionCount = CallCounter()
@@ -1058,7 +1058,7 @@ struct EngineConverterTests2 {
     let mockConverter = MockConverter()
     let converter = EngineConverter(mockConverter, f.request, f.config)
     var segments = Self.makeMoSuggestionSegments()
-    f.composer.insertCharacterPreedit(kChars_Mo)
+    f.composer.insertCharacterPreedit(kCharsMo)
 
     // Suggestion
     let first = segments
@@ -1074,8 +1074,8 @@ struct EngineConverterTests2 {
       let segment = segments.addSegment()
       segment.setKey("もず")
       let candidate = segment.addCandidate()
-      candidate.value = kChars_Mozukusu
-      candidate.contentKey = kChars_Mozukusu
+      candidate.value = kCharsMozukusu
+      candidate.contentKey = kCharsMozukusu
     }
     f.composer.insertCharacterPreedit("もず")
 
@@ -1098,7 +1098,7 @@ struct EngineConverterTests2 {
       let candidateWindow = output.candidateWindow
       // Candidates should be merged with the previous suggestions.
       #expect(candidateWindow.size == 1)
-      #expect(candidateWindow.candidate[0].value == kChars_Mozukusu)
+      #expect(candidateWindow.candidate[0].value == kCharsMozukusu)
       #expect(!candidateWindow.hasFocusedIndex)
     }
   }
@@ -1174,17 +1174,17 @@ struct EngineConverterTests2 {
     let mockConverter = MockConverter()
     let converter = EngineConverter(mockConverter, f.request, f.config)
     let segments = Segments()
-    f.composer.insertCharacterPreedit(kChars_Mo)
+    f.composer.insertCharacterPreedit(kCharsMo)
 
     do {  // Initialize mock segments for prediction
       let segment = segments.addSegment()
-      segment.setKey(kChars_Mo)
+      segment.setKey(kCharsMo)
       var candidate = segment.addCandidate()
-      candidate.value = kChars_Mozuku
-      candidate.contentKey = kChars_Mozuku
+      candidate.value = kCharsMozuku
+      candidate.contentKey = kCharsMozuku
       candidate = segment.addCandidate()
-      candidate.value = kChars_Momonga
-      candidate.contentKey = kChars_Momonga
+      candidate.value = kCharsMomonga
+      candidate.contentKey = kCharsMomonga
     }
 
     // Prediction
@@ -1205,7 +1205,7 @@ struct EngineConverterTests2 {
 
       let conversion = output.preedit
       #expect(conversion.segment.count == 1)
-      #expect(conversion.segment.first?.value == kChars_Mozuku)
+      #expect(conversion.segment.first?.value == kCharsMozuku)
     }
 
     // Meaningless segment manipulations.
@@ -1222,7 +1222,7 @@ struct EngineConverterTests2 {
 
       let conversion = output.preedit
       #expect(conversion.segment.count == 1)
-      #expect(conversion.segment.first?.value == kChars_Mozuku)
+      #expect(conversion.segment.first?.value == kCharsMozuku)
     }
   }
 
@@ -1449,7 +1449,7 @@ struct EngineConverterTests2 {
     let candidate = segment.addCandidate()
     // For reverse conversion, key is the original kanji string.
     candidate.key = kKanjiAiueo
-    candidate.value = kChars_Aiueo
+    candidate.value = kCharsAiueo
     let count = CallCounter()
     mockConverter.startReverseConversionHandler = { out, key in
       count.increment()
@@ -1459,7 +1459,7 @@ struct EngineConverterTests2 {
     }
     var reading = ""
     #expect(converter.getReadingText(kKanjiAiueo, &reading))
-    #expect(reading == kChars_Aiueo)
+    #expect(reading == kCharsAiueo)
     #expect(count.count == 1)
   }
 
