@@ -276,6 +276,9 @@ table; use "…" and "ユーザー".
   uninstaller's with a trash badge; same glyph (Hiragino Mincho ProN W6), colors and shape. Each bundle gets an
   Icon Composer `Assets.car` (`CFBundleIconName`, macOS 26+: the system draws shape and glass) and an `.icns` on
   the macOS icon grid (`CFBundleIconFile`, macOS 15).
+- Logging out: a first installation shows up in the input menu only after the user logs out and in (the installer
+  pages and the welcome window say so); updates take effect at once (postinstall restarts GenmaiIME). After
+  uninstalling, logging out is enough (the uninstaller offers "Log Out Now"; no restart).
 - Install location: Installer offers "all users" (`/Library/Input Methods`, the default; Installer asks for an
   administrator) or "me only" (`~/Library/Input Methods`, no administrator rights) — distribution.xml `domains`;
   the scripts derive the domain from `$2` and run their user-level steps with `sudo -u` only when they run as root.
@@ -298,7 +301,7 @@ table; use "…" and "ユーザー".
   the tag `vX.Y.Z`; the workflow (macos-26 runner, newest Xcode ≥ 26 + Metal toolchain) builds the data set and the
   package and creates the release (a manual run only builds and keeps the package as an artifact).
   `Tools/make_release.sh [--publish]` does the same locally. The package installs where the user chose (see
-  "Install location"), needs no logout, and opens the
+  "Install location") and opens the
   welcome window (app screen `welcome`, `GenmaiGUI/Welcome`: how to switch to Genmai, "Turn On AI Conversion" =
   model download + `enabled`) once per user (marker `<profile>/welcome_shown`).
 - Updates (GenmaiClient/Update): `GenmaiAppRelease.latest` (GitHub API `/repos/.../releases`: highest vX.Y.Z, no

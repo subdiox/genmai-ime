@@ -44,8 +44,9 @@ Download `Genmai-X.Y.Z.pkg` from the [latest release](https://github.com/subdiox
 open it. The package is not signed with a Developer ID yet: if macOS refuses to open it, allow it in System
 Settings › Privacy & Security (**Open Anyway**). It installs for all users (`/Library/Input Methods`, asks for an
 administrator) or, with "Install for me only", for your account (`~/Library/Input Methods`, no administrator
-needed), and selects the input source; you can also add **Genmai** in System Settings › Keyboard › Input Sources. Settings and learning data live
-in `~/Library/Application Support/Genmai`. To uninstall, use **Uninstall Genmai…** in the settings (General); it asks which of your data (AI model,
+needed). **Log out and log back in** afterwards: Genmai then appears in the input menu (or add it in System
+Settings › Keyboard › Input Sources). Settings and learning data live in `~/Library/Application Support/Genmai`. To
+uninstall, use **Uninstall Genmai…** in the settings (General); it asks which of your data (AI model,
 user dictionary, learning data, settings) to remove as well.
 
 ### Updates
@@ -77,7 +78,8 @@ cp -R build/Genmai.app ~/Library/Input\ Methods/
 ~/Library/Input\ Methods/Genmai.app/Contents/MacOS/GenmaiIME --register_input_source
 ```
 
-Then add **Genmai** in System Settings › Keyboard › Input Sources (log out and in if it does not appear).
+Then log out and log back in, and add **Genmai** in System Settings › Keyboard › Input Sources if it is not in the
+input menu.
 Settings and learning data live in `~/Library/Application Support/Genmai`.
 
 ### AI conversion

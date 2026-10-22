@@ -4,8 +4,9 @@
  Differences: the package id / file name (io.github.subdiox.genmai.pkg, Genmai.pkg) so that the C++
  Mozc package (org.mozc.pkg.JapaneseInput) is not treated as the same product, the title, the minimum OS
  (the Swift package targets macOS 15) and hostArchitectures, which Tools/make_installer_pkg.sh fills with
- the architectures of the built binaries (@@@HOST_ARCHITECTURES@@@), and no logout at the end: the postinstall
- script restarts the input method (there are no launch agents to load), so updates take effect at once.
+ the architectures of the built binaries (@@@HOST_ARCHITECTURES@@@), and onConclusion="None": the postinstall
+ script restarts the input method, so updates take effect at once; a first installation appears in the input menu
+ after the user logs out and in, which the conclusion page says.
  Not in Mozc: the destination can be all users or the current user's home (domains), localized welcome and conclusion pages (Resources/{en,ja}.lproj/*.html) and the app icon as the
  background in both appearances (background.tiff, made from Tools/assets/genmai.icns by make_installer_pkg.sh).
 -->
