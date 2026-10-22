@@ -28,8 +28,14 @@ public struct KeyEventData: Sendable, Equatable {
   public var type: EventType
   public var characters: String
   public var charactersIgnoringModifiers: String
-  public var modifierFlags: NSEvent.ModifierFlags
+  /// The raw value of the modifier flags (NSEvent.ModifierFlags is not Sendable in the SDK).
+  public var modifierFlagsRawValue: UInt
   public var keyCode: UInt16
+
+  public var modifierFlags: NSEvent.ModifierFlags {
+    get { NSEvent.ModifierFlags(rawValue: modifierFlagsRawValue) }
+    set { modifierFlagsRawValue = newValue.rawValue }
+  }
 
   public init(
     type: EventType, characters: String, charactersIgnoringModifiers: String,
@@ -38,7 +44,7 @@ public struct KeyEventData: Sendable, Equatable {
     self.type = type
     self.characters = characters
     self.charactersIgnoringModifiers = charactersIgnoringModifiers
-    self.modifierFlags = modifierFlags
+    self.modifierFlagsRawValue = modifierFlags.rawValue
     self.keyCode = keyCode
   }
 
@@ -56,12 +62,10 @@ public struct KeyEventData: Sendable, Equatable {
       characters = ""
       charactersIgnoringModifiers = ""
     }
-    modifierFlags = event.modifierFlags
+    modifierFlagsRawValue = event.modifierFlags.rawValue
     keyCode = type == .other ? 0 : event.keyCode
   }
 }
-
-extension NSEvent.ModifierFlags: @retroactive @unchecked Sendable {}
 
 @MainActor
 public final class KeyCodeMap {

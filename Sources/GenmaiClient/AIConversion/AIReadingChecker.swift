@@ -187,11 +187,13 @@ public final class AIReadingChecker: Sendable {
   // MARK: - Characters
 
   static func isKanji(_ c: Character) -> Bool {
-    c.unicodeScalars.count == 1 && Util.getScriptType(Char32(c.unicodeScalars.first!.value)) == .kanji
+    guard c.unicodeScalars.count == 1, let u = c.unicodeScalars.first else { return false }
+    return Util.getScriptType(Char32(u.value)) == .kanji
   }
 
   static func isHiragana(_ c: Character) -> Bool {
-    c.unicodeScalars.count == 1 && (0x3041...0x309F).contains(c.unicodeScalars.first!.value)
+    guard c.unicodeScalars.count == 1, let u = c.unicodeScalars.first else { return false }
+    return (0x3041...0x309F).contains(u.value)
   }
 
   /// Digits and letters other than kana and kanji (Latin, Greek, ...).
@@ -218,8 +220,8 @@ public final class AIReadingChecker: Sendable {
     var out: [Unicode.Scalar] = []
     let normalized = s.precomposedStringWithCompatibilityMapping.decomposedStringWithCanonicalMapping
     for var u in normalized.unicodeScalars {
-      if (0x30A1...0x30F6).contains(u.value) {
-        u = Unicode.Scalar(u.value - 0x60)!
+      if (0x30A1...0x30F6).contains(u.value), let hiragana = Unicode.Scalar(u.value - 0x60) {
+        u = hiragana
       }
       if removed.contains(u) || u.properties.isWhitespace {
         continue

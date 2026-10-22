@@ -3,9 +3,9 @@
 /// Read-only set that is backed by a sorted array.
 public struct FlatSet<T> {
   private let elements: [T]
-  private let cmp: (T, T) -> Bool
+  private let cmp: @Sendable (T, T) -> Bool
 
-  public init(_ elements: [T], by cmp: @escaping (T, T) -> Bool) {
+  public init(_ elements: [T], by cmp: @escaping @Sendable (T, T) -> Bool) {
     var e = elements
     FlatInternal.sortAndVerifyUnique(&e, cmp)
     self.elements = e
@@ -19,13 +19,13 @@ public struct FlatSet<T> {
   }
 }
 
-extension FlatSet where T: Comparable {
+extension FlatSet where T: Comparable & SendableMetatype {
   public init(_ elements: [T]) {
     self.init(elements, by: { $0 < $1 })
   }
 }
 
-extension FlatSet where T: StringProtocol {
+extension FlatSet where T: StringProtocol & SendableMetatype {
   /// Creates a set ordered bytewise by the UTF-8 of the elements.
   public init(byteOrdered elements: [T]) {
     self.init(elements, by: { $0.bytesLess($1) })
@@ -34,4 +34,4 @@ extension FlatSet where T: StringProtocol {
 
 // The comparator is a pure function, so the container is immutable and safe to
 // share when the elements are Sendable.
-extension FlatSet: @unchecked Sendable where T: Sendable {}
+extension FlatSet: Sendable where T: Sendable {}

@@ -61,7 +61,7 @@ func makeCandidateWindow() -> CandidateWindowMessage {
 
 @MainActor
 @Suite struct CandidateViewTests {
-  @Test func updateLayout() {
+  @Test func updateLayout() throws {
     let model = CandidateViewModel(measurer: FixedMeasurer())
     model.setCandidateWindow(makeCandidateWindow())
     let size = model.updateLayout()
@@ -86,7 +86,7 @@ func makeCandidateWindow() -> CandidateWindowMessage {
     #expect(!data.rows[1].hasInformation)
     // Scroll bar since 3 < 10 candidates.
     #expect(data.scrollBar?.barRect == Rect(160, 6, 8, 90))
-    let footer = try! #require(data.footer)
+    let footer = try #require(data.footer)
     #expect(footer.rect == CGRect(x: 6, y: 96, width: 162, height: 26))
     #expect(footer.label == "L")
     #expect(footer.index == "1 / 10")
@@ -169,7 +169,7 @@ extension CandidateDescription {
 
 @MainActor
 @Suite struct InfolistViewTests {
-  @Test func updateLayout() {
+  @Test func updateLayout() throws {
     let model = InfolistViewModel(measurer: FixedMeasurer())
     var window = makeCandidateWindow()
     var info = Genmai_Commands_Information()

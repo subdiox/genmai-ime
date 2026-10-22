@@ -5,7 +5,7 @@ import Testing
 @testable import GenmaiBase
 
 private func containsSameValues<C: Collection>(_ buf: C) -> Bool where C.Element: Equatable {
-  let first = buf.first!
+  guard let first = buf.first else { return true }
   return buf.allSatisfy { $0 == first }
 }
 

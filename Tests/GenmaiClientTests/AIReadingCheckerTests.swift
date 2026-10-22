@@ -24,7 +24,11 @@ private let sharedChecker: AIReadingChecker? = {
 
 @Suite(.enabled(if: sharedChecker != nil, "Data/genmai.data is missing (run Tools/build_data.sh)"))
 struct AIReadingCheckerTests {
-  var checker: AIReadingChecker { sharedChecker! }
+  let checker: AIReadingChecker
+
+  init() throws {
+    checker = try #require(sharedChecker)
+  }
 
   /// The cases of the reference implementation (genmai experiments/reading_check.py).
   static let cases: [(text: String, reading: String, readable: Bool)] = [

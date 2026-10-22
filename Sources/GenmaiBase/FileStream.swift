@@ -6,6 +6,8 @@
 // in-memory bytes (std::istringstream), which ConfigFileStream uses.
 // On macOS there is no difference between text and binary mode.
 
+import Foundation
+
 #if canImport(Darwin)
   import Darwin
 #endif
@@ -137,35 +139,43 @@ public final class OutputFileStream {
     case append
   }
 
-  private var fp: UnsafeMutablePointer<FILE>?
+  private var handle: FileHandle?
+  /// Bytes written but not yet passed to the file (stdio-like buffering).
+  private var buffer: [UInt8] = []
+  private static let bufferLimit = 64 * 1024
   public private(set) var fail: Bool
 
   public init(_ filename: String, _ mode: Mode = .truncate) {
-    fp = fopen(filename, mode == .append ? "ab" : "wb")
-    fail = fp == nil
+    // fopen(filename, "wb" / "ab").
+    let flags = O_WRONLY | O_CREAT | (mode == .append ? O_APPEND : O_TRUNC)
+    let fd = open(filename, flags, 0o666)
+    handle = fd >= 0 ? FileHandle(fileDescriptor: fd, closeOnDealloc: true) : nil
+    fail = handle == nil
   }
 
   deinit {
-    if let fp { fclose(fp) }
+    if let handle {
+      if !buffer.isEmpty { try? handle.write(contentsOf: buffer) }
+      try? handle.close()
+    }
   }
 
   public var good: Bool { !fail }
 
   public func write(_ bytes: some Collection<UInt8>) {
-    guard let fp, !fail else {
+    guard handle != nil, !fail else {
       fail = true
       return
     }
-    let array = Array(bytes)
-    if array.isEmpty { return }
-    if fwrite(array, 1, array.count, fp) != array.count {
-      fail = true
+    buffer.append(contentsOf: bytes)
+    if buffer.count >= Self.bufferLimit {
+      flushBuffer()
     }
   }
 
   /// `ofs << str`.
   public func write(_ string: String) {
-    write(Array(string.utf8))
+    write(string.utf8)
   }
 
   /// `ofs << str << std::endl`.
@@ -176,13 +186,28 @@ public final class OutputFileStream {
   }
 
   public func flush() {
-    if let fp { fflush(fp) }
+    flushBuffer()
+  }
+
+  private func flushBuffer() {
+    guard let handle, !buffer.isEmpty else { return }
+    do {
+      try handle.write(contentsOf: buffer)
+    } catch {
+      fail = true
+    }
+    buffer.removeAll(keepingCapacity: true)
   }
 
   public func close() {
-    if let fp {
-      if fclose(fp) != 0 { fail = true }
+    if let handle {
+      flushBuffer()
+      do {
+        try handle.close()
+      } catch {
+        fail = true
+      }
     }
-    fp = nil
+    handle = nil
   }
 }

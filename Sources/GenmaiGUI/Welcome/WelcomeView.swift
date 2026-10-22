@@ -21,8 +21,9 @@ public enum WelcomeStrings {
     .windowTitle: "Welcome to [ProductName]",
     .title: "Welcome to [ProductName]",
     .subtitle: "Japanese input with on-device AI conversion",
-    .switchTitle: "[ProductName] is ready",
-    .switchDetail: "Choose [ProductName] in the input menu in the menu bar, or switch with Control-Space.",
+    .switchTitle: "Log out to start using [ProductName]",
+    .switchDetail:
+      "After you log out and log back in, choose [ProductName] in the input menu in the menu bar, or switch with Control-Space.",
     .aiTitle: "AI conversion",
     .aiDetail:
       "In addition to the dictionary-based conversion, a language model on your Mac converts whole sentences. Your input is never sent over the network. Turning it on downloads the model (%@).",
@@ -42,8 +43,8 @@ public enum WelcomeStrings {
     .windowTitle: "[ProductName] へようこそ",
     .title: "[ProductName] へようこそ",
     .subtitle: "端末内の AI で変換する日本語入力",
-    .switchTitle: "[ProductName] を使う準備ができました",
-    .switchDetail: "メニューバーの入力メニューで [ProductName] を選ぶか、Control+Space で切り替えます。",
+    .switchTitle: "ログアウトすると使えるようになります",
+    .switchDetail: "ログアウトしてもう一度ログインしたあと、メニューバーの入力メニューで [ProductName] を選ぶか、Control+Space で切り替えます。",
     .aiTitle: "AI 変換",
     .aiDetail:
       "辞書を用いた変換に加えて、この Mac の中の言語モデルで文全体を変換します。入力内容がネットワークに送信されることはありません。オンにするとモデル（%@）をダウンロードします。",

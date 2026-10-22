@@ -101,7 +101,10 @@ final class IMEFixture {
   @discardableResult
   func type(_ text: String) -> [Bool] {
     text.map { c in
-      let keyCode = kKeyCodes[c]!
+      guard let keyCode = kKeyCodes[c] else {
+        Issue.record("no key code for \(c)")
+        return false
+      }
       return press(keyCode, String(c))
     }
   }

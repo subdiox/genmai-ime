@@ -43,7 +43,7 @@ private func testNumpadTransformation(
     Issue.record("unexpected key event: \(keyEvent)", sourceLocation: sourceLocation)
     return
   }
-  #expect(keyEvent.keyCode == UInt32(expectedKeyCode.asciiValue!), sourceLocation: sourceLocation)
+  #expect(keyEvent.keyCode == expectedKeyCode.asciiValue.map(UInt32.init), sourceLocation: sourceLocation)
   #expect(keyEvent.keyString == expectedKeyString, sourceLocation: sourceLocation)
   #expect(keyEvent.inputStyle == expectedStyle, sourceLocation: sourceLocation)
 }
@@ -71,7 +71,7 @@ private func testKanaTransformation(
   }
   #expect(keyEvent.keyString == expectedKeyString, "\(keyString)", sourceLocation: sourceLocation)
   #expect(
-    keyEvent.keyCode == UInt32(expectedKeyCode.asciiValue!), "\(keyString)",
+    keyEvent.keyCode == expectedKeyCode.asciiValue.map(UInt32.init), "\(keyString)",
     sourceLocation: sourceLocation)
 }
 

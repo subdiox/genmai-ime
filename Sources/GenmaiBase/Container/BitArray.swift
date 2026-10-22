@@ -32,7 +32,7 @@ public struct BitArray: Sendable, Equatable {
     var result: [UInt8] = []
     result.reserveCapacity(arraySize)
     for word in array {
-      withUnsafeBytes(of: word.littleEndian) { result.append(contentsOf: $0) }
+      result.appendLittleEndian(word)
     }
     return result
   }
@@ -41,7 +41,7 @@ public struct BitArray: Sendable, Equatable {
   public var arraySize: Int { MemoryLayout<UInt32>.size * (1 + (size >> 5)) }
 
   /// Immutable accessor.
-  public static func getValue(_ array: UnsafeRawBufferPointer, _ index: Int) -> Bool {
+  public static func getValue(_ array: Span<UInt8>, _ index: Int) -> Bool {
     ((array[index >> 3] >> UInt8(index & 0x7)) & 1) != 0
   }
 

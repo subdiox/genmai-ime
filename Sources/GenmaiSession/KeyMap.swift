@@ -6,6 +6,7 @@ import Foundation
 import GenmaiBase
 import GenmaiCore
 import GenmaiProtocol
+import Synchronization
 
 public enum DirectInputState {
   public enum Commands: Int, Sendable, Hashable {
@@ -257,82 +258,52 @@ func forEachKeyMapLine(_ ifs: InputFileStream, _ body: (String) -> Void) {
 func splitTabSkipEmpty(_ line: String) -> [String] {
   line.split(separator: "\t", omittingEmptySubsequences: true).map(String.init)
 }
+/// The tables of a KeyMapManager.
+struct KeyMapManagerState: Sendable {
 
-/// A manager of key mapping rule for a Config.
-/// The instance is created based on a Config through the constructor,
-/// and the instance is immutable (If the config is updated after the instance
-/// creation, this instance is unchanged).
-public final class KeyMapManager: @unchecked Sendable {
-  // Immutable after initialization.
+  var commandDirectMap: [String: DirectInputState.Commands] = [:]
+  var commandPrecompositionMap: [String: PrecompositionState.Commands] = [:]
+  var commandCompositionMap: [String: CompositionState.Commands] = [:]
+  var commandConversionMap: [String: ConversionState.Commands] = [:]
 
-  #if os(macOS) || os(iOS)
-    static let kCompositionModeXCommandSupported = false
-  #else
-    static let kCompositionModeXCommandSupported = true
-  #endif
-
-  private var commandDirectMap: [String: DirectInputState.Commands] = [:]
-  private var commandPrecompositionMap: [String: PrecompositionState.Commands] = [:]
-  private var commandCompositionMap: [String: CompositionState.Commands] = [:]
-  private var commandConversionMap: [String: ConversionState.Commands] = [:]
-
-  private var reverseCommandDirectMap: [DirectInputState.Commands: String] = [:]
-  private var reverseCommandPrecompositionMap: [PrecompositionState.Commands: String] = [:]
-  private var reverseCommandCompositionMap: [CompositionState.Commands: String] = [:]
-  private var reverseCommandConversionMap: [ConversionState.Commands: String] = [:]
+  var reverseCommandDirectMap: [DirectInputState.Commands: String] = [:]
+  var reverseCommandPrecompositionMap: [PrecompositionState.Commands: String] = [:]
+  var reverseCommandCompositionMap: [CompositionState.Commands: String] = [:]
+  var reverseCommandConversionMap: [ConversionState.Commands: String] = [:]
 
   // Status should be out of keymap.
-  private var keymapDirect = KeyMap<DirectInputState.Commands>()
-  private var keymapPrecomposition = KeyMap<PrecompositionState.Commands>()
-  private var keymapComposition = KeyMap<CompositionState.Commands>()
-  private var keymapConversion = KeyMap<ConversionState.Commands>()
+  var keymapDirect = KeyMap<DirectInputState.Commands>()
+  var keymapPrecomposition = KeyMap<PrecompositionState.Commands>()
+  var keymapComposition = KeyMap<CompositionState.Commands>()
+  var keymapConversion = KeyMap<ConversionState.Commands>()
 
   // enabled only if zero query suggestion is shown. Otherwise, inherit from
   // keymap_precomposition
-  private var keymapZeroQuerySuggestion = KeyMap<PrecompositionState.Commands>()
+  var keymapZeroQuerySuggestion = KeyMap<PrecompositionState.Commands>()
 
   // enabled only if suggestion is shown. Otherwise, inherit from
   // keymap_composition
-  private var keymapSuggestion = KeyMap<CompositionState.Commands>()
+  var keymapSuggestion = KeyMap<CompositionState.Commands>()
 
   // enabled only if prediction is shown. Otherwise, inherit from
   // keymap_conversion
-  private var keymapPrediction = KeyMap<ConversionState.Commands>()
+  var keymapPrediction = KeyMap<ConversionState.Commands>()
 
   /// Default ctor. keymap is NONE.
-  public init() {
+  init() {
     initCommandData()
     _ = applyPrimarySessionKeymap(ConfigHandler.getDefaultKeyMap(), "")
     // No overlay keymap is set.
   }
 
-  public init(_ config: Genmai_Config_Config) {
+  init(_ config: Genmai_Config_Config) {
     initCommandData()
     _ = applyPrimarySessionKeymap(
       config.sessionKeymap, String(decoding: config.customKeymapTable, as: UTF8.self))
     applyOverlaySessionKeymap(config.overlayKeymaps)
   }
 
-  /// Returns true if both `new_config` and `old_config`
-  /// can use the same KeyMapManager.
-  public static func isSameKeyMapManagerApplicable(
-    _ oldConfig: Genmai_Config_Config, _ newConfig: Genmai_Config_Config
-  ) -> Bool {
-    if oldConfig.sessionKeymap != newConfig.sessionKeymap {
-      return false
-    }
-    if oldConfig.overlayKeymaps != newConfig.overlayKeymaps {
-      return false
-    }
-    if oldConfig.sessionKeymap == .custom
-      && oldConfig.customKeymapTable != newConfig.customKeymapTable
-    {
-      return false
-    }
-    return true
-  }
-
-  func reset() {
+  mutating func reset() {
     keymapDirect.clear()
     keymapPrecomposition.clear()
     keymapComposition.clear()
@@ -344,7 +315,7 @@ public final class KeyMapManager: @unchecked Sendable {
 
   /// Applies "primary" SessionKeymap, like MSIME or KOTOERI.
   @discardableResult
-  func applyPrimarySessionKeymap(
+  mutating func applyPrimarySessionKeymap(
     _ keymap: Genmai_Config_Config.SessionKeymap, _ customKeymapTable: String
   ) -> Bool {
     let keymapFile = KeyMapManager.getKeyMapFileName(keymap)
@@ -364,7 +335,7 @@ public final class KeyMapManager: @unchecked Sendable {
   }
 
   /// Applies "overlay" SessionKeymaps, like OVERLAY_HENKAN_TO_IME_ON.
-  func applyOverlaySessionKeymap(_ overlayKeymaps: [Genmai_Config_Config.SessionKeymap]) {
+  mutating func applyOverlaySessionKeymap(_ overlayKeymaps: [Genmai_Config_Config.SessionKeymap]) {
     for overlay in overlayKeymaps {
       if let overlayKeymapFile = KeyMapManager.getKeyMapFileName(overlay) {
         _ = loadFile(overlayKeymapFile)
@@ -372,25 +343,7 @@ public final class KeyMapManager: @unchecked Sendable {
     }
   }
 
-  /// Return the file name bound with the keymap enum.
-  public static func getKeyMapFileName(_ keymap: Genmai_Config_Config.SessionKeymap) -> String? {
-    switch keymap {
-    case .atok: return kATOKKeyMapFile
-    case .mobile: return kMobileKeyMapFile
-    case .msime: return kMSIMEKeyMapFile
-    case .kotoeri: return kKotoeriKeyMapFile
-    case .chromeos: return kChromeOsKeyMapFile
-    case .custom: return kCustomKeyMapFile
-    case .overlayHenkanMuhenkanToImeOnOff: return kOverlayHenkanMuhenkanToImeOnOffKeyMapFile
-    default:
-      // should not appear here.
-      GenmaiLog.error("Keymap type: \(keymap) appeared at key map initialization.")
-      // should never make loop.
-      return getKeyMapFileName(ConfigHandler.getDefaultKeyMap())
-    }
-  }
-
-  func loadFile(_ filename: String?) -> Bool {
+  mutating func loadFile(_ filename: String?) -> Bool {
     guard let filename, let ifs = ConfigFileStream.legacyOpen(filename) else {
       GenmaiLog.warning("cannot load keymap table: \(filename ?? "(null)")")
       return false
@@ -398,12 +351,12 @@ public final class KeyMapManager: @unchecked Sendable {
     return loadStream(ifs)
   }
 
-  func loadStream(_ ifs: InputFileStream) -> Bool {
+  mutating func loadStream(_ ifs: InputFileStream) -> Bool {
     var errors: [String] = []
     return loadStreamWithErrors(ifs, &errors)
   }
 
-  func loadStreamWithErrors(_ ifs: InputFileStream, _ errors: inout [String]) -> Bool {
+  mutating func loadStreamWithErrors(_ ifs: InputFileStream, _ errors: inout [String]) -> Bool {
     forEachKeyMapLine(ifs) { line in
       if line.isEmpty || line.utf8.first == UInt8(ascii: "#") {  // Skip empty or comment line.
         return
@@ -437,7 +390,7 @@ public final class KeyMapManager: @unchecked Sendable {
   }
 
   /// Add a command bound with state and key_event.
-  func addCommand(_ stateName: String, _ keyEventName: String, _ commandName: String) -> Bool {
+  mutating func addCommand(_ stateName: String, _ keyEventName: String, _ commandName: String) -> Bool {
     #if !DEBUG  // means RELEASE BUILD
       // On the release build, we do not support the ReportBug
       // commands.  Note, true is returned as the arguments are
@@ -513,33 +466,33 @@ public final class KeyMapManager: @unchecked Sendable {
     reverseCommandConversionMap[command]
   }
 
-  private func registerDirectCommand(_ commandString: String, _ command: DirectInputState.Commands) {
+  private mutating func registerDirectCommand(_ commandString: String, _ command: DirectInputState.Commands) {
     commandDirectMap[commandString] = command
     reverseCommandDirectMap[command] = commandString
   }
 
-  private func registerPrecompositionCommand(
+  private mutating func registerPrecompositionCommand(
     _ commandString: String, _ command: PrecompositionState.Commands
   ) {
     commandPrecompositionMap[commandString] = command
     reverseCommandPrecompositionMap[command] = commandString
   }
 
-  private func registerCompositionCommand(
+  private mutating func registerCompositionCommand(
     _ commandString: String, _ command: CompositionState.Commands
   ) {
     commandCompositionMap[commandString] = command
     reverseCommandCompositionMap[command] = commandString
   }
 
-  private func registerConversionCommand(
+  private mutating func registerConversionCommand(
     _ commandString: String, _ command: ConversionState.Commands
   ) {
     commandConversionMap[commandString] = command
     reverseCommandConversionMap[command] = commandString
   }
 
-  private func initCommandData() {
+  private mutating func initCommandData() {
     let x = KeyMapManager.kCompositionModeXCommandSupported
 
     registerDirectCommand("IMEOn", .imeOn)
@@ -780,6 +733,201 @@ public final class KeyMapManager: @unchecked Sendable {
 
   public func appendAvailableCommandNameConversion(_ commandNames: inout Set<String>) {
     commandNames.formUnion(commandConversionMap.keys)
+  }
+
+  public func appendAvailableCommandNameZeroQuerySuggestion(_ commandNames: inout Set<String>) {
+    appendAvailableCommandNamePrecomposition(&commandNames)
+  }
+
+  public func appendAvailableCommandNameSuggestion(_ commandNames: inout Set<String>) {
+    appendAvailableCommandNameComposition(&commandNames)
+  }
+
+  public func appendAvailableCommandNamePrediction(_ commandNames: inout Set<String>) {
+    appendAvailableCommandNameConversion(&commandNames)
+  }
+}
+
+/// A manager of key mapping rule for a Config.
+/// The instance is created based on a Config through the constructor,
+/// and the instance is immutable (If the config is updated after the instance
+/// creation, this instance is unchanged).
+///
+/// The tables live in a `Mutex` so that the manager is `Sendable`; tests (and the
+/// C++ friend functions) still modify them through `addCommand` / `loadStream`.
+public final class KeyMapManager: Sendable {
+  #if os(macOS) || os(iOS)
+    static let kCompositionModeXCommandSupported = false
+  #else
+    static let kCompositionModeXCommandSupported = true
+  #endif
+
+  private let state: Mutex<KeyMapManagerState>
+
+  /// Default ctor. keymap is NONE.
+  public init() {
+    state = Mutex(KeyMapManagerState())
+  }
+
+  public init(_ config: Genmai_Config_Config) {
+    state = Mutex(KeyMapManagerState(config))
+  }
+
+  /// Returns true if both `new_config` and `old_config`
+  /// can use the same KeyMapManager.
+  public static func isSameKeyMapManagerApplicable(
+    _ oldConfig: Genmai_Config_Config, _ newConfig: Genmai_Config_Config
+  ) -> Bool {
+    if oldConfig.sessionKeymap != newConfig.sessionKeymap {
+      return false
+    }
+    if oldConfig.overlayKeymaps != newConfig.overlayKeymaps {
+      return false
+    }
+    if oldConfig.sessionKeymap == .custom
+      && oldConfig.customKeymapTable != newConfig.customKeymapTable
+    {
+      return false
+    }
+    return true
+  }
+
+  /// Return the file name bound with the keymap enum.
+  public static func getKeyMapFileName(_ keymap: Genmai_Config_Config.SessionKeymap) -> String? {
+    switch keymap {
+    case .atok: return kATOKKeyMapFile
+    case .mobile: return kMobileKeyMapFile
+    case .msime: return kMSIMEKeyMapFile
+    case .kotoeri: return kKotoeriKeyMapFile
+    case .chromeos: return kChromeOsKeyMapFile
+    case .custom: return kCustomKeyMapFile
+    case .overlayHenkanMuhenkanToImeOnOff: return kOverlayHenkanMuhenkanToImeOnOffKeyMapFile
+    default:
+      // should not appear here.
+      GenmaiLog.error("Keymap type: \(keymap) appeared at key map initialization.")
+      // should never make loop.
+      return getKeyMapFileName(ConfigHandler.getDefaultKeyMap())
+    }
+  }
+
+  func reset() { state.withLock { $0.reset() } }
+
+  /// Applies "primary" SessionKeymap, like MSIME or KOTOERI.
+  @discardableResult
+  func applyPrimarySessionKeymap(
+    _ keymap: Genmai_Config_Config.SessionKeymap, _ customKeymapTable: String
+  ) -> Bool {
+    state.withLock { $0.applyPrimarySessionKeymap(keymap, customKeymapTable) }
+  }
+
+  /// Applies "overlay" SessionKeymaps, like OVERLAY_HENKAN_TO_IME_ON.
+  func applyOverlaySessionKeymap(_ overlayKeymaps: [Genmai_Config_Config.SessionKeymap]) {
+    state.withLock { $0.applyOverlaySessionKeymap(overlayKeymaps) }
+  }
+
+  func loadFile(_ filename: String?) -> Bool { state.withLock { $0.loadFile(filename) } }
+
+  func loadStream(_ ifs: InputFileStream) -> Bool { state.withLock { $0.loadStream(ifs) } }
+
+  func loadStreamWithErrors(_ ifs: InputFileStream, _ errors: inout [String]) -> Bool {
+    var collected = errors
+    let result = state.withLock { $0.loadStreamWithErrors(ifs, &collected) }
+    errors = collected
+    return result
+  }
+
+  /// Add a command bound with state and key_event.
+  func addCommand(_ stateName: String, _ keyEventName: String, _ commandName: String) -> Bool {
+    state.withLock { $0.addCommand(stateName, keyEventName, commandName) }
+  }
+
+  public func getNameFromCommandDirect(_ command: DirectInputState.Commands) -> String? {
+    state.withLock { $0.getNameFromCommandDirect(command) }
+  }
+
+  public func getNameFromCommandPrecomposition(_ command: PrecompositionState.Commands) -> String? {
+    state.withLock { $0.getNameFromCommandPrecomposition(command) }
+  }
+
+  public func getNameFromCommandComposition(_ command: CompositionState.Commands) -> String? {
+    state.withLock { $0.getNameFromCommandComposition(command) }
+  }
+
+  public func getNameFromCommandConversion(_ command: ConversionState.Commands) -> String? {
+    state.withLock { $0.getNameFromCommandConversion(command) }
+  }
+
+  public func getCommandDirect(_ keyEvent: Genmai_Commands_KeyEvent) -> DirectInputState.Commands? {
+    state.withLock { $0.getCommandDirect(keyEvent) }
+  }
+
+  public func getCommandPrecomposition(_ keyEvent: Genmai_Commands_KeyEvent)
+    -> PrecompositionState.Commands?
+  {
+    state.withLock { $0.getCommandPrecomposition(keyEvent) }
+  }
+
+  public func getCommandComposition(_ keyEvent: Genmai_Commands_KeyEvent)
+    -> CompositionState.Commands?
+  {
+    state.withLock { $0.getCommandComposition(keyEvent) }
+  }
+
+  public func getCommandZeroQuerySuggestion(_ keyEvent: Genmai_Commands_KeyEvent)
+    -> PrecompositionState.Commands?
+  {
+    state.withLock { $0.getCommandZeroQuerySuggestion(keyEvent) }
+  }
+
+  public func getCommandSuggestion(_ keyEvent: Genmai_Commands_KeyEvent)
+    -> CompositionState.Commands?
+  {
+    state.withLock { $0.getCommandSuggestion(keyEvent) }
+  }
+
+  public func getCommandConversion(_ keyEvent: Genmai_Commands_KeyEvent)
+    -> ConversionState.Commands?
+  {
+    state.withLock { $0.getCommandConversion(keyEvent) }
+  }
+
+  public func getCommandPrediction(_ keyEvent: Genmai_Commands_KeyEvent)
+    -> ConversionState.Commands?
+  {
+    state.withLock { $0.getCommandPrediction(keyEvent) }
+  }
+
+  func parseCommandDirect(_ commandString: String) -> DirectInputState.Commands? {
+    state.withLock { $0.parseCommandDirect(commandString) }
+  }
+
+  func parseCommandPrecomposition(_ commandString: String) -> PrecompositionState.Commands? {
+    state.withLock { $0.parseCommandPrecomposition(commandString) }
+  }
+
+  func parseCommandComposition(_ commandString: String) -> CompositionState.Commands? {
+    state.withLock { $0.parseCommandComposition(commandString) }
+  }
+
+  func parseCommandConversion(_ commandString: String) -> ConversionState.Commands? {
+    state.withLock { $0.parseCommandConversion(commandString) }
+  }
+
+  // Append command names to command_names.
+  public func appendAvailableCommandNameDirect(_ commandNames: inout Set<String>) {
+    commandNames.formUnion(state.withLock { $0.commandDirectMap.keys })
+  }
+
+  public func appendAvailableCommandNamePrecomposition(_ commandNames: inout Set<String>) {
+    commandNames.formUnion(state.withLock { $0.commandPrecompositionMap.keys })
+  }
+
+  public func appendAvailableCommandNameComposition(_ commandNames: inout Set<String>) {
+    commandNames.formUnion(state.withLock { $0.commandCompositionMap.keys })
+  }
+
+  public func appendAvailableCommandNameConversion(_ commandNames: inout Set<String>) {
+    commandNames.formUnion(state.withLock { $0.commandConversionMap.keys })
   }
 
   public func appendAvailableCommandNameZeroQuerySuggestion(_ commandNames: inout Set<String>) {

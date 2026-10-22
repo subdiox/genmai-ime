@@ -53,7 +53,7 @@ final class RecordingLauncher: AppLauncher {
 
 private func key(_ c: Character) -> KeyEvent {
   var key = KeyEvent()
-  key.keyCode = UInt32(c.unicodeScalars.first!.value)
+  key.keyCode = c.unicodeScalars.first.map { UInt32($0.value) } ?? 0
   return key
 }
 
@@ -82,12 +82,12 @@ private func key(_ c: Character) -> KeyEvent {
     let backend = RecordingBackend()
     let client = makeClient(backend)
     _ = client.sendKey(key("a"), context: Context())
-    #expect(backend.inputs.last!.hasContext)
+    #expect(backend.inputs.last?.hasContext == true)
     var context = Context()
     context.precedingText = "abc"
     _ = client.sendCommand(SessionCommand(), context: context)
-    #expect(backend.inputs.last!.type == .sendCommand)
-    #expect(backend.inputs.last!.context.precedingText == "abc")
+    #expect(backend.inputs.last?.type == .sendCommand)
+    #expect(backend.inputs.last?.context.precedingText == "abc")
   }
 
   @Test func playbackHistoryAfterSessionLoss() {

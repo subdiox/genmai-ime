@@ -57,7 +57,9 @@ public struct GenmaiAppRelease: Equatable, Sendable {
   public static func latest(repository: String = repository, session: URLSession = .shared) async throws
     -> GenmaiAppRelease?
   {
-    var request = URLRequest(url: URL(string: "https://api.github.com/repos/\(repository)/releases?per_page=30")!)
+    var request = URLRequest(
+      url: URL(validLiteral: "https://api.github.com/repos").appending(path: "\(repository)/releases")
+        .appending(queryItems: [URLQueryItem(name: "per_page", value: "30")]))
     request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
     let (data, response) = try await session.data(for: request)
     let status = (response as? HTTPURLResponse)?.statusCode ?? 0
@@ -198,10 +200,8 @@ public enum GenmaiUpdater {
     let package = release.package
     let local = cacheDirectory.appending(path: package.name)
     try await FileDownload.download(
-      package.url, to: local, failure: { GenmaiUpdateError.download(package.name, status: $0) }
-    ) { received in
-      progress(received, package.size)
-    }
+      package.url, to: local, failure: { GenmaiUpdateError.download(package.name, status: $0) },
+      progress: { received in progress(received, package.size) })
     let size = (try fm.attributesOfItem(atPath: local.path)[.size] as? Int64) ?? -1
     var intact = size == package.size
     if intact, let sha256 = package.sha256 {

@@ -156,7 +156,7 @@ import Testing
   }
 
   @Test func moveWordsToAnotherDictionary() throws {
-    try withTempDictionaryFile { path in
+    withTempDictionaryFile { path in
       let (model, _) = makeModel(path)
       fillRow(model, "いち", "一")
       model.addWord()
@@ -229,7 +229,7 @@ import Testing
       let sjisFile = FileUtil.joinPath(dir.path, "sjis.txt")
       try FileUtil.setContents(sjisFile, sjis)
       let utf16File = FileUtil.joinPath(dir.path, "utf16.txt")
-      try "!Microsoft IME Dictionary Tool\r\nおおさか\t大阪\t地名\r\n".data(using: .utf16)!
+      try #require("!Microsoft IME Dictionary Tool\r\nおおさか\t大阪\t地名\r\n".data(using: .utf16))
         .write(to: URL(fileURLWithPath: utf16File))
 
       let (model, _) = makeModel(path)

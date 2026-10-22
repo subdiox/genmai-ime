@@ -1,19 +1,16 @@
 // Port of mozc/src/storage/existence_filter.{h,cc} (3.35.6354).
 //
 // Deviations:
-// - absl::Span<const uint32_t> views become UnsafeRawBufferPointer views
-//   (read with unaligned little-endian loads, so the buffer does not need to
-//   be 4-byte aligned). The caller keeps the memory alive.
+// - absl::Span<const uint32_t> views become `Data` slices (sharing the memory,
+//   e.g. of the memory-mapped data set; read with little-endian loads through
+//   their Span, so the buffer does not need to be 4-byte aligned).
 // - ExistenceFilterBuilder.build() snapshots the builder's blocks (copy on
 //   write) instead of referencing them, so later inserts into the builder are
 //   not visible to an already built filter.
 // - absl::StatusOr is replaced by `throws`.
 
+import Foundation
 import GenmaiBase
-
-#if canImport(Darwin)
-  import Darwin
-#endif
 
 public enum ExistenceFilterInternal {
   public static let kBlockShift = 21  // 2^21 bits == 256KB block
@@ -40,10 +37,9 @@ public enum ExistenceFilterInternal {
 
   /// BlockBitmap is an immutable view, directly referencing data given to the
   /// initializers (or holding a snapshot of a builder's blocks).
-  public struct BlockBitmap: @unchecked Sendable {
-    // @unchecked Sendable: views point to immutable caller-owned memory.
-    private enum Storage {
-      case view([UnsafeRawBufferPointer])
+  public struct BlockBitmap: Sendable {
+    private enum Storage: Sendable {
+      case view([Data])
       case owned([[UInt32]])
     }
 
@@ -55,17 +51,16 @@ public enum ExistenceFilterInternal {
 
     /// Array of blocks. Each block has kBlockBits region except for last
     /// block.
-    public init(_ size: UInt32, _ buf: UnsafeRawBufferPointer) {
+    public init(_ size: UInt32, _ buf: Data) {
       let dimensions = BlockDimensions(size)
-      var blocks: [UnsafeRawBufferPointer] = []
+      var blocks: [Data] = []
       blocks.reserveCapacity(Int(dimensions.count))
-      var offset = 0
+      var offset = buf.startIndex
       for _ in 0..<(Int(dimensions.count) - 1) {
-        blocks.append(UnsafeRawBufferPointer(rebasing: buf[offset..<(offset + kBlockWords * 4)]))
+        blocks.append(buf[offset..<(offset + kBlockWords * 4)])
         offset += kBlockWords * 4
       }
-      blocks.append(
-        UnsafeRawBufferPointer(rebasing: buf[offset..<(offset + Int(dimensions.lastSize) * 4)]))
+      blocks.append(buf[offset..<(offset + Int(dimensions.lastSize) * 4)])
       storage = .view(blocks)
     }
 
@@ -81,8 +76,7 @@ public enum ExistenceFilterInternal {
       let word: UInt32
       switch storage {
       case .view(let blocks):
-        word = UInt32(
-          littleEndian: blocks[bindex].loadUnaligned(fromByteOffset: windex * 4, as: UInt32.self))
+        word = blocks[bindex].span.loadLittleEndian(UInt32.self, at: windex * 4)
       case .owned(let blocks):
         word = blocks[bindex][windex]
       }
@@ -123,7 +117,7 @@ public enum ExistenceFilterInternal {
     public func serialize(to out: inout [UInt8]) {
       for block in blocks {
         for i in block {
-          withUnsafeBytes(of: i.littleEndian) { out.append(contentsOf: $0) }
+          out.appendLittleEndian(i)
         }
       }
     }
@@ -143,12 +137,12 @@ public enum ExistenceFilterInternal {
 /// ExistenceFilter parameters.
 public struct ExistenceFilterParams: Sendable, Equatable, CustomStringConvertible {
   public enum FpType {
-    public static let LEGACY_FP: UInt16 = 0
-    public static let CITY_FP: UInt16 = 1
-    public static let FP_TYPE_SIZE: UInt16 = 2
+    public static let legacyFp: UInt16 = 0
+    public static let cityFp: UInt16 = 1
+    public static let fpTypeSize: UInt16 = 2
   }
 
-  public static let kDefaultFpType: UInt16 = FpType.CITY_FP
+  public static let kDefaultFpType: UInt16 = FpType.cityFp
 
   /// the number of bits in the bit vector
   public var size: UInt32 = 0
@@ -191,7 +185,7 @@ public struct ExistenceFilter: Sendable {
 
   /// Constructs a new ExistenceFilter view from the parameters and the
   /// BlockBitmap buffer.
-  public init(_ params: ExistenceFilterParams, _ buf: UnsafeRawBufferPointer) {
+  public init(_ params: ExistenceFilterParams, _ buf: Data) {
     self.params = params
     rep = ExistenceFilterInternal.BlockBitmap(params.size, buf)
   }
@@ -203,15 +197,15 @@ public struct ExistenceFilter: Sendable {
 
   /// Read Existence filter from buf (a sequence of little endian 32-bit
   /// words; `buf.count` is in bytes).
-  public static func read(_ buf: UnsafeRawBufferPointer) throws -> ExistenceFilter {
+  public static func read(_ buf: Data) throws -> ExistenceFilter {
     let numWords = buf.count / 4
     let params: ExistenceFilterParams
     do {
-      params = try readHeader(buf, numWords)
+      params = try readHeader(buf.span, numWords)
     } catch {
       throw StatusError.invalidArgument("Invalid format: could not read header")
     }
-    let body = UnsafeRawBufferPointer(rebasing: buf[(kHeaderSize * 4)...])
+    let body = buf.dropFirst(kHeaderSize * 4)
 
     GenmaiLog.info("Reading bloom filter with params: \(params)")
 
@@ -220,6 +214,12 @@ public struct ExistenceFilter: Sendable {
     }
 
     return ExistenceFilter(params, body)
+  }
+
+  /// Reads the filter from `buf`, which the caller keeps alive and unchanged
+  /// while the filter is used (as in C++). Prefer `read(_: Data)`.
+  public static func read(_ buf: UnsafeRawBufferPointer) throws -> ExistenceFilter {
+    try read(sharedData(buf))
   }
 
   /// Checks if the concatenation of the given `keys` was in the filter.
@@ -251,24 +251,21 @@ public struct ExistenceFilter: Sendable {
     (x << s) | (x >> (64 - s))
   }
 
-  private static func readHeader(_ buf: UnsafeRawBufferPointer, _ numWords: Int) throws
+  private static func readHeader(_ buf: Span<UInt8>, _ numWords: Int) throws
     -> ExistenceFilterParams
   {
     if numWords < kHeaderSize {
       throw StatusError.invalidArgument("Not enough bufsize: could not read header")
     }
 
-    func word(_ i: Int) -> UInt32 {
-      UInt32(littleEndian: buf.loadUnaligned(fromByteOffset: i * 4, as: UInt32.self))
-    }
     var params = ExistenceFilterParams()
-    params.size = word(0)
-    params.expectedNelts = word(1)
+    params.size = buf.loadLittleEndian(UInt32.self, at: 0)
+    params.expectedNelts = buf.loadLittleEndian(UInt32.self, at: 4)
 
     // Assumes little-endian.
     // num_hashes was originally stored as 32bit integer, so the old
     // binary stores the value in lower bits.
-    let v = word(2)
+    let v = buf.loadLittleEndian(UInt32.self, at: 8)
     params.numHashes = UInt16(truncatingIfNeeded: v & 0xFFFF)
     params.fpType = UInt16(truncatingIfNeeded: v >> 16)
 
@@ -276,7 +273,7 @@ public struct ExistenceFilter: Sendable {
       throw StatusError.invalidArgument("Bad number of hashes (header.k)")
     }
 
-    if params.fpType >= ExistenceFilterParams.FpType.FP_TYPE_SIZE {
+    if params.fpType >= ExistenceFilterParams.FpType.fpTypeSize {
       throw StatusError.invalidArgument("unsupported fp type")
     }
 
@@ -312,7 +309,7 @@ public struct ExistenceFilterBuilder: Sendable {
   ) -> ExistenceFilterBuilder {
     precondition(sizeInBytes < (1 << 29), "Requested size is too big")
     precondition(estimatedInsertions > 0)
-    precondition(fpType < ExistenceFilterParams.FpType.FP_TYPE_SIZE)
+    precondition(fpType < ExistenceFilterParams.FpType.fpTypeSize)
     let m = max(UInt32(1), UInt32(truncatingIfNeeded: sizeInBytes * 8))
     let n = estimatedInsertions
 
@@ -350,13 +347,13 @@ public struct ExistenceFilterBuilder: Sendable {
     buf.reserveCapacity(requiredBytes)
 
     // write header
-    withUnsafeBytes(of: params.size.littleEndian) { buf.append(contentsOf: $0) }
-    withUnsafeBytes(of: params.expectedNelts.littleEndian) { buf.append(contentsOf: $0) }
+    buf.appendLittleEndian(params.size)
+    buf.appendLittleEndian(params.expectedNelts)
     // Original num_hashes was 32 bit integer. Pushes the num_hases first so
     // it can evaluated properly even when loading them as single 32 bit
     // integer.
-    withUnsafeBytes(of: params.numHashes.littleEndian) { buf.append(contentsOf: $0) }
-    withUnsafeBytes(of: params.fpType.littleEndian) { buf.append(contentsOf: $0) }
+    buf.appendLittleEndian(params.numHashes)
+    buf.appendLittleEndian(params.fpType)
     GenmaiLog.info("Header written: \(params)")
 
     // write bitmap
@@ -404,4 +401,11 @@ public struct ExistenceFilterBuilder: Sendable {
       rep.set(index)
     }
   }
+}
+
+/// A `Data` sharing the caller's memory (no copy): `read(_: UnsafeRawBufferPointer)`
+/// above views memory the caller keeps alive, like the C++ absl::Span view.
+private func sharedData(_ buf: UnsafeRawBufferPointer) -> Data {
+  guard let base = buf.baseAddress, !buf.isEmpty else { return Data() }
+  return Data(bytesNoCopy: UnsafeMutableRawPointer(mutating: base), count: buf.count, deallocator: .none)
 }

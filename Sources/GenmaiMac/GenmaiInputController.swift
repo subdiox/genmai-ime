@@ -552,7 +552,7 @@ public final class GenmaiInputController: ControllerCallback {
   public func updateComposedString(_ preedit: Genmai_Commands_Preedit?) {
     // If the last and the current composed string length is 0,
     // we don't update the composition.
-    if composedString.length == 0 && (preedit == nil || preedit!.segment.isEmpty) {
+    if composedString.length == 0 && (preedit?.segment.isEmpty ?? true) {
       return
     }
 

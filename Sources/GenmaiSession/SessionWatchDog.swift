@@ -38,13 +38,9 @@ private let kMinimumLatestCPULoad: Float = 0.66
 
 /// SessionWatchDog class sends Cleanup command to Sessionhandler
 /// for every some specified seconds.
-public final class SessionWatchDog: @unchecked Sendable {
-  // @unchecked Sendable: `cpuStats` (not Sendable) is only used by the watch dog task;
-  // the task handle is guarded by a Mutex.
+public final class SessionWatchDog: Sendable {
   /// Returns the interval of this watch dog.
   public let interval: Duration
-  private let client: (any SessionWatchDogClient)?
-  private let cpuStats: any CPUStatsInterface
   private let task = Mutex<Task<Void, Never>?>(nil)
 
   /// Constructs the watch dog without a client (CanSendCleanupCommand only).
@@ -55,20 +51,17 @@ public final class SessionWatchDog: @unchecked Sendable {
   /// DI constructor. Starts the background loop when `client` is given, as a
   /// detached task with `priority` (tests raise it so that the loop keeps its
   /// timing on a busy cooperative pool, like the C++ watch dog thread).
+  /// `cpuStats` (not Sendable) is handed over to the loop's task.
   public init(
     _ interval: Duration, _ client: (any SessionWatchDogClient)?,
-    _ cpuStats: any CPUStatsInterface, start: Bool = true, priority: TaskPriority? = nil
+    _ cpuStats: sending any CPUStatsInterface, start: Bool = true, priority: TaskPriority? = nil
   ) {
     // allow [1..600].
     self.interval = min(max(interval, .seconds(1)), .seconds(600))
-    self.client = client
-    self.cpuStats = cpuStats
-    if start, client != nil {
+    if start, let client {
       let interval = self.interval
-      let client = client!
-      let cpuStats = UncheckedSendableBox(cpuStats)
       let t = Task.detached(priority: priority) {
-        await SessionWatchDog.threadMain(interval, client, cpuStats.value)
+        await SessionWatchDog.threadMain(interval, client, cpuStats)
       }
       task.withLock { $0 = t }
     }
@@ -215,9 +208,4 @@ public final class SessionWatchDog: @unchecked Sendable {
 
     return true
   }
-}
-
-private struct UncheckedSendableBox<T>: @unchecked Sendable {
-  let value: T
-  init(_ value: T) { self.value = value }
 }

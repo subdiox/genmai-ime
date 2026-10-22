@@ -1,7 +1,7 @@
 // Port of mozc/src/base/bits.h (3.35.6354).
 //
 // Functions to manipulate bits and bytes. The C++ templates over iterators are
-// replaced with functions over raw pointers / raw buffers and byte offsets.
+// replaced with functions over `Span<UInt8>` / `[UInt8]` and byte offsets.
 // All loads are unaligned-safe. Apple platforms are little endian, so the
 // "native byte order" is little endian.
 
@@ -11,66 +11,37 @@ public enum Bits {
     n.byteSwapped
   }
 
-  /// Loads a value of type T from `pointer` with the native byte order.
+  /// Loads a value of type T at `offset` of `bytes` with the native byte
+  /// order (little endian on Apple platforms).
   public static func loadUnaligned<T: FixedWidthInteger>(
-    _ pointer: UnsafeRawPointer, as type: T.Type = T.self
+    _ bytes: Span<UInt8>, _ offset: Int, as type: T.Type = T.self
   ) -> T {
-    pointer.loadUnaligned(as: T.self)
-  }
-
-  /// Loads a value of type T at `offset` of `buffer` with the native byte
-  /// order.
-  public static func loadUnaligned<T: FixedWidthInteger>(
-    _ buffer: UnsafeRawBufferPointer, _ offset: Int, as type: T.Type = T.self
-  ) -> T {
-    precondition(offset >= 0 && offset + MemoryLayout<T>.size <= buffer.count)
-    return buffer.loadUnaligned(fromByteOffset: offset, as: T.self)
+    bytes.loadLittleEndian(T.self, at: offset)
   }
 
   /// Loads a value of type T at `offset` of `bytes` with the native byte order.
   public static func loadUnaligned<T: FixedWidthInteger>(
     _ bytes: [UInt8], _ offset: Int, as type: T.Type = T.self
   ) -> T {
-    bytes.withUnsafeBytes { loadUnaligned($0, offset, as: T.self) }
+    bytes.loadLittleEndian(T.self, at: offset)
   }
 
   /// LoadUnalignedAdvance() advances the offset in addition to
   /// LoadUnaligned() to point to the element immediately after the loaded
   /// value.
   public static func loadUnalignedAdvance<T: FixedWidthInteger>(
-    _ buffer: UnsafeRawBufferPointer, _ offset: inout Int, as type: T.Type = T.self
+    _ bytes: Span<UInt8>, _ offset: inout Int, as type: T.Type = T.self
   ) -> T {
-    let result: T = loadUnaligned(buffer, offset)
+    let result: T = loadUnaligned(bytes, offset)
     offset += MemoryLayout<T>.size
     return result
   }
 
-  /// Loads a little-endian value of type T at `offset` of `buffer`.
+  /// Loads a little-endian value of type T at `offset` of `bytes`.
   public static func loadLittleEndian<T: FixedWidthInteger>(
-    _ buffer: UnsafeRawBufferPointer, _ offset: Int, as type: T.Type = T.self
+    _ bytes: Span<UInt8>, _ offset: Int, as type: T.Type = T.self
   ) -> T {
-    T(littleEndian: loadUnaligned(buffer, offset, as: T.self))
-  }
-
-  /// Stores a value of sizeof(T) to `pointer` with the native byte order.
-  /// Returns a pointer pointing the byte immediately after the stored value.
-  @discardableResult
-  public static func storeUnaligned<T: FixedWidthInteger>(
-    _ value: T, _ pointer: UnsafeMutableRawPointer
-  ) -> UnsafeMutableRawPointer {
-    pointer.storeBytes(of: value, as: T.self)
-    return pointer + MemoryLayout<T>.size
-  }
-
-  /// Stores a value of sizeof(T) at `offset` of `buffer` with the native byte
-  /// order. Returns the offset immediately after the stored value.
-  @discardableResult
-  public static func storeUnaligned<T: FixedWidthInteger>(
-    _ value: T, _ buffer: UnsafeMutableRawBufferPointer, _ offset: Int
-  ) -> Int {
-    precondition(offset >= 0 && offset + MemoryLayout<T>.size <= buffer.count)
-    buffer.storeBytes(of: value, toByteOffset: offset, as: T.self)
-    return offset + MemoryLayout<T>.size
+    bytes.loadLittleEndian(T.self, at: offset)
   }
 
   /// Stores a value of sizeof(T) at `offset` of `bytes` with the native byte
@@ -79,7 +50,9 @@ public enum Bits {
   public static func storeUnaligned<T: FixedWidthInteger>(
     _ value: T, _ bytes: inout [UInt8], _ offset: Int
   ) -> Int {
-    bytes.withUnsafeMutableBytes { storeUnaligned(value, $0, offset) }
+    precondition(offset >= 0 && offset + MemoryLayout<T>.size <= bytes.count)
+    bytes.storeLittleEndian(value, at: offset)
+    return offset + MemoryLayout<T>.size
   }
 
   /// HostToNet changes the host byte order value to the network byte order.
@@ -98,6 +71,9 @@ public enum Bits {
   /// Returns a typed buffer over data. Returns an empty buffer when the data
   /// has an invalid alignment or size (MakeAlignedConstSpan).
   /// The result is valid only while `data` is.
+  ///
+  /// Unsafe by nature (reinterprets raw memory as `T`; Swift has no safe way to view bytes as an arbitrary
+  /// struct). Kept only for GenmaiCore's `DataView`; new code reads fields with `Span<UInt8>.loadLittleEndian`.
   public static func makeAlignedConstSpan<T>(_ data: UnsafeRawBufferPointer, as type: T.Type = T.self)
     -> UnsafeBufferPointer<T>
   {

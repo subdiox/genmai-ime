@@ -202,14 +202,21 @@ struct GenmaiConverterTests {
     .enabled(if: GenmaiTestPaths.modelIsBF16, "the Python reference is bf16"))
   func dailyParityWithPython() async throws {
     let c = try converter()
-    let j =
-      try JSONSerialization.jsonObject(with: Data(contentsOf: GenmaiTestPaths.pythonResults("daily"))) as! [String: Any]
-    let items = (j["items"] as! [[String: Any]]).prefix(30)
+    struct Reference: Decodable {
+      struct Item: Decodable {
+        struct Output: Decodable { var text: String }
+        var query: String
+        var outputs: [Output]
+      }
+      var items: [Item]
+    }
+    let j = try JSONDecoder().decode(
+      Reference.self, from: Data(contentsOf: GenmaiTestPaths.pythonResults("daily")))
+    let items = j.items.prefix(30)
     var same = 0
     for x in items {
-      let ref = (x["outputs"] as! [[String: Any]]).map { $0["text"] as! String }
-      let r = try await c.convert(x["query"] as! String)
-      if r.first?.text == ref.first { same += 1 }
+      let r = try await c.convert(x.query)
+      if r.first?.text == x.outputs.first?.text { same += 1 }
     }
     #expect(same >= items.count - 1, "top-1 identical \(same)/\(items.count)")
   }

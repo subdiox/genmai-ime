@@ -80,11 +80,11 @@ struct UninstallerStrings: Sendable, Equatable {
   var succeededTitle: String { pick("Genmai Has Been Removed", "Genmaiを削除しました") }
   var succeededMessage: String {
     pick(
-      "Restart your Mac to finish. Until then, apps that are already open may keep using Genmai.",
-      "Macを再起動すると削除が完了します。それまでは、開いているアプリでGenmaiが使われ続けることがあります。")
+      "Log out to finish. Until then, apps that are already open may keep using Genmai.",
+      "ログアウトすると削除が完了します。それまでは、開いているアプリでGenmaiが使われ続けることがあります。")
   }
   var later: String { pick("Later", "後で") }
-  var restartNow: String { pick("Restart Now", "今すぐ再起動") }
+  var logOutNow: String { pick("Log Out Now", "今すぐログアウト") }
 
   // Failure
 

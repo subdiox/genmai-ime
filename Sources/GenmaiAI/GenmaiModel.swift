@@ -98,7 +98,9 @@ public struct GenmaiConfig: Sendable, Codable {
 /// `GenmaiConverter` actor, which owns one instance.
 public final class GenmaiModel {
   /// KV cache sizes; a decode step is compiled per (rows, bucket).
-  public static let buckets = [128, 256, 512, 1024]
+  public static let buckets = [128, 256, 512, maxBucket]
+  /// The largest cache bucket (the longest prompt + output).
+  public static let maxBucket = 1024
   /// Metadata value of `format` in a safetensors file written by GenmaiClient's `GenmaiSafetensors.prepare` (the
   /// model installer, `genmai-cli prepare`): bf16 weights with the Conv1D matrices already transposed to (out, in).
   public static let preparedFormat = "genmai-bf16-out-in"
@@ -152,9 +154,9 @@ public final class GenmaiModel {
   private let lnfW: MLXArray
   private let lnfB: MLXArray
   private let dtype: DType = .bfloat16
-  private let L: Int
-  private let D: Int
-  private let H: Int
+  private let layerCount: Int
+  private let embedDim: Int
+  private let headCount: Int
   private let hd: Int
   private let eps: Float
   private let eos: Int32
@@ -165,8 +167,8 @@ public final class GenmaiModel {
   /// end of the reading (context first, then the reading; only the new kana and the output marker differ).
   private struct PromptKV {
     let ids: [Int32]
-    let K: [MLXArray]
-    let V: [MLXArray]
+    let kCache: [MLXArray]
+    let vCache: [MLXArray]
   }
 
   private var promptCache: [PromptKV] = []
@@ -251,9 +253,9 @@ public final class GenmaiModel {
     eval(used + [wte, wpe, lnfW, lnfB])
     self.weightBytes = (used + [wte, wpe, lnfW, lnfB]).reduce(0) { $0 + $1.nbytes }
     self.config = cfg
-    self.L = cfg.nLayer
-    self.D = cfg.nEmbd
-    self.H = cfg.nHead
+    self.layerCount = cfg.nLayer
+    self.embedDim = cfg.nEmbd
+    self.headCount = cfg.nHead
     self.hd = cfg.nEmbd / cfg.nHead
     self.eps = cfg.layerNormEpsilon
     let tok = try GenmaiTokenizer(url: tokURL)
@@ -352,13 +354,11 @@ public final class GenmaiModel {
 
   // MARK: - Model
 
-  /// `mx.slice_update(src, update, start, axes)` with a dynamic (array) start, which the Swift API does not wrap.
+  /// `mx.slice_update(src, update, start, axes)` with a dynamic (array) start, which the Swift API does not wrap,
+  /// so it calls MLX's C API (`axes` is passed as a C array).
   private static func sliceUpdate(_ src: MLXArray, _ update: MLXArray, start: MLXArray, axes: [Int32]) -> MLXArray {
     var res = mlx_array_new()
-    axes.withUnsafeBufferPointer { ax in
-      _ = mlx_slice_update_dynamic(
-        &res, src.ctx, update.ctx, start.ctx, ax.baseAddress, ax.count, StreamOrDevice.default.ctx)
-    }
+    _ = mlx_slice_update_dynamic(&res, src.ctx, update.ctx, start.ctx, axes, axes.count, StreamOrDevice.default.ctx)
     return MLXArray(res)
   }
 
@@ -366,41 +366,43 @@ public final class GenmaiModel {
   /// mask additive (B|1,1,S,T). Returns last-position log-probs (B, vocab) float32 and the updated caches.
   /// With `outputFrom`, returns the log-probs of positions outputFrom..<S as (B, S - outputFrom, vocab).
   private func forward(
-    _ ids: MLXArray, _ posIDs: MLXArray, _ start: MLXArray, _ K: [MLXArray], _ V: [MLXArray],
+    _ ids: MLXArray, _ posIDs: MLXArray, _ start: MLXArray, _ kCache: [MLXArray], _ vCache: [MLXArray],
     _ mask: MLXArray, outputFrom: Int? = nil
   ) -> (MLXArray, [MLXArray], [MLXArray]) {
-    let B = ids.dim(0)
-    let S = ids.dim(1)
+    let rowCount = ids.dim(0)
+    let seqLen = ids.dim(1)
     var h = wte.take(ids, axis: 0) + wpe.take(posIDs, axis: 0)
     let start1 = start.reshaped([1])
-    var K2: [MLXArray] = []
-    var V2: [MLXArray] = []
-    K2.reserveCapacity(L)
-    V2.reserveCapacity(L)
+    var newKCache: [MLXArray] = []
+    var newVCache: [MLXArray] = []
+    newKCache.reserveCapacity(layerCount)
+    newVCache.reserveCapacity(layerCount)
     let scale = 1 / Float(hd).squareRoot()
     for (i, p) in layers.enumerated() {
       var a = MLXFast.layerNorm(h, weight: p.ln1w, bias: p.ln1b, eps: eps)
       let qkv = p.attnW.apply(a) + p.attnB
-      let parts = qkv.split(parts: 3, axis: -1).map { $0.reshaped([B, S, H, hd]).transposed(0, 2, 1, 3) }
-      let kc = Self.sliceUpdate(K[i], parts[1], start: start1, axes: [2])
-      let vc = Self.sliceUpdate(V[i], parts[2], start: start1, axes: [2])
-      K2.append(kc)
-      V2.append(vc)
+      let parts = qkv.split(parts: 3, axis: -1).map {
+        $0.reshaped([rowCount, seqLen, headCount, hd]).transposed(0, 2, 1, 3)
+      }
+      let kc = Self.sliceUpdate(kCache[i], parts[1], start: start1, axes: [2])
+      let vc = Self.sliceUpdate(vCache[i], parts[2], start: start1, axes: [2])
+      newKCache.append(kc)
+      newVCache.append(vc)
       let o = MLXFast.scaledDotProductAttention(queries: parts[0], keys: kc, values: vc, scale: scale, mask: mask)
-      h = h + p.projW.apply(o.transposed(0, 2, 1, 3).reshaped([B, S, D])) + p.projB
+      h = h + p.projW.apply(o.transposed(0, 2, 1, 3).reshaped([rowCount, seqLen, embedDim])) + p.projB
       a = MLXFast.layerNorm(h, weight: p.ln2w, bias: p.ln2b, eps: eps)
       h = h + p.mlpProjW.apply(geluApproximate(p.fcW.apply(a) + p.fcB)) + p.mlpProjB
     }
     let last = MLXFast.layerNorm(outputFrom.map { h[0..., $0...] } ?? h[0..., -1], weight: lnfW, bias: lnfB, eps: eps)
     let logits = matmul(last, wte.T).asType(.float32)
-    return (logits - logits.logSumExp(axis: -1, keepDims: true), K2, V2)
+    return (logits - logits.logSumExp(axis: -1, keepDims: true), newKCache, newVCache)
   }
 
-  private func getStep(rows B: Int, bucket T: Int) -> @Sendable ([MLXArray]) -> [MLXArray] {
-    let key = StepKey(rows: B, bucket: T)
+  private func getStep(rows rowCount: Int, bucket: Int) -> @Sendable ([MLXArray]) -> [MLXArray] {
+    let key = StepKey(rows: rowCount, bucket: bucket)
     if let s = steps[key] { return s }
-    let ar = MLXArray(Int32(0)..<Int32(T))
-    let L = self.L
+    let ar = MLXArray(Int32(0)..<Int32(bucket))
+    let layerCount = self.layerCount
     let dt = dtype
     // inputs: tok (B), src (B), pos (scalar), pad (B), K[0..L), V[0..L); outputs: logp, K, V
     let f: ([MLXArray]) -> [MLXArray] = { [self] args in
@@ -408,14 +410,17 @@ public final class GenmaiModel {
       let src = args[1]
       let pos = args[2]
       let pad = args[3]
-      let K = args[4..<(4 + L)].map { $0.take(src, axis: 0) }
-      let V = args[(4 + L)..<(4 + 2 * L)].map { $0.take(src, axis: 0) }
+      let kCache = args[4..<(4 + layerCount)].map { $0.take(src, axis: 0) }
+      let vCache = args[(4 + layerCount)..<(4 + 2 * layerCount)].map { $0.take(src, axis: 0) }
       let ok =
         (ar.expandedDimensions(axis: 0) .<= pos)
         .&& (ar.expandedDimensions(axis: 0) .>= pad.expandedDimensions(axis: 1))
-      let mask = MLX.where(ok, MLXArray(Float(0)), MLXArray(-Float.infinity)).asType(dt).reshaped([B, 1, 1, T])
-      let (lp, K2, V2) = self.forward(tok.reshaped([B, 1]), (pos - pad).reshaped([B, 1]), pos, K, V, mask)
-      return [lp] + K2 + V2
+      let mask = MLX.where(ok, MLXArray(Float(0)), MLXArray(-Float.infinity)).asType(dt).reshaped([
+        rowCount, 1, 1, bucket,
+      ])
+      let (lp, newKCache, newVCache) = self.forward(
+        tok.reshaped([rowCount, 1]), (pos - pad).reshaped([rowCount, 1]), pos, kCache, vCache, mask)
+      return [lp] + newKCache + newVCache
     }
     let s = compile(f)
     steps[key] = s
@@ -428,13 +433,13 @@ public final class GenmaiModel {
   /// otherwise takes ~2 s).
   public func warmup(rows: [Int] = [4, 5, 8, 12, 16, 20]) {
     defer { _ = try? convert("きょうはいいてんきですね", context: "あ") }
-    for B in rows {
-      for T in Self.buckets {
-        let z = (0..<L).map { _ in MLXArray.zeros([B, H, T, hd], dtype: dtype) }
-        let out = getStep(rows: B, bucket: T)(
+    for rowCount in rows {
+      for bucket in Self.buckets {
+        let z = (0..<layerCount).map { _ in MLXArray.zeros([rowCount, headCount, bucket, hd], dtype: dtype) }
+        let out = getStep(rows: rowCount, bucket: bucket)(
           [
-            MLXArray.zeros([B], dtype: .int32), MLXArray(Int32(0)..<Int32(B)), MLXArray(Int32(0)),
-            MLXArray.zeros([B], dtype: .int32),
+            MLXArray.zeros([rowCount], dtype: .int32), MLXArray(Int32(0)..<Int32(rowCount)), MLXArray(Int32(0)),
+            MLXArray.zeros([rowCount], dtype: .int32),
           ] + z + z)
         eval(out)
       }
@@ -445,21 +450,27 @@ public final class GenmaiModel {
   /// given token ids appended to the prompt one by one through the compiled decode step (1 row).
   public func debugLogProbs(_ reading: String, context: String = "", continuation: [Int32] = []) -> [[Float]] {
     let prompt = GenmaiPrompt.ids(tokenizer, reading: reading, context: context)
-    let P = prompt.count
-    let T = Self.buckets.first { $0 >= P + continuation.count + 1 }!
-    let q = MLXArray(Int32(0)..<Int32(P)).reshaped([1, P, 1])
-    let kk = MLXArray(Int32(0)..<Int32(T)).reshaped([1, 1, T])
-    let mask = MLX.where(kk .<= q, MLXArray(Float(0)), MLXArray(-Float.infinity)).asType(dtype).reshaped([1, 1, P, T])
-    let z = (0..<L).map { _ in MLXArray.zeros([1, H, T, hd], dtype: dtype) }
-    var (lp, K, V) = forward(
-      MLXArray(prompt, [1, P]), MLXArray(Int32(0)..<Int32(P)).reshaped([1, P]), MLXArray(Int32(0)), z, z, mask)
+    let promptLen = prompt.count
+    guard let bucket = Self.buckets.first(where: { $0 >= promptLen + continuation.count + 1 }) else {
+      return []  // the prompt does not fit in the largest cache bucket
+    }
+    let q = MLXArray(Int32(0)..<Int32(promptLen)).reshaped([1, promptLen, 1])
+    let kk = MLXArray(Int32(0)..<Int32(bucket)).reshaped([1, 1, bucket])
+    let mask = MLX.where(kk .<= q, MLXArray(Float(0)), MLXArray(-Float.infinity)).asType(dtype).reshaped([
+      1, 1, promptLen, bucket,
+    ])
+    let z = (0..<layerCount).map { _ in MLXArray.zeros([1, headCount, bucket, hd], dtype: dtype) }
+    var (lp, kCache, vCache) = forward(
+      MLXArray(prompt, [1, promptLen]), MLXArray(Int32(0)..<Int32(promptLen)).reshaped([1, promptLen]),
+      MLXArray(Int32(0)), z, z, mask)
     var res = [lp.asArray(Float.self)]
-    let step = getStep(rows: 1, bucket: T)
+    let step = getStep(rows: 1, bucket: bucket)
     for (i, t) in continuation.enumerated() {
-      let out = step([MLXArray([t]), MLXArray([Int32(0)]), MLXArray(Int32(P + i)), MLXArray([Int32(0)])] + K + V)
+      let out = step(
+        [MLXArray([t]), MLXArray([Int32(0)]), MLXArray(Int32(promptLen + i)), MLXArray([Int32(0)])] + kCache + vCache)
       lp = out[0]
-      K = Array(out[1...L])
-      V = Array(out[(L + 1)...(2 * L)])
+      kCache = Array(out[1...layerCount])
+      vCache = Array(out[(layerCount + 1)...(2 * layerCount)])
       res.append(lp.asArray(Float.self))
     }
     return res
@@ -483,10 +494,11 @@ public final class GenmaiModel {
     -> [[GenmaiCandidate]]
   {
     try Task.checkCancellation()  // a stale job queued behind the MLX lock skips the prefill too
-    let G = contexts.count
+    guard !contexts.isEmpty else { return [] }
+    let groupCount = contexts.count
     let readingLength = reading.unicodeScalars.count
     let maxNew = Int(Double(readingLength) * 1.3) + 8
-    let maxT = Self.buckets.last!
+    let maxT = Self.maxBucket
     var prompts: [[Int32]] = []
     for ctx in contexts {
       var ids = GenmaiPrompt.ids(tokenizer, reading: reading, context: ctx)
@@ -495,28 +507,28 @@ public final class GenmaiModel {
       }
       prompts.append(ids)
     }
-    let P = prompts.map(\.count).max()!
-    guard let T = Self.buckets.first(where: { $0 >= P + maxNew }) else {
+    let promptLen = prompts.map(\.count).max() ?? 0
+    guard let bucket = Self.buckets.first(where: { $0 >= promptLen + maxNew }) else {
       throw GenmaiError.badModel("prompt too long")
     }
-    let pads = prompts.map { Int32(P - $0.count) }
+    let pads = prompts.map { Int32(promptLen - $0.count) }
     // Prompt KV reuse: row g takes the first reuse[g] tokens' KV from the cache; the forward pass computes the
     // last S slots [q0, P) of every row (at least the last prompt token, whose log-probs start the search).
     // Rows that reuse less recompute some cached slots, which only overwrites them with the same values.
-    var reuse = [Int](repeating: 0, count: G)
-    var entries: [PromptKV?] = Array(repeating: nil, count: G)
+    var reuse = [Int](repeating: 0, count: groupCount)
+    var entries: [PromptKV?] = Array(repeating: nil, count: groupCount)
     if reusePromptKV {
-      for g in 0..<G {
+      for g in 0..<groupCount {
         if let (e, n) = lookupPrompt(prompts[g]) {
           entries[g] = e
           reuse[g] = min(n, prompts[g].count - 1)
         }
       }
     }
-    let S = (0..<G).map { prompts[$0].count - reuse[$0] }.max()!
-    let q0 = P - S
-    let used = (0..<G).map { max(0, q0 - Int(pads[$0])) }  // cached tokens placed at [pad, q0)
-    promptTokensPrefilled += (0..<G).map { prompts[$0].count - used[$0] }.reduce(0, +)
+    let seqLen = (0..<groupCount).map { prompts[$0].count - reuse[$0] }.max() ?? 0
+    let q0 = promptLen - seqLen
+    let used = (0..<groupCount).map { max(0, q0 - Int(pads[$0])) }  // cached tokens placed at [pad, q0)
+    promptTokensPrefilled += (0..<groupCount).map { prompts[$0].count - used[$0] }.reduce(0, +)
     promptTokensReused += used.reduce(0, +)
     // Drafts: the previous best output under each context, appended to the prompt (slots [P, P + D)); the
     // causal mask covers them like prompt tokens (shorter drafts are padded at the end, never attended).
@@ -525,51 +537,55 @@ public final class GenmaiModel {
       ? contexts.map { c in
         Array((drafts.last { $0.context == c }?.tokens ?? []).prefix(min(Self.maxDraftTokens, maxNew - 2)))
       }
-      : Array(repeating: [], count: G)
-    let D = draftTokens.map(\.count).max() ?? 0
-    let Q = S + D
+      : Array(repeating: [], count: groupCount)
+    let draftLen = draftTokens.map(\.count).max() ?? 0
+    let queryLen = seqLen + draftLen
     // prefill (G rows, left-padded); pad query rows attend to themselves only to avoid all -inf rows
-    let ar = MLXArray(Int32(q0)..<Int32(P + D))
+    let ar = MLXArray(Int32(q0)..<Int32(promptLen + draftLen))
     let padv = MLXArray(pads)
-    let q = ar.reshaped([1, Q, 1])
-    let kk = MLXArray(Int32(0)..<Int32(T)).reshaped([1, 1, T])
-    let padv3 = padv.reshaped([G, 1, 1])
+    let q = ar.reshaped([1, queryLen, 1])
+    let kk = MLXArray(Int32(0)..<Int32(bucket)).reshaped([1, 1, bucket])
+    let padv3 = padv.reshaped([groupCount, 1, 1])
     let ok = ((kk .<= q) .&& (kk .>= padv3)) .|| (kk .== q)
-    let mask = MLX.where(ok, MLXArray(Float(0)), MLXArray(-Float.infinity)).asType(dtype).reshaped([G, 1, Q, T])
+    let mask = MLX.where(ok, MLXArray(Float(0)), MLXArray(-Float.infinity)).asType(dtype).reshaped([
+      groupCount, 1, queryLen, bucket,
+    ])
     var flat: [Int32] = []
-    flat.reserveCapacity(G * Q)
+    flat.reserveCapacity(groupCount * queryLen)
     for (g, (p, x)) in zip(pads, prompts).enumerated() {
-      for slot in q0..<P {
+      for slot in q0..<promptLen {
         flat.append(slot >= Int(p) ? x[slot - Int(p)] : 0)
       }
-      for k in 0..<D {
+      for k in 0..<draftLen {
         flat.append(k < draftTokens[g].count ? draftTokens[g][k] : 0)
       }
     }
-    let ids = MLXArray(flat, [G, Q])
+    let ids = MLXArray(flat, [groupCount, queryLen])
     let posIDs = maximum(ar.expandedDimensions(axis: 0) - padv.expandedDimensions(axis: 1), MLXArray(Int32(0)))
-    let (K0, V0) = initialCache(rows: G, bucket: T, pads: pads.map(Int.init), used: used, entries: entries)
-    var (lp, K, V) = forward(ids, posIDs, MLXArray(Int32(q0)), K0, V0, mask, outputFrom: D > 0 ? S - 1 : nil)
+    let (initialKCache, initialVCache) = initialCache(
+      rows: groupCount, bucket: bucket, pads: pads.map(Int.init), used: used, entries: entries)
+    var (lp, kCache, vCache) = forward(
+      ids, posIDs, MLXArray(Int32(q0)), initialKCache, initialVCache, mask, outputFrom: draftLen > 0 ? seqLen - 1 : nil)
     if reusePromptKV {
-      storePrompts(prompts, pads: pads.map(Int.init), P: P, K: K, V: V)
+      storePrompts(prompts, pads: pads.map(Int.init), promptLen: promptLen, kCache: kCache, vCache: vCache)
     }
-    K = K.map { repeated($0, count: b, axis: 0) }
-    V = V.map { repeated($0, count: b, axis: 0) }
+    kCache = kCache.map { repeated($0, count: b, axis: 0) }
+    vCache = vCache.map { repeated($0, count: b, axis: 0) }
     // Accept the longest common draft prefix (over all rows) whose tokens are the argmax by `draftMargin`.
     var start = 0
-    var prefixScores = [Float](repeating: 0, count: G)
-    if D > 0 {
+    var prefixScores = [Float](repeating: 0, count: groupCount)
+    if draftLen > 0 {
       let all = lp  // (G, 1 + D, vocab): after the prompt, after each draft token
       let top2 = argPartition(-all, kth: 1, axis: -1)[0..., 0..., ..<2]
       let t2 = top2.asArray(Int32.self)
       let v2 = takeAlong(all, top2, axis: -1).asArray(Float.self)
       var accepted = Int.max
       var sums: [[Float]] = []
-      for g in 0..<G {
+      for g in 0..<groupCount {
         var a = 0
         var sum: [Float] = [0]
         while a < draftTokens[g].count {
-          let i = (g * (1 + D) + a) * 2
+          let i = (g * (1 + draftLen) + a) * 2
           let first = v2[i] >= v2[i + 1] ? 0 : 1
           guard t2[i + first] == draftTokens[g][a], v2[i + first] - v2[i + 1 - first] >= draftMargin else { break }
           sum.append(sum[a] + v2[i + first])
@@ -579,12 +595,12 @@ public final class GenmaiModel {
         accepted = min(accepted, a)
       }
       start = accepted
-      for g in 0..<G { prefixScores[g] = sums[g][start] }
+      for g in 0..<groupCount { prefixScores[g] = sums[g][start] }
       lp = all[0..., start]
-      draftTokensAccepted += start * G
+      draftTokensAccepted += start * groupCount
     }
-    let Vn = lp.dim(1)
-    let eosCol = MLXArray(Int32(0)..<Int32(Vn)) .== MLXArray(eos)
+    let vocabSize = lp.dim(1)
+    let eosCol = MLXArray(Int32(0)..<Int32(vocabSize)) .== MLXArray(eos)
     let minLen = Int(Double(readingLength) * minRatio)
     let negInf = MLXArray(-Float.infinity)
     if minLen > 0 && start + 1 < minLen {
@@ -593,25 +609,26 @@ public final class GenmaiModel {
     var toks = argSort(-lp, axis: -1)[0..., ..<b]  // (G, b)
     var scores = takeAlong(lp, toks, axis: -1)
     if start > 0 {
-      scores = scores + MLXArray(prefixScores).reshaped([G, 1])
+      scores = scores + MLXArray(prefixScores).reshaped([groupCount, 1])
     }
     var tokL = toks.asArray(Int32.self)
     var scL = scores.asArray(Float.self)
-    var seqs: [[[Int32]]] = (0..<G).map { g in (0..<b).map { Array(draftTokens[g].prefix(start)) + [tokL[g * b + $0]] }
+    var seqs: [[[Int32]]] = (0..<groupCount).map { g in
+      (0..<b).map { Array(draftTokens[g].prefix(start)) + [tokL[g * b + $0]] }
     }
-    var done: [[(seq: [Int32], score: Float)]] = (0..<G).map { g in
+    var done: [[(seq: [Int32], score: Float)]] = (0..<groupCount).map { g in
       (0..<b).compactMap { i in seqs[g][i].last == eos ? (seqs[g][i], scL[g * b + i]) : nil }
     }
     var dead = toks .== MLXArray(eos)
-    let R = G * b
-    var src = MLXArray(Int32(0)..<Int32(R))
-    let base = (MLXArray(Int32(0)..<Int32(G)) * Int32(b)).expandedDimensions(axis: 1)
+    let totalRows = groupCount * b
+    var src = MLXArray(Int32(0)..<Int32(totalRows))
+    let base = (MLXArray(Int32(0)..<Int32(groupCount)) * Int32(b)).expandedDimensions(axis: 1)
     let padRows = repeated(padv, count: b, axis: 0)
-    let step = getStep(rows: R, bucket: T)
+    let step = getStep(rows: totalRows, bucket: bucket)
     defer {
       // the next search's draft: this search's best sequence (also when cancelled)
       do {
-        for g in 0..<G {
+        for g in 0..<groupCount {
           let best = Self.stableSorted(done[g]) { $0.score > $1.score }.first?.seq ?? seqs[g][0]
           storeDraft(contexts[g], best.filter { $0 != eos })
         }
@@ -621,30 +638,30 @@ public final class GenmaiModel {
       let fin = done.map { $0.count >= b }
       if fin.allSatisfy({ $0 }) { break }
       try Task.checkCancellation()
-      let out = step([toks.reshaped([-1]), src, MLXArray(Int32(P + i)), padRows] + K + V)
+      let out = step([toks.reshaped([-1]), src, MLXArray(Int32(promptLen + i)), padRows] + kCache + vCache)
       decodeSteps += 1
-      K = Array(out[1...L])
-      V = Array(out[(L + 1)...(2 * L)])
-      var cand = out[0].reshaped([G, b, Vn]) + scores.expandedDimensions(axis: 2)
+      kCache = Array(out[1...layerCount])
+      vCache = Array(out[(layerCount + 1)...(2 * layerCount)])
+      var cand = out[0].reshaped([groupCount, b, vocabSize]) + scores.expandedDimensions(axis: 2)
       if i + 2 < minLen {
-        cand = MLX.where(eosCol.reshaped([1, 1, Vn]), negInf, cand)
+        cand = MLX.where(eosCol.reshaped([1, 1, vocabSize]), negInf, cand)
       }
-      let finA = MLXArray(fin).reshaped([G, 1, 1])
-      cand = MLX.where(dead.expandedDimensions(axis: 2) .|| finA, negInf, cand).reshaped([G, b * Vn])
+      let finA = MLXArray(fin).reshaped([groupCount, 1, 1])
+      cand = MLX.where(dead.expandedDimensions(axis: 2) .|| finA, negInf, cand).reshaped([groupCount, b * vocabSize])
       var ix = argPartition(-cand, kth: b - 1, axis: -1)[0..., ..<b]
       var v = takeAlong(cand, ix, axis: -1)
       let order = argSort(-v, axis: -1)
       ix = takeAlong(ix, order, axis: -1)
       v = takeAlong(v, order, axis: -1)
-      let srcG = ix.floorDivide(Vn)
-      toks = ix % Vn
+      let srcG = ix.floorDivide(vocabSize)
+      toks = ix % vocabSize
       scores = v
       src = (srcG + base).reshaped([-1])
       let srcL = srcG.asArray(Int32.self)
       tokL = toks.asArray(Int32.self)
       scL = v.asArray(Float.self)
-      dead = toks .== MLXArray(eos)
-      for g in 0..<G where !fin[g] {
+      dead = (toks .== MLXArray(eos))
+      for g in 0..<groupCount where !fin[g] {
         let old = seqs[g]
         seqs[g] = (0..<b).map { j in old[Int(srcL[g * b + j])] + [tokL[g * b + j]] }
         for j in 0..<b where tokL[g * b + j] == eos && scL[g * b + j].isFinite {
@@ -653,7 +670,7 @@ public final class GenmaiModel {
       }
     }
     var resAll: [[GenmaiCandidate]] = []
-    for g in 0..<G {
+    for g in 0..<groupCount {
       var dg = done[g]
       if dg.count < b {
         for j in 0..<b where seqs[g][j].last != eos && scL[g * b + j].isFinite {
@@ -695,40 +712,42 @@ public final class GenmaiModel {
   }
 
   /// The prefill's KV cache: zeros, with row g's slots [pads[g], pads[g] + used[g]) taken from `entries[g]`.
-  private func initialCache(rows G: Int, bucket T: Int, pads: [Int], used: [Int], entries: [PromptKV?])
+  private func initialCache(rows groupCount: Int, bucket: Int, pads: [Int], used: [Int], entries: [PromptKV?])
     -> ([MLXArray], [MLXArray])
   {
     guard used.contains(where: { $0 > 0 }) else {
-      let z = (0..<L).map { _ in MLXArray.zeros([G, H, T, hd], dtype: dtype) }
+      let z = (0..<layerCount).map { _ in MLXArray.zeros([groupCount, headCount, bucket, hd], dtype: dtype) }
       return (z, z)
     }
     func build(_ cached: (PromptKV) -> [MLXArray]) -> [MLXArray] {
-      (0..<L).map { l in
-        let rows = (0..<G).map { g -> MLXArray in
-          guard used[g] > 0, let e = entries[g] else { return MLXArray.zeros([1, H, T, hd], dtype: dtype) }
+      (0..<layerCount).map { l in
+        let rows = (0..<groupCount).map { g -> MLXArray in
+          guard used[g] > 0, let e = entries[g] else {
+            return MLXArray.zeros([1, headCount, bucket, hd], dtype: dtype)
+          }
           var parts: [MLXArray] = []
-          if pads[g] > 0 { parts.append(MLXArray.zeros([1, H, pads[g], hd], dtype: dtype)) }
+          if pads[g] > 0 { parts.append(MLXArray.zeros([1, headCount, pads[g], hd], dtype: dtype)) }
           parts.append(cached(e)[l][0..., 0..., ..<used[g]])
-          let rest = T - pads[g] - used[g]
-          if rest > 0 { parts.append(MLXArray.zeros([1, H, rest, hd], dtype: dtype)) }
+          let rest = bucket - pads[g] - used[g]
+          if rest > 0 { parts.append(MLXArray.zeros([1, headCount, rest, hd], dtype: dtype)) }
           return concatenated(parts, axis: 2)
         }
-        return G == 1 ? rows[0] : concatenated(rows, axis: 0)
+        return groupCount == 1 ? rows[0] : concatenated(rows, axis: 0)
       }
     }
-    return (build(\.K), build(\.V))
+    return (build(\.kCache), build(\.vCache))
   }
 
   /// Remembers the KV of each prompt (row g: slots [pads[g], P)), within the token budget.
-  private func storePrompts(_ prompts: [[Int32]], pads: [Int], P: Int, K: [MLXArray], V: [MLXArray]) {
+  private func storePrompts(_ prompts: [[Int32]], pads: [Int], promptLen: Int, kCache: [MLXArray], vCache: [MLXArray]) {
     var added: [PromptKV] = []
     for (g, ids) in prompts.enumerated() {
       if added.contains(where: { $0.ids == ids }) { continue }
-      let k = K.map { contiguous($0[g..<(g + 1), 0..., pads[g]..<P]) }
-      let v = V.map { contiguous($0[g..<(g + 1), 0..., pads[g]..<P]) }
-      added.append(PromptKV(ids: ids, K: k, V: v))
+      let k = kCache.map { contiguous($0[g..<(g + 1), 0..., pads[g]..<promptLen]) }
+      let v = vCache.map { contiguous($0[g..<(g + 1), 0..., pads[g]..<promptLen]) }
+      added.append(PromptKV(ids: ids, kCache: k, vCache: v))
     }
-    eval(added.flatMap { $0.K + $0.V })
+    eval(added.flatMap { $0.kCache + $0.vCache })
     promptCache.removeAll { e in added.contains { $0.ids == e.ids } }
     promptCache += added
     var total = promptCache.map(\.ids.count).reduce(0, +)

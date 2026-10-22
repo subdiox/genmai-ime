@@ -23,10 +23,11 @@ private func getRandomContents(_ size: Int) -> [UInt8] {
     let tempFile = try TempDirectory.default().createTempFile()
     try FileUtil.setContents(tempFile.path, kTestContents)
     var mmap: Mmap? = try Mmap.map(tempFile.path)
-    #expect(Array(mmap!.buffer) == kTestContents)
-    let moved = mmap!
+    let moved = try #require(mmap)
+    #expect(Array(moved.data) == kTestContents)
     mmap = nil
-    #expect(Array(moved.buffer) == kTestContents)
+    #expect(mmap == nil)
+    #expect(Array(moved.data) == kTestContents)
   }
 
   @Test func moveAssign() throws {
@@ -39,11 +40,11 @@ private func getRandomContents(_ size: Int) -> [UInt8] {
       try FileUtil.setContents(tempFiles[i].path, kTestContents[i])
     }
     var mmap1 = try Mmap.map(tempFiles[0].path)
-    #expect(Array(mmap1.buffer) == kTestContents[0])
+    #expect(Array(mmap1.data) == kTestContents[0])
     let mmap2 = try Mmap.map(tempFiles[1].path)
-    #expect(Array(mmap2.buffer) == kTestContents[1])
+    #expect(Array(mmap2.data) == kTestContents[1])
     mmap1 = mmap2
-    #expect(Array(mmap1.buffer) == kTestContents[1])
+    #expect(Array(mmap1.data) == kTestContents[1])
   }
 
   @Test func failsIfFileDoesNotExist() {
@@ -73,16 +74,18 @@ private func getRandomContents(_ size: Int) -> [UInt8] {
     }
   }
 
-  @Test func maybeMLockTest() {
+  // The C++ test mlocks a malloc()ed block; this one mlocks a mapped file.
+  @Test func maybeMLockTest() throws {
     let kDataLen = 32
-    let addr = malloc(kDataLen)!
-    defer { free(addr) }
+    let tempFile = try TempDirectory.default().createTempFile()
+    try FileUtil.setContents(tempFile.path, String(repeating: "a", count: kDataLen))
+    let mmap = try Mmap.map(tempFile.path)
     if Mmap.isMLockSupported() {
-      #expect(Mmap.maybeMLock(addr, kDataLen) == 0)
-      #expect(Mmap.maybeMUnlock(addr, kDataLen) == 0)
+      #expect(mmap.maybeMLock() == 0)
+      #expect(mmap.maybeMUnlock() == 0)
     } else {
-      #expect(Mmap.maybeMLock(addr, kDataLen) == -1)
-      #expect(Mmap.maybeMUnlock(addr, kDataLen) == -1)
+      #expect(mmap.maybeMLock() == -1)
+      #expect(mmap.maybeMUnlock() == -1)
     }
   }
 
@@ -96,7 +99,7 @@ private func getRandomContents(_ size: Int) -> [UInt8] {
 
     // Mmap the file and check its contents.
     let mmap = try Mmap.map(tempFile.path, .readOnly)
-    #expect(Array(mmap.buffer) == data)
+    #expect(Array(mmap.data) == data)
   }
 
   @Test(arguments: [1, 8, 1024, 4096, 7777, 8192])
@@ -110,7 +113,7 @@ private func getRandomContents(_ size: Int) -> [UInt8] {
     do {
       let mmap = try Mmap.map(tempFile.path, .readWrite)
       #expect(mmap.size == data.count)
-      mmap.mutableBuffer.copyBytes(from: data)
+      mmap.write(data, at: 0)
     }
 
     // Read the file and check its contents.
@@ -151,15 +154,15 @@ private func getRandomContents(_ size: Int) -> [UInt8] {
 
     let expected = Array(data[offset..<offset + (size ?? (filesize - offset))])
     let mmap = try Mmap.map(tempFile.path, offset: offset, size: size, .readOnly)
-    #expect(Array(mmap.buffer) == expected)
+    #expect(Array(mmap.data) == expected)
 
     // Test "move" operations for partial mmap (reference sharing).
     let mmap2 = mmap
-    #expect(Array(mmap2.buffer) == expected)
+    #expect(Array(mmap2.data) == expected)
     var mmap3 = Mmap()
     #expect(mmap3.isEmpty)
     mmap3 = mmap2
-    #expect(Array(mmap3.buffer) == expected)
+    #expect(Array(mmap3.data) == expected)
   }
 
   // MmapPartialFileTest.Write
@@ -174,7 +177,7 @@ private func getRandomContents(_ size: Int) -> [UInt8] {
     do {
       let mmap = try Mmap.map(tempFile.path, offset: offset, size: mapSize, .readWrite)
       #expect(mmap.size == data.count)
-      mmap.mutableBuffer.copyBytes(from: data)
+      mmap.write(data, at: 0)
     }
 
     let contents = try FileUtil.getContentBytes(tempFile.path)

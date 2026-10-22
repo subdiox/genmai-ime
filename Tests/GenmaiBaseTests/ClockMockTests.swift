@@ -6,11 +6,11 @@ import Testing
 @testable import GenmaiBase
 
 @Suite struct ClockMockTest {
-  @Test func parsesTimeAtUtc() {
+  @Test func parsesTimeAtUtc() throws {
     var calendar = Calendar(identifier: .gregorian)
-    calendar.timeZone = TimeZone(identifier: "UTC")!
-    let expected = calendar.date(
-      from: DateComponents(year: 2020, month: 12, day: 23, hour: 13, minute: 24, second: 35))!
+    calendar.timeZone = try #require(TimeZone(identifier: "UTC"))
+    let expected = try #require(
+      calendar.date(from: DateComponents(year: 2020, month: 12, day: 23, hour: 13, minute: 24, second: 35)))
     #expect(parseTimeOrDie("2020-12-23T13:24:35Z") == expected)
   }
 

@@ -7,7 +7,8 @@ import Testing
 @Suite struct UnicodeTest {
   @Test func oneCharLen() {
     let kText = "Mozc"
-    #expect(Strings.oneCharLen(kText.utf8.first!) == 1)
+    #expect(Strings.oneCharLen(UInt8(ascii: "M")) == 1)
+    #expect(kText.utf8.first == UInt8(ascii: "M"))
   }
 
   @Test func charsLen() {

@@ -240,7 +240,8 @@ final class Counter {
     #expect(japanese.windowTitle == "Genmaiのアンインストール")
     #expect(english.uninstall == "Uninstall…")
     #expect(japanese.uninstall == "アンインストール…")
-    #expect(english.restartNow == "Restart Now")
+    #expect(english.logOutNow == "Log Out Now")
+    #expect(japanese.logOutNow == "今すぐログアウト")
     #expect(japanese.later == "後で")
     #expect(japanese.keptNote.contains("再インストール"))
     for strings in [english, japanese] {
@@ -254,24 +255,24 @@ final class Counter {
   }
 }
 
-/// Makes a controller over a fake install whose deletion returns `result`, counting restarts and quits.
+/// Makes a controller over a fake install whose deletion returns `result`, counting log-outs and quits.
 @MainActor
 struct ControllerFixture {
   let runner: FixedCommandRunner
   let terminated = Counter()
-  let reboots = Counter()
+  let logOuts = Counter()
   let controller: UninstallerController
 
   init(_ result: PrivilegedCommandResult, language: UninstallerLanguage = .english) throws {
     let runner = FixedCommandRunner(result)
-    let reboots = self.reboots
+    let logOuts = self.logOuts
     let terminated = self.terminated
     // Installed for all users: removing it needs the (fake) authorization.
     let install = try FakeInstall()
     try install.makeBundle("Library/Input Methods/Genmai.app", identifier: UninstallerLayout.kBundleIdentifier)
     var uninstaller = Uninstaller(layout: install.layout, runner: runner)
-    uninstaller.reboot = {
-      reboots.count += 1
+    uninstaller.logOut = {
+      logOuts.count += 1
       return true
     }
     self.runner = runner
@@ -293,15 +294,15 @@ struct ControllerFixture {
   }
 
   @Test(arguments: [true, false])
-  func successOffersRestart(restartNow: Bool) async throws {
+  func successOffersLogOut(logOutNow: Bool) async throws {
     let install = try FakeInstall()
     defer { install.remove() }
     try install.populate()
     let terminated = Counter()
-    let reboots = Counter()
+    let logOuts = Counter()
     var uninstaller = Uninstaller(layout: install.layout, runner: ShellCommandRunner())
-    uninstaller.reboot = {
-      reboots.count += 1
+    uninstaller.logOut = {
+      logOuts.count += 1
       return true
     }
     let controller = UninstallerController(
@@ -310,12 +311,12 @@ struct ControllerFixture {
     #expect(controller.phase == .succeeded)
     #expect(!install.exists("Library/Input Methods/Genmai.app"))
     #expect(terminated.count == 0)
-    if restartNow {
-      controller.restartNow()
+    if logOutNow {
+      controller.logOutNow()
     } else {
       controller.close()  // "後で"
     }
-    #expect(reboots.count == (restartNow ? 1 : 0))
+    #expect(logOuts.count == (logOutNow ? 1 : 0))
     #expect(terminated.count == 1)
   }
 
@@ -324,9 +325,9 @@ struct ControllerFixture {
     await fixture.controller.uninstall()
     #expect(fixture.controller.phase == .failed(.authorization))
     #expect(fixture.runner.commands.count == 1)
-    // Restart is only offered after a success.
-    fixture.controller.restartNow()
-    #expect(fixture.reboots.count == 0)
+    // Logging out is only offered after a success.
+    fixture.controller.logOutNow()
+    #expect(fixture.logOuts.count == 0)
     #expect(fixture.terminated.count == 0)
     await fixture.controller.uninstall()  // Try Again
     #expect(fixture.runner.commands.count == 2)
@@ -338,7 +339,7 @@ struct ControllerFixture {
     let fixture = try ControllerFixture(.failed("rm"))
     await fixture.controller.uninstall()
     #expect(fixture.controller.phase == .failed(.removal))
-    #expect(fixture.reboots.count == 0)
+    #expect(fixture.logOuts.count == 0)
     #expect(fixture.terminated.count == 0)
   }
 

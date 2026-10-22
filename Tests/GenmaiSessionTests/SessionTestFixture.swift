@@ -442,7 +442,11 @@ func insertCharacterCodeAndString(
   _ command: inout Genmai_Commands_Command
 ) -> Bool {
   command = Genmai_Commands_Command()
-  command.input.key.keyCode = UInt32(keyCode.asciiValue!)
+  guard let ascii = keyCode.asciiValue else {
+    Issue.record("not an ASCII key code: \(keyCode)")
+    return false
+  }
+  command.input.key.keyCode = UInt32(ascii)
   command.input.key.keyString = keyString
   return session.insertCharacter(&command)
 }

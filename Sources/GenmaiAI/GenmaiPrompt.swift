@@ -14,8 +14,8 @@ public enum GenmaiPrompt {
   public static func katakana(_ s: String) -> String {
     var out = String.UnicodeScalarView()
     for c in s.unicodeScalars {
-      if c.value >= 0x3041 && c.value <= 0x3096 {
-        out.append(Unicode.Scalar(c.value + 0x60)!)
+      if c.value >= 0x3041 && c.value <= 0x3096, let k = Unicode.Scalar(c.value + 0x60) {
+        out.append(k)
       } else {
         out.append(c)
       }

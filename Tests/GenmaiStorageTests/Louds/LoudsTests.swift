@@ -1,5 +1,6 @@
 // Port of mozc/src/storage/louds/louds_test.cc (3.35.6354).
 
+import Foundation
 import Testing
 
 @testable import GenmaiStorage
@@ -79,10 +80,10 @@ private let kLoudsParams: [LoudsCacheSizeParam] = [
   @Test(arguments: kLoudsParams)
   func basic(_ param: LoudsCacheSizeParam) {
     // Test with the trie illustrated in Louds.swift.
-    let kSeq = ImageBuffer(makeSequence("10 110 0 110 0 0"))
+    let kSeq = Data(makeSequence("10 110 0 110 0 0"))
     var louds = Louds()
     louds.initialize(
-      kSeq.pointer, kSeq.count, param.bitvecLb0CacheSize, param.bitvecLb1CacheSize,
+      kSeq, kSeq.count, param.bitvecLb0CacheSize, param.bitvecLb1CacheSize,
       param.select0CacheSize, param.select1CacheSize)
 
     // root -> 2 -> 3 -> 4 -> 5
@@ -124,6 +125,5 @@ private let kLoudsParams: [LoudsCacheSizeParam] = [
       #expect(node.nodeId == 1)
       #expect(Louds.isRoot(node))
     }
-    withExtendedLifetime(kSeq) {}
   }
 }

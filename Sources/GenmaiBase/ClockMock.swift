@@ -23,7 +23,7 @@ public func parseTimeOrDie(_ time: String) -> Date {
 public final class ClockMock: ClockInterface, Sendable {
   private struct State {
     var time: Date
-    var timeZone = TimeZone(identifier: "UTC")!
+    var timeZone = TimeZone.gmt
     // Every time user requests the time, autoDelta is added to time.
     var autoDelta: Duration = .zero
   }

@@ -1,5 +1,7 @@
 // Port of mozc/src/base/cpu_stats.{h,cc} (3.35.6354). macOS (mach) path.
 
+import Foundation
+
 #if canImport(Darwin)
   import Darwin
 #endif
@@ -53,10 +55,8 @@ public final class CPUStats: CPUStatsInterface {
     var cpuInfo = host_cpu_load_info_data_t()
     var infoCount = mach_msg_type_number_t(
       MemoryLayout<host_cpu_load_info_data_t>.size / MemoryLayout<integer_t>.size)
-    let kr = withUnsafeMutablePointer(to: &cpuInfo) {
-      $0.withMemoryRebound(to: integer_t.self, capacity: Int(infoCount)) {
-        host_statistics(mach_host_self(), HOST_CPU_LOAD_INFO, $0, &infoCount)
-      }
+    let kr = machInfo(&cpuInfo, &infoCount) {
+      host_statistics(mach_host_self(), HOST_CPU_LOAD_INFO, $0, &$1)
     }
     if kr != KERN_SUCCESS {
       GenmaiLog.error("::host_statistics() failed")
@@ -75,10 +75,8 @@ public final class CPUStats: CPUStatsInterface {
     var info = task_thread_times_info_data_t()
     var infoCount = mach_msg_type_number_t(
       MemoryLayout<task_thread_times_info_data_t>.size / MemoryLayout<natural_t>.size)
-    let kr = withUnsafeMutablePointer(to: &info) {
-      $0.withMemoryRebound(to: integer_t.self, capacity: Int(infoCount)) {
-        task_info(mach_task_self_, task_flavor_t(TASK_THREAD_TIMES_INFO), $0, &infoCount)
-      }
+    let kr = machInfo(&info, &infoCount) {
+      task_info(mach_task_self_, task_flavor_t(TASK_THREAD_TIMES_INFO), $0, &$1)
     }
     if kr != KERN_SUCCESS {
       GenmaiLog.error("::task_info() failed")
@@ -97,18 +95,18 @@ public final class CPUStats: CPUStatsInterface {
 
   /// return the number of processors
   public func getNumberOfProcessors() -> Int {
-    var basicInfo = host_basic_info_data_t()
-    var infoCount = mach_msg_type_number_t(
-      MemoryLayout<host_basic_info_data_t>.size / MemoryLayout<integer_t>.size)
-    let kr = withUnsafeMutablePointer(to: &basicInfo) {
-      $0.withMemoryRebound(to: integer_t.self, capacity: Int(infoCount)) {
-        host_info(mach_host_self(), HOST_BASIC_INFO, $0, &infoCount)
-      }
-    }
-    if kr != KERN_SUCCESS {
-      GenmaiLog.error("::host_info() failed")
-      return 1
-    }
-    return Int(basicInfo.avail_cpus)
+    // host_info(HOST_BASIC_INFO).avail_cpus in the C++ code (= hw.activecpu).
+    ProcessInfo.processInfo.activeProcessorCount
+  }
+}
+
+/// Calls a Mach `*_info` / `host_statistics` function, which fills a struct through an `integer_t` array (the
+/// C API's calling convention, so the struct memory has to be rebound; this is the only unsafe code here).
+private func machInfo<T>(
+  _ value: inout T, _ count: inout mach_msg_type_number_t,
+  _ call: (UnsafeMutablePointer<integer_t>, inout mach_msg_type_number_t) -> kern_return_t
+) -> kern_return_t {
+  withUnsafeMutablePointer(to: &value) {
+    $0.withMemoryRebound(to: integer_t.self, capacity: Int(count)) { call($0, &count) }
   }
 }

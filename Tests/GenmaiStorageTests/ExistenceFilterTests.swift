@@ -1,5 +1,6 @@
 // Port of mozc/src/storage/existence_filter_test.cc (3.35.6354).
 
+import Foundation
 import GenmaiBase
 import Testing
 
@@ -39,10 +40,9 @@ private func runTest(_ m: Int, _ n: Int) throws {
 
   let buf = builder.serializeAsString()
   GenmaiLog.info("write size: \(buf.count)")
-  let alignedBuf = ImageBuffer(buf)
-  let filter2 = try ExistenceFilter.read(alignedBuf.raw)
+  let alignedBuf = Data(buf)
+  let filter2 = try ExistenceFilter.read(alignedBuf)
   checkValues(filter2, m, n)
-  withExtendedLifetime(alignedBuf) {}
 }
 
 @Suite struct ExistenceFilterTest {
@@ -79,13 +79,12 @@ private func runTest(_ m: Int, _ n: Int) throws {
     // If we change the default FpType, we also need to update the data FP.
     #expect(cityFingerprintOf(buf) == 0x877b_3260_08d5_246a)
 
-    let alignedBuf = ImageBuffer(buf)
-    let filterRead = try ExistenceFilter.read(alignedBuf.raw)
+    let alignedBuf = Data(buf)
+    let filterRead = try ExistenceFilter.read(alignedBuf)
 
     for word in kWords {
       #expect(filterRead.exists(word))
     }
-    withExtendedLifetime(alignedBuf) {}
   }
 
   @Test func insertAndExistsTest() {
@@ -140,7 +139,7 @@ private func runTest(_ m: Int, _ n: Int) throws {
     let kErrorRate: Float = 0.0001
     let numBytes = ExistenceFilterBuilder.minFilterSizeInBytesForErrorRate(kErrorRate, kWords.count)
 
-    for fpType in 0..<ExistenceFilterParams.FpType.FP_TYPE_SIZE {
+    for fpType in 0..<ExistenceFilterParams.FpType.fpTypeSize {
       var builder = ExistenceFilterBuilder.createOptimal(numBytes, UInt32(kWords.count), fpType)
 
       for word in kWords {
@@ -148,15 +147,14 @@ private func runTest(_ m: Int, _ n: Int) throws {
       }
 
       let buf = builder.serializeAsString()
-      let alignedBuf = ImageBuffer(buf)
-      let filterRead = try ExistenceFilter.read(alignedBuf.raw)
+      let alignedBuf = Data(buf)
+      let filterRead = try ExistenceFilter.read(alignedBuf)
 
       #expect(filterRead.params.fpType == fpType)
-      withExtendedLifetime(alignedBuf) {}
     }
   }
 }
 
 private func cityFingerprintOf(_ bytes: [UInt8]) -> UInt64 {
-  bytes.withUnsafeBytes { cityFingerprint(bytes: $0) }
+  cityFingerprint(bytes: bytes)
 }

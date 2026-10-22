@@ -98,7 +98,11 @@ public final class ImeContext {
     try body(&data.composer)
   }
 
-  public var converter: any EngineConverterInterface { converterImpl! }
+  /// The converter (C++ `converter()` dereferences the pointer; a context without one is a programming error).
+  public var converter: any EngineConverterInterface {
+    guard let converterImpl else { preconditionFailure("ImeContext has no converter") }
+    return converterImpl
+  }
 
   public var hasConverter: Bool { converterImpl != nil }
 

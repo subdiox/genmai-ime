@@ -1,5 +1,6 @@
 // Port of mozc/src/base/bits_test.cc (3.35.6354).
 
+import Foundation
 import Testing
 
 @testable import GenmaiBase
@@ -12,7 +13,9 @@ import Testing
     #expect(Bits.hostToLittle(Bits.loadUnaligned(kArray, 5, as: UInt32.self)) == 0x0807_0605)
     #expect(Bits.hostToLittle(Bits.loadUnaligned(kArray, 3, as: UInt64.self)) == 0xa09_0807_0605_0403)
 
-    kArray.withUnsafeBytes { sv in
+    do {
+      let data = Foundation.Data(kArray)
+      let sv = data.span
       var iter = 1
       #expect(Bits.hostToLittle(Bits.loadUnalignedAdvance(sv, &iter, as: UInt32.self)) == 0x0403_0201)
       #expect(Bits.hostToLittle(Bits.loadUnalignedAdvance(sv, &iter, as: UInt32.self)) == 0x0807_0605)
@@ -22,12 +25,13 @@ import Testing
 
     do {
       let vec: [UInt16] = [0x1234, 0x5678, 0x9abc, 0xdef0]
-      vec.withUnsafeBytes { buf in
-        var iter = 0
-        #expect(Bits.hostToNet(Bits.loadUnalignedAdvance(buf, &iter, as: UInt32.self)) == 0x3412_7856)
-        #expect(Bits.hostToNet(Bits.loadUnalignedAdvance(buf, &iter, as: UInt32.self)) == 0xbc9a_f0de)
-        #expect(iter / MemoryLayout<UInt16>.size == 4)
-      }
+      var bytes = Foundation.Data()
+      for v in vec { bytes.appendLittleEndian(v) }
+      let buf = bytes.span
+      var iter = 0
+      #expect(Bits.hostToNet(Bits.loadUnalignedAdvance(buf, &iter, as: UInt32.self)) == 0x3412_7856)
+      #expect(Bits.hostToNet(Bits.loadUnalignedAdvance(buf, &iter, as: UInt32.self)) == 0xbc9a_f0de)
+      #expect(iter / MemoryLayout<UInt16>.size == 4)
     }
   }
 
@@ -49,12 +53,6 @@ import Testing
     #expect(buf == [0xff, 0xff, 0xff, 0x01, 0x23, 0x45, 0x67, 0x89, 0xab, 0xcd, 0xef, 0xff])
     #expect(iter == 3 + MemoryLayout<UInt64>.size)
 
-    var array32: [UInt32] = [0, 0]
-    array32.withUnsafeMutableBytes { raw in
-      let next = Bits.storeUnaligned(UInt32(123), raw.baseAddress!)
-      #expect(next == raw.baseAddress! + 4)
-    }
-    #expect(array32 == [123, 0])
   }
 
   @Test func byteSwap() {
@@ -83,12 +81,13 @@ import Testing
     var d: UInt16
   }
 
-  @Test func makeAlignedConstSpan() {
+  // Bits.makeAlignedConstSpan reinterprets raw memory, so this test needs an aligned raw allocation.
+  @Test func makeAlignedConstSpan() throws {
     #expect(MemoryLayout<Data>.size == 12)
-    #expect(MemoryLayout<Data>.offset(of: \Data.a)! % MemoryLayout<UInt32>.alignment == 0)
-    #expect(MemoryLayout<Data>.offset(of: \Data.b)! % MemoryLayout<UInt32>.alignment == 0)
-    #expect(MemoryLayout<Data>.offset(of: \Data.c)! % MemoryLayout<UInt16>.alignment == 0)
-    #expect(MemoryLayout<Data>.offset(of: \Data.d)! % MemoryLayout<UInt16>.alignment == 0)
+    #expect(try #require(MemoryLayout<Data>.offset(of: \Data.a)) % MemoryLayout<UInt32>.alignment == 0)
+    #expect(try #require(MemoryLayout<Data>.offset(of: \Data.b)) % MemoryLayout<UInt32>.alignment == 0)
+    #expect(try #require(MemoryLayout<Data>.offset(of: \Data.c)) % MemoryLayout<UInt16>.alignment == 0)
+    #expect(try #require(MemoryLayout<Data>.offset(of: \Data.d)) % MemoryLayout<UInt16>.alignment == 0)
 
     var input: [Data] = []
     for i in 0..<4 {

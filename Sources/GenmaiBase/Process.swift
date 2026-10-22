@@ -42,12 +42,15 @@ public enum GenmaiProcess {
       return MacProcess.openApplication(path)
     }
 
-    var tmpPid: pid_t = 0
     // Spawn new process.
     // NOTE:
     // posix_spawn returns 0 even if kGenmaiServer doesn't exist, because
     // the return value of posix_spawn is basically determined
     // by the return value of fork().
+    // Not Foundation.Process: it reaps the child itself, but callers wait for
+    // the returned pid (WaitProcess). posix_spawn takes C strings, so argv is
+    // built with strdup / free here (the only unsafe code in this file).
+    var tmpPid: pid_t = 0
     var cArgs: [UnsafeMutablePointer<CChar>?] = ([path] + argTmp).map { strdup($0) }
     cArgs.append(nil)
     defer {

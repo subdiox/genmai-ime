@@ -25,7 +25,7 @@ private func key(
 ) -> KeyEvent {
   var event = KeyEvent()
   if let code {
-    event.keyCode = UInt32(code.unicodeScalars.first!.value)
+    event.keyCode = code.unicodeScalars.first.map { UInt32($0.value) } ?? 0
   }
   if let special {
     event.specialKey = special

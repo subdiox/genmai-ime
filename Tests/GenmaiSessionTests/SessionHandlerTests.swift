@@ -70,8 +70,8 @@ private let kOssMagicBytes: [UInt8] = [0xEF, 0x4D, 0x4F, 0x5A, 0x43, 0x0D, 0x0A]
 
 /// class SessionHandlerTest : public SessionHandlerTestBase
 private final class SessionHandlerTestFixture {
-  var handler: SessionHandler!
-  var engine: Engine!
+  let handler: SessionHandler
+  let engine: Engine
 
   var mockVersion = ""
   var ossVersion = ""
@@ -103,8 +103,8 @@ private final class SessionHandlerTestFixture {
       ossVersion = try DataManager.createFromFile(ossPath, magic: kOssMagicBytes).getDataVersion()
     }
 
-    // SessionHandlerTestBase::SetUp -> ClearState
-    clearState()
+    // SessionHandlerTestBase::SetUp -> ClearState (no handler yet)
+    Self.resetConfig()
 
     let engine = Engine.createEngine()
     self.engine = engine
@@ -112,11 +112,13 @@ private final class SessionHandlerTestFixture {
   }
 
   func clearState() {
-    if let handler {
-      var command = Genmai_Commands_Command()
-      command.input.type = .clearUserPrediction
-      handler.evalCommand(&command)
-    }
+    var command = Genmai_Commands_Command()
+    command.input.type = .clearUserPrediction
+    handler.evalCommand(&command)
+    Self.resetConfig()
+  }
+
+  static func resetConfig() {
     var config = Genmai_Config_Config()
     ConfigHandler.getDefaultConfig(&config)
     ConfigHandler.setConfig(config)
@@ -574,7 +576,7 @@ private func withSessionHandlerTest(
   // Tests the interaction with DataLoader for successful Engine reload event.
   @Test func engineReloadSuccessfulScenarioTest() async throws {
     try await withSessionHandlerTest { f in
-      let handler = f.handler!
+      let handler = f.handler
       try #require(sendMockEngineReloadRequest(handler, f.mockRequest) == .accepted)
       await f.engine.waitForDataLoader()
 
@@ -606,7 +608,7 @@ private func withSessionHandlerTest(
   @Test(.enabled(if: SessionTestPaths.ossDataAvailable, "Data/genmai.data is missing"))
   func engineUpdateSuccessfulScenarioTest() async throws {
     try await withSessionHandlerTest { f in
-      let handler = f.handler!
+      let handler = f.handler
       // engine_id = 1
       try #require(sendMockEngineReloadRequest(handler, f.mockRequest) == .accepted)
       await f.engine.waitForDataLoader()
@@ -630,7 +632,7 @@ private func withSessionHandlerTest(
   // is broken.
   @Test func engineReloadInvalidDataTest() async throws {
     try await withSessionHandlerTest { f in
-      let handler = f.handler!
+      let handler = f.handler
       let initialVersion = handler.getDataVersion()
 
       try #require(sendMockEngineReloadRequest(handler, f.invalidPathRequest) == .accepted)
@@ -663,7 +665,7 @@ private func withSessionHandlerTest(
   // Tests the rollback scenario
   @Test func engineRollbackDataTest() async throws {
     try await withSessionHandlerTest { f in
-      let handler = f.handler!
+      let handler = f.handler
       // Sends multiple requests three times.
       try #require(sendMockEngineReloadRequest(handler, f.mockRequest) == .accepted)
       try #require(sendMockEngineReloadRequest(handler, f.invalidPathRequest) == .accepted)
@@ -687,7 +689,7 @@ private func withSessionHandlerTest(
   // sessions exist in create session event.
   @Test func engineReloadSessionExistsTest() async throws {
     try await withSessionHandlerTest { f in
-      let handler = f.handler!
+      let handler = f.handler
       let initialVersion = handler.engine.getDataVersion()
 
       let oldEngine = handler.engine

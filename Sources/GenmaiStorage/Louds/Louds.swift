@@ -1,7 +1,10 @@
 // Port of mozc/src/storage/louds/louds.{h,cc} (3.35.6354).
 //
 // C++ `Init` is `initialize` here (`init` is reserved in Swift). Node-moving
-// methods take the node `inout` (C++ `Node*`).
+// methods take the node `inout` (C++ `Node*`). The bit image is a `Data`
+// (C++: a pointer to caller-owned memory).
+
+import Foundation
 
 /// Implementation of the Level-Ordered Unary Degree Sequence (LOUDS).
 ///
@@ -53,7 +56,7 @@ public struct Louds: Sendable {
   /// from leaves to the root), set |bitvec_lb1_cache_size| and
   /// |select1_cache_size| to larger values.
   public mutating func initialize(
-    _ image: UnsafeRawPointer, _ length: Int, _ bitvecLb0CacheSize: Int,
+    _ image: Data, _ length: Int, _ bitvecLb0CacheSize: Int,
     _ bitvecLb1CacheSize: Int, _ select0CacheSize: Int, _ select1CacheSize: Int
   ) {
     index.initialize(image, length, bitvecLb0CacheSize, bitvecLb1CacheSize)

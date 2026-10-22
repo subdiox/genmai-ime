@@ -5,8 +5,8 @@
 // It is exported to Objective-C under the same class name as the C++ (Info.plist:
 // InputMethodServerControllerClass = GenmaiImkInputController).
 //
-// InputMethodKit always calls the controller on the main thread, so the overrides assume main-actor
-// isolation.
+// InputMethodKit always calls the controller on the main thread, but the SDK declares the overrides without
+// actor isolation, so they assume main-actor isolation (in one helper, `onMain`).
 
 import AppKit
 import GenmaiBase
@@ -51,12 +51,7 @@ final class IMKTextInputClient: TextInputClient {
   }
 
   func attributes(forCharacterIndex index: Int, lineHeightRectangle: inout NSRect) -> [AnyHashable: Any]? {
-    var rect = NSRect.zero
-    let result = withUnsafeMutablePointer(to: &rect) { pointer in
-      client.attributes(forCharacterIndex: index, lineHeightRectangle: pointer)
-    }
-    lineHeightRectangle = rect
-    return result
+    client.attributes(forCharacterIndex: index, lineHeightRectangle: &lineHeightRectangle)
   }
 }
 
@@ -166,7 +161,7 @@ public final class GenmaiIMEEnvironment {
       forName: kReloadNotificationName, object: nil, queue: .main
     ) { notification in
       let command = notification.object as? String ?? "reload"
-      MainActor.assumeIsolated {
+      Task { @MainActor in
         GenmaiIMEEnvironment.shared.handleToolNotification(command)
       }
     }
@@ -216,18 +211,24 @@ public final class GenmaiApplicationDelegate: NSObject, NSApplicationDelegate {
 @objc(GenmaiImkInputController)
 @MainActor
 open class GenmaiImkInputController: IMKInputController {
-  /// The logic.
-  private var core: GenmaiInputController!
+  /// The logic (created in `setUp`, right after `super.init`).
+  private var coreStorage: GenmaiInputController?
   private var imkMenu: NSMenu?
+
+  /// The logic. IMK calls no other method before `init` returns, so it is always set.
+  private var core: GenmaiInputController {
+    guard let coreStorage else { preconditionFailure("GenmaiImkInputController used before init") }
+    return coreStorage
+  }
 
   public nonisolated override init!(server: IMKServer!, delegate: Any!, client inputClient: Any!) {
     super.init(server: server, delegate: delegate, client: inputClient)
     onMain(inputClient) { this, inputClient in this.setUp(inputClient) }
   }
 
-  private func setUp(_ inputClient: Any?) {
+  private func setUp(_ inputClient: IMKTextInputClient?) {
     let environment = GenmaiIMEEnvironment.shared
-    core = GenmaiInputController(
+    let core = GenmaiInputController(
       genmaiClient: environment.makeClient(),
       renderer: environment.renderer,
       currentClient: { [weak self] in IMKTextInputClient(self?.client()) },
@@ -247,36 +248,41 @@ open class GenmaiImkInputController: IMKInputController {
       core.aiSuggestionUpdate = { [weak aiHook] in aiHook?.suggestionUpdate() }
     }
     // The C++ also sets up the client bundle from |inputClient| at init.
-    core.setupClientBundle(IMKTextInputClient(inputClient))
+    core.setupClientBundle(inputClient)
     core.setupCapability()
+    coreStorage = core
     imkMenu = makeMenu()
   }
 
   private func superSelectionRange() -> NSRange { super.selectionRange() }
 
-  /// Runs `body` on the main actor; InputMethodKit calls the controller on the main thread.
+  /// Runs `body` on the main actor with the IMK client object `sender`. InputMethodKit calls the controller on the
+  /// main thread (`assumeIsolated` traps otherwise); the SDK just does not say so. The client proxy and some results
+  /// (NSMenu, attributed strings) are not Sendable: they are created and used on the main thread only, so
+  /// `MainThreadValue` carries them into and out of the closure.
   private nonisolated func onMain<T>(
-    _ sender: Any?, _ body: @MainActor (GenmaiImkInputController, Any?) -> T
+    _ sender: Any? = nil, _ body: @MainActor (GenmaiImkInputController, IMKTextInputClient?) -> T
   ) -> T {
-    nonisolated(unsafe) let sender = sender
-    nonisolated(unsafe) let this = self
-    return MainActor.assumeIsolated { UncheckedBox(value: body(this, sender)) }.value
+    let call = MainThreadValue(value: (this: self, sender: sender))
+    return MainActor.assumeIsolated {
+      MainThreadValue(value: body(call.value.this, IMKTextInputClient(call.value.sender)))
+    }.value
   }
 
   // MARK: IMKStateSetting Protocol
 
   open nonisolated override func activateServer(_ sender: Any!) {
     super.activateServer(sender)
-    onMain(sender) { this, sender in
-      this.core.activateServer(IMKTextInputClient(sender))
+    onMain(sender) { this, client in
+      this.core.activateServer(client)
       // Sets this controller as the active controller to receive messages from the renderer.
       GenmaiIMEEnvironment.shared.rendererReceiver.setCurrentController(this.core)
     }
   }
 
   open nonisolated override func deactivateServer(_ sender: Any!) {
-    onMain(sender) { this, sender in
-      this.core.deactivateServer(IMKTextInputClient(sender))
+    onMain(sender) { this, client in
+      this.core.deactivateServer(client)
       // mozc_server syncs the learning data periodically; the in-process server also syncs when the user
       // leaves the application.
       GenmaiIMEEnvironment.shared.syncData()
@@ -290,13 +296,14 @@ open class GenmaiImkInputController: IMKInputController {
 
   /// This method is called when a user changes the input mode.
   open nonisolated override func setValue(_ value: Any!, forTag tag: Int, client sender: Any!) {
-    nonisolated(unsafe) let value = value
-    onMain(sender) { this, sender in this.core.setValue(value, client: IMKTextInputClient(sender)) }
+    // GenmaiInputController reads the mode identifier (a string) only.
+    let mode = value as? String
+    onMain(sender) { this, client in this.core.setValue(mode, client: client) }
     super.setValue(value, forTag: tag, client: sender)
   }
 
   open nonisolated override func menu() -> NSMenu! {
-    onMain(nil) { this, _ in this.imkMenu }
+    onMain { this, _ in this.imkMenu }
   }
 
   // MARK: IMKServerInput Protocol
@@ -307,29 +314,29 @@ open class GenmaiImkInputController: IMKInputController {
     let isCursorUpdate = event.type == .cursorUpdate
     // Copy what KeyCodeMap needs (NSEvent is not Sendable).
     let data = isCursorUpdate ? nil : KeyEventData(event)
-    return onMain(sender) { this, sender in
+    return onMain(sender) { this, client in
       if isCursorUpdate {
         this.core.handleCursorUpdate()
         return false
       }
-      return this.core.handleEvent(data, client: IMKTextInputClient(sender))
+      return this.core.handleEvent(data, client: client)
     }
   }
 
   open nonisolated override func originalString(_ sender: Any!) -> NSAttributedString! {
-    onMain(sender) { this, _ in NSAttributedString(string: this.core.originalString) }
+    NSAttributedString(string: onMain { this, _ in this.core.originalString })
   }
 
   open nonisolated override func composedString(_ sender: Any!) -> Any! {
-    onMain(sender) { this, _ in this.core.composedString }
+    onMain { this, _ in this.core.composedString }
   }
 
   open nonisolated override func commitComposition(_ sender: Any!) {
-    onMain(sender) { this, sender in this.core.commitComposition(IMKTextInputClient(sender)) }
+    onMain(sender) { this, client in this.core.commitComposition(client) }
   }
 
   open nonisolated override func selectionRange() -> NSRange {
-    onMain(nil) { this, _ in this.core.selectionRange() }
+    onMain { this, _ in this.core.selectionRange() }
   }
 
   // MARK: callbacks (menu items of mac/*.lproj/Config.xib)
@@ -358,7 +365,8 @@ open class GenmaiImkInputController: IMKInputController {
   }
 }
 
-private struct UncheckedBox<T>: @unchecked Sendable {
+/// A value passed into or out of `onMain`: created and used on the main thread only.
+private struct MainThreadValue<T>: @unchecked Sendable {
   let value: T
 }
 

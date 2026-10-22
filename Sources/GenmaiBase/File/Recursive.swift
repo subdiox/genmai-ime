@@ -1,8 +1,11 @@
 // Port of mozc/src/base/file/recursive.{h,cc} (3.35.6354). macOS (fts) path.
+//
+// The C++ code walks the tree with fts (no chdir, no stat, physical walk, one
+// device). The port walks it with FileManager the same way: symbolic links are
+// removed, not followed; directories are removed after their contents; errors
+// on single entries are logged, not thrown.
 
-#if canImport(Darwin)
-  import Darwin
-#endif
+import Foundation
 
 public enum FileRecursive {
   private static func removeDirectoryOrLog(_ path: String) {
@@ -28,38 +31,22 @@ public enum FileRecursive {
   /// Recursively delete all files under path including itself
   /// (mozc::file::DeleteRecursively).
   public static func deleteRecursively(_ path: String) throws {
-    // fts is not POSIX, but it's available on both Linux and MacOS.
-    let pathCString = strdup(path)
-    defer { free(pathCString) }
-    var files: [UnsafeMutablePointer<CChar>?] = [pathCString, nil]
-    // - FTS_NOCHDIR: don't change current directory.
-    // - FTS_NOSTAT: don't stat(2).
-    // - FTS_PHYSICAL: don't follow symlinks.
-    // - FTS_XDEV: don't descend into a different device.
-    guard let ftsp = fts_open(&files, FTS_NOCHDIR | FTS_NOSTAT | FTS_PHYSICAL | FTS_XDEV, nil)
-    else {
-      throw StatusError.errno(errno, "fts_open failed")
+    deleteTree(path)
+  }
+
+  private static func deleteTree(_ path: String) {
+    // attributesOfItem does not follow a symbolic link at `path` (lstat).
+    guard let attributes = try? FileManager.default.attributesOfItem(atPath: path) else {
+      return  // FTS_NS: nothing to remove.
     }
-    defer {
-      if fts_close(ftsp) < 0 {
-        GenmaiLog.error("fts_close failed : errno = \(errno)")
+    if attributes[.type] as? FileAttributeType == .typeDirectory {
+      let children = (try? FileManager.default.contentsOfDirectory(atPath: path)) ?? []
+      for child in children {
+        deleteTree(FileUtil.joinPath(path, child))
       }
-    }
-    errno = 0
-    while let ent = fts_read(ftsp) {
-      let entPath = String(cString: ent.pointee.fts_path)
-      switch Int32(ent.pointee.fts_info) {
-      case FTS_DP:  // directory postorder
-        removeDirectoryOrLog(entPath)
-      case FTS_F, FTS_NSOK, FTS_SL, FTS_SLNONE, FTS_DEFAULT:
-        unlinkFileOrLog(entPath)
-      default:
-        break
-      }
-      errno = 0
-    }
-    if errno != 0 {
-      throw StatusError.errno(errno, "fts_read failed")
+      removeDirectoryOrLog(path)  // FTS_DP: directory postorder
+    } else {
+      unlinkFileOrLog(path)
     }
   }
 }

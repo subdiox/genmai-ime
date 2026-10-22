@@ -1,5 +1,6 @@
 // Port of mozc/src/storage/louds/bit_vector_based_array_test.cc (3.35.6354).
 
+import Foundation
 import Testing
 
 @testable import GenmaiStorage
@@ -27,11 +28,11 @@ import Testing
     builder.setSize(4, 2)
     builder.build()
 
-    let image = ImageBuffer(builder.image)
+    let image = Data(builder.image)
     var array = BitVectorBasedArray()
-    array.open(image.pointer)
+    array.open(image)
     for (i, data) in kTestData.enumerated() {
-      let result = array.get(i)
+      let result = array.element(i)
       #expect(Array(result) == data.expectedElement)
     }
 
