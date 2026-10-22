@@ -140,6 +140,8 @@ private struct DictionaryToolToolbar: ToolbarContent {
         Button(trDT("Export current dictionary...")) { DictionaryExporter.export(model) }
           .disabled(!model.hasCurrentDictionary)
       }
+      // The toolbar would otherwise shrink the menu's title to "管…".
+      .fixedSize()
       Button(trDT("Add")) { model.addWord() }
         .disabled(!model.canAddWord)
       Button(trDT("Remove")) { model.requestDeleteWords() }
