@@ -10,7 +10,7 @@ public enum AIStrings {
   public enum Key: CaseIterable, Sendable {
     case tab, sectionAI, enable, explanation, sectionSettings, timeout, candidates, modelDirectory,
       modelDirectoryPlaceholder, sectionModel, modelFound, modelMissing, modelVersion, modelVersionUnknown,
-      modelUpToDate, download, update, downloadNote, downloading, verifying, converting, cancel, installFailed,
+      modelUpToDate, download, update, downloadNote, downloading, verifying, installing, cancel, installFailed,
       remove, removeConfirm, removeFailed, checkingLatest, latestFailed, retry,
       checkAgain, saveFailed, milliseconds
   }
@@ -35,10 +35,10 @@ public enum AIStrings {
     .download: "Download genmai %@",
     .update: "Update to genmai %@",
     .downloadNote:
-      "Downloads %@ from Hugging Face (%@) and installs it into the model folder (%@ on disk). Only the model is downloaded; your input is never sent.",
+      "Downloads %@ from Hugging Face (%@) and installs it into the model folder. Only the model is downloaded; your input is never sent.",
     .downloading: "Downloading… %@ of %@",
     .verifying: "Verifying the download…",
-    .converting: "Installing…",
+    .installing: "Installing…",
     .cancel: "Cancel",
     .installFailed: "Could not install the model: %@",
     .checkingLatest: "Checking for the latest model…",
@@ -73,10 +73,10 @@ public enum AIStrings {
     .download: "genmai %@ をダウンロード",
     .update: "genmai %@ にアップデート",
     .downloadNote:
-      "Hugging Face (%2$@) から %1$@ をダウンロードしてモデルのフォルダにインストールします (ディスク上は %3$@)。ダウンロードするのはモデルだけで、入力内容が送信されることはありません。",
+      "Hugging Face (%2$@) から %1$@ をダウンロードしてモデルのフォルダにインストールします。ダウンロードするのはモデルだけで、入力内容が送信されることはありません。",
     .downloading: "ダウンロード中… %@ / %@",
     .verifying: "ダウンロードを検証中…",
-    .converting: "インストール中…",
+    .installing: "インストール中…",
     .cancel: "キャンセル",
     .installFailed: "モデルをインストールできませんでした: %@",
     .checkingLatest: "最新のモデルを確認中…",
@@ -119,17 +119,14 @@ public enum AIStrings {
       return String(format: text(.downloading, language: language), bytes(received), bytes(total))
     case .verifying:
       return text(.verifying, language: language)
-    case .converting:
-      return text(.converting, language: language)
+    case .installing:
+      return text(.installing, language: language)
     }
   }
 
   /// The explanation under the download button.
   public static func downloadNote(_ release: GenmaiModelRelease, language: GUILanguage = .current) -> String {
-    // The converted weights are half the size of the downloaded fp32 file.
-    String(
-      format: text(.downloadNote, language: language), bytes(release.downloadSize), release.info.repository,
-      bytes(release.downloadSize / 2))
+    String(format: text(.downloadNote, language: language), bytes(release.downloadSize), release.info.repository)
   }
 
   static func bytes(_ count: Int64) -> String {

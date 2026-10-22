@@ -401,7 +401,7 @@ public final class ConfigDialogModel {
       switch phase {
       case .downloading(let received, let total): key = Int(received * 1000 / max(total, 1))
       case .verifying: key = 1001
-      case .converting: key = 1002
+      case .installing: key = 1002
       }
       guard lastShown.withLock({ last in defer { last = key }; return last != key }) else { return }
       Task { @MainActor [weak self] in

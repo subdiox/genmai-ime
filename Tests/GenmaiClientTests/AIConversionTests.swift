@@ -406,6 +406,7 @@ func conversionRequest() -> ConversionRequest {
     [{"type":"file","oid":"a6344aa","size":1519,"path":".gitattributes"},
     {"type":"file","oid":"70bb1e6b8b32086b8bccd5dcbb6d84ef3847669e","size":921,"path":"config.json"},
     {"type":"file","oid":"0695e41","size":1238046208,"lfs":{"oid":"e1ac64258359389b0451bdc521593cba825635baa08b2650a1140678a01396f6","size":1238046208,"pointerSize":135},"path":"model.safetensors"},
+    {"type":"file","oid":"5d1b2c0","size":619034840,"lfs":{"oid":"f3caa5b616114699a79d595ff8a88b4ba33e3fffe77ad0bf5cc13dbfed314411","size":619034840,"pointerSize":134},"path":"model-bf16.safetensors"},
     {"type":"file","oid":"ac7a91b3c4480c983debf6cc9c4d3d482c350fbf","size":394106,"path":"tokenizer.json"}]
     """#.utf8)
 
@@ -426,13 +427,15 @@ func conversionRequest() -> ConversionRequest {
     #expect(
       files[2]
         == .init(
-          name: "model.safetensors", size: 1_238_046_208,
-          checksum: .sha256("e1ac64258359389b0451bdc521593cba825635baa08b2650a1140678a01396f6")))
+          name: "model-bf16.safetensors", size: 619_034_840,
+          checksum: .sha256("f3caa5b616114699a79d595ff8a88b4ba33e3fffe77ad0bf5cc13dbfed314411")))
     #expect(throws: AIModelInstallError.self) { try GenmaiModelRelease.files(Data("[]".utf8)) }
     let r = GenmaiModelRelease(
-      info: GenmaiModelInfo(version: "0.2.0", repository: "subdiox/genmai", revision: "v0.2.0"), files: files)
-    #expect(r.downloadSize == 921 + 394_106 + 1_238_046_208)
-    #expect(r.url(of: files[2]).absoluteString == "https://huggingface.co/subdiox/genmai/resolve/v0.2.0/model.safetensors")
+      info: GenmaiModelInfo(version: "0.1.0", repository: "subdiox/genmai", revision: "v0.1.0"), files: files)
+    // The fp32 model.safetensors (for transformers) is not downloaded.
+    #expect(r.downloadSize == 921 + 394_106 + 619_034_840)
+    #expect(
+      r.url(of: files[2]).absoluteString == "https://huggingface.co/subdiox/genmai/resolve/v0.1.0/model-bf16.safetensors")
   }
 
   @Test func compatibility() {
@@ -511,6 +514,8 @@ func conversionRequest() -> ConversionRequest {
     try GenmaiSafetensors.prepare(source: src, destination: dst)
     let (header, body) = try Self.read(dst)
     #expect((header["__metadata__"] as? [String: String])?["format"] == GenmaiSafetensors.preparedFormat)
+    #expect(try GenmaiSafetensors.format(of: dst) == GenmaiSafetensors.preparedFormat)
+    #expect(try GenmaiSafetensors.format(of: src) == "pt")
     #expect(Set(header.keys) == ["__metadata__", "h.0.attn.c_attn.weight", "ln_f.bias"])
     let w = header["h.0.attn.c_attn.weight"] as! [String: Any]
     #expect(w["dtype"] as? String == "BF16")

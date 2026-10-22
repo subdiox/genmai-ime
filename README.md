@@ -27,7 +27,7 @@ Strict top-1 accuracy through the IME session layer (`genmai-cli session-eval`, 
 | | AJIMEE-Bench (200) | everyday sentences (101) |
 |---|---|---|
 | engine alone (AI off) | 51.5 % | 72.3 % |
-| with AI conversion (genmai 0.2.0) | 94.0 % | 92.1 % |
+| with AI conversion (genmai 0.1.0) | 94.0 % | 92.1 % |
 
 Conversion-key latency with AI conversion: median 11–19 ms when the key follows the last kana by one typing
 interval, 45–64 ms when it is pressed right after it.
@@ -80,8 +80,8 @@ Settings and learning data live in `~/Library/Application Support/Genmai`.
 ### AI conversion
 
 The model is not part of the app. The settings (tab "AI") look up the latest model release on Hugging Face
-([subdiox/genmai](https://huggingface.co/subdiox/genmai)) and offer **Download**: it downloads the model (1.2 GB,
-checked against the checksums Hugging Face lists), converts it (0.6 GB on disk) and installs it into
+([subdiox/genmai](https://huggingface.co/subdiox/genmai)) and offer **Download**: it downloads the model (0.6 GB,
+checked against the checksums Hugging Face lists) and installs it into
 `~/Library/Application Support/Genmai/model`. When a newer model is released, the same place offers **Update**;
 **Remove Model…** deletes it. From the command line:
 

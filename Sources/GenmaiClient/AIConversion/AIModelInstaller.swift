@@ -1,12 +1,14 @@
 // Download and installation of the genmai model (not part of Mozc).
 //
 // The model is not bundled with the IME. The config dialog (GenmaiTool) and `genmai-cli install` look up the newest
-// release on Hugging Face (`GenmaiModelRelease.latest`: the highest vX.Y.Z tag whose config.json this IME can run),
-// download it (fp32 safetensors; every file checked against the checksum Hugging Face lists), convert it to the compact
-// runtime layout that GenmaiAI loads (bf16, Conv1D weights transposed to (out, in), metadata
-// format=genmai-bf16-out-in; ~0.6 GB) and install it into the model directory together with config.json,
-// tokenizer.json and `genmai_model.json` (which release is installed). The conversion is plain Swift (GenmaiTool
-// does not link MLX); it produces the same bits as MLX's `astype(bfloat16)` (round to nearest even).
+// release on Hugging Face (`GenmaiModelRelease.latest`: the highest vX.Y.Z tag whose config.json this IME can run)
+// and download its `model-bf16.safetensors`, the weights already in the runtime layout that GenmaiAI loads (bf16,
+// Conv1D weights (out, in), metadata format=genmai-bf16-out-in; 0.6 GB), with config.json and tokenizer.json, each
+// checked against the checksum Hugging Face lists. They are installed into the model directory as
+// model.safetensors / config.json / tokenizer.json with `genmai_model.json` (which release is installed).
+// The release's fp32 `model.safetensors` (HF layout, for transformers) is not downloaded; `genmai-cli prepare`
+// converts such a file from a local checkpoint (`GenmaiSafetensors.prepare`, plain Swift, the same bits as MLX's
+// `astype(bfloat16)`).
 
 import Foundation
 
@@ -70,8 +72,10 @@ public struct GenmaiModelRelease: Equatable, Sendable {
 
   /// The Hugging Face repository of the genmai model.
   public static let repository = "subdiox/genmai"
-  /// The files a release must have.
-  public static let fileNames = ["config.json", "tokenizer.json", "model.safetensors"]
+  /// The runtime weights in a release (installed as `model.safetensors`).
+  public static let weightsFileName = "model-bf16.safetensors"
+  /// The files the IME downloads from a release.
+  public static let fileNames = ["config.json", "tokenizer.json", weightsFileName]
 
   public var downloadSize: Int64 { files.reduce(0) { $0 + $1.size } }
 
@@ -212,7 +216,7 @@ public enum AIModelInstaller {
   public enum Phase: Equatable, Sendable {
     case downloading(received: Int64, total: Int64)
     case verifying
-    case converting
+    case installing
   }
 
   /// Downloaded files are kept here until the installation succeeded (an interrupted installation reuses the
@@ -221,7 +225,7 @@ public enum AIModelInstaller {
     URL.cachesDirectory.appending(path: "Genmai/download", directoryHint: .isDirectory)
   }
 
-  /// Downloads `release`, converts it and installs it into `directory`. Only the model's own files in
+  /// Downloads `release` and installs it into `directory`. Only the model's own files in
   /// `directory` are replaced (each one atomically); other files are left alone. Honors task cancellation.
   public static func install(
     _ release: GenmaiModelRelease, to directory: URL, cacheDirectory: URL = AIModelInstaller.cacheDirectory,
@@ -257,16 +261,19 @@ public enum AIModelInstaller {
     guard GenmaiModelRelease.isCompatible(config: try Data(contentsOf: downloads.appending(path: "config.json"))) else {
       throw AIModelInstallError.badModel("config.json of \(release.info.revision) is not a model this IME can run")
     }
+    let weights = downloads.appending(path: GenmaiModelRelease.weightsFileName)
+    guard try GenmaiSafetensors.format(of: weights) == GenmaiSafetensors.preparedFormat else {
+      throw AIModelInstallError.badModel("\(GenmaiModelRelease.weightsFileName) is not in the runtime layout")
+    }
     try Task.checkCancellation()
-    progress(.converting)
+    progress(.installing)
     try fm.createDirectory(at: directory, withIntermediateDirectories: true)
     let staging = directory.appending(path: ".install-\(UUID().uuidString)", directoryHint: .isDirectory)
     try fm.createDirectory(at: staging, withIntermediateDirectories: false)
     defer { try? fm.removeItem(at: staging) }
-    try await convertInBackground(source: downloads.appending(path: "model.safetensors"),
-      destination: staging.appending(path: "model.safetensors"))
+    try fm.moveItem(at: weights, to: staging.appending(path: "model.safetensors"))
     for name in ["config.json", "tokenizer.json"] {
-      try fm.copyItem(at: downloads.appending(path: name), to: staging.appending(path: name))
+      try fm.moveItem(at: downloads.appending(path: name), to: staging.appending(path: name))
     }
     try release.info.save(to: staging)
     try Task.checkCancellation()
@@ -274,13 +281,11 @@ public enum AIModelInstaller {
     for name in ["config.json", "tokenizer.json", "model.safetensors", GenmaiModelInfo.fileName] {
       try replace(directory.appending(path: name), with: staging.appending(path: name))
     }
-    // Written by earlier versions; the prompt format is now in config.json.
-    try? fm.removeItem(at: directory.appending(path: "genmai_fmt.txt"))
     try? fm.removeItem(at: downloads)
   }
 
-  /// The files an installation writes (and `uninstall` removes), including the format file of 0.1.0 installs.
-  static let installedFiles = ["config.json", "tokenizer.json", "model.safetensors", GenmaiModelInfo.fileName, "genmai_fmt.txt"]
+  /// The files an installation writes (and `uninstall` removes).
+  static let installedFiles = ["config.json", "tokenizer.json", "model.safetensors", GenmaiModelInfo.fileName]
 
   /// Removes the model from `directory`: only the model's own files; the directory itself only if nothing else
   /// is left in it. Also drops downloads kept from an interrupted installation.
@@ -314,7 +319,6 @@ public enum AIModelInstaller {
       try replace(destination.appending(path: name), with: copy)
     }
     try? fm.removeItem(at: destination.appending(path: GenmaiModelInfo.fileName))
-    try? fm.removeItem(at: destination.appending(path: "genmai_fmt.txt"))
   }
 
   @concurrent
@@ -351,6 +355,22 @@ public enum AIModelInstaller {
 public enum GenmaiSafetensors {
   /// Metadata `format` of the converted file (`GenmaiModel.preparedFormat` in GenmaiAI).
   public static let preparedFormat = "genmai-bf16-out-in"
+
+  /// The metadata `format` of the safetensors file at `url` (nil if it has none).
+  public static func format(of url: URL) throws -> String? {
+    let handle = try FileHandle(forReadingFrom: url)
+    defer { try? handle.close() }
+    guard let lengthData = try handle.read(upToCount: 8), lengthData.count == 8 else {
+      throw AIModelInstallError.badModel("file too short")
+    }
+    let length = lengthData.withUnsafeBytes { Int($0.loadUnaligned(as: UInt64.self).littleEndian) }
+    guard length < 1 << 24, let headerData = try handle.read(upToCount: length), headerData.count == length,
+      let header = try JSONSerialization.jsonObject(with: headerData) as? [String: Any]
+    else {
+      throw AIModelInstallError.badModel("bad header")
+    }
+    return (header["__metadata__"] as? [String: Any])?["format"] as? String
+  }
 
   /// Reads the HF safetensors file `source` (F32, F16 or BF16) and writes `destination`: every tensor in bf16
   /// (round to nearest even), keys without the `transformer.` prefix, `lm_head.weight` (tied to `wte`) dropped,

@@ -109,7 +109,7 @@ import Testing
     model.aiModelInstaller = { release, directory, progress in
       #expect(release == Self.release)
       progress(.downloading(received: 500, total: 1000))
-      progress(.converting)
+      progress(.installing)
       for f in AIModelStatus.requiredFiles {
         try Data().write(to: directory.appending(path: f))
       }
@@ -157,7 +157,7 @@ import Testing
     let modelDir = dir.url.appending(path: "model")
     try FileManager.default.createDirectory(at: modelDir, withIntermediateDirectories: true)
     model.aiModelDirectoryText = modelDir.path
-    for f in AIModelStatus.requiredFiles + ["genmai_fmt.txt"] {
+    for f in AIModelStatus.requiredFiles {
       try Data().write(to: modelDir.appending(path: f))
     }
     try Self.release.info.save(to: modelDir)

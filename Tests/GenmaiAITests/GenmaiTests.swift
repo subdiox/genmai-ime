@@ -147,7 +147,7 @@ struct GenmaiConverterTests {
         let r = try await c.convert("きょうははやめにかえります")
         #expect(r.count == 5)
         #expect(r.first?.text == "今日は早めに帰ります")
-        // Python MLX (genmai 0.2.0, bf16): -0.02613067626953125, second 今日は早目に帰ります -4.152080535888672
+        // Python MLX (genmai 0.1.0, bf16): -0.02613067626953125, second 今日は早目に帰ります -4.152080535888672
         #expect(abs((r.first?.score ?? 0) - -0.02613) < 0.01)
         #expect(r.count > 1 && r[1].text == "今日は早目に帰ります")
     }
@@ -200,7 +200,7 @@ struct GenmaiConverterTests {
     /// The IME's speculation: every prefix of the reading is converted in turn. With the prompt KV cache
     /// (context + the reading so far, prefilled once) the results equal those of a full prefill up to bf16 noise
     /// (the cached rows were computed in a prefill of another shape): same top-1 for the whole reading and all but at
-    /// most one prefix (a near-tie on a trailing kana: 家でほ / 家でホ with genmai 0.2.0), scores within 0.5.
+    /// most one prefix (a near-tie on a trailing kana: 家でほ / 家でホ with genmai 0.1.0), scores within 0.5.
     @Test(arguments: [
         ("きょうはともだちとえいがをみにいくよていです", ""),
         ("しんかんせんのきっぷをよやくしておきました", "来週の出張ですが、"),

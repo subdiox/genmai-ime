@@ -134,8 +134,8 @@ case "install":
                 line = String(format: "downloading %.0f%%", Double(received) / Double(max(total, 1)) * 100)
             case .verifying:
                 line = "verifying"
-            case .converting:
-                line = "converting"
+            case .installing:
+                line = "installing"
             }
             let changed = last.withLock { l in
                 defer { l = line }
