@@ -290,17 +290,17 @@ table; use "…" and "ユーザー".
   Normally made by the GitHub Actions workflow `.github/workflows/release.yml`: bump `kProductVersion`, commit, push
   the tag `vX.Y.Z`; the workflow (macos-26 runner, newest Xcode ≥ 26 + Metal toolchain) builds the data set and the
   package and creates the release (a manual run only builds and keeps the package as an artifact).
-  `Tools/make_release.sh [--publish]` does the same locally. The package installs into `/Library/Input Methods`,
-  removes a copy in the console user's `~/Library/Input Methods` (same bundle id), needs no logout, and opens the
+  `Tools/make_release.sh [--publish]` does the same locally. The package installs where the user chose (see
+  "Install location"), needs no logout, and opens the
   welcome window (app screen `welcome`, `GenmaiGUI/Welcome`: how to switch to Genmai, "Turn On AI Conversion" =
   model download + `enabled`) once per user (marker `<profile>/welcome_shown`).
 - Updates (GenmaiClient/Update): `GenmaiAppRelease.latest` (GitHub API `/repos/.../releases`: highest vX.Y.Z, no
   drafts / pre-releases, with a .pkg asset; size + SHA-256 `digest`), `GenmaiUpdater.download` (shared
   `FileDownload`, also used by the model installer), `GenmaiUpdateSettings` (`<profile>/update.json`:
   `automatic_check` (default on), `last_check`, `skipped_version`). The IME (`GenmaiMac/GenmaiUpdateChecker`) checks
-  once a day and posts a notification that opens the app screen `update_dialog`; the config dialog's tab "Misc" has
-  the "Updates" section (`GenmaiUpdateModel`). The downloaded package has no quarantine attribute and is opened with
-  Installer.
+  once a day and posts a notification that opens the app screen `update_dialog`; the settings have
+  the "Updates" pane (`GenmaiUpdateModel`). The downloaded package has no quarantine attribute and is installed
+  where Genmai is (`GenmaiPackageInstaller`).
 
 ## Status
 
