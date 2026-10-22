@@ -16,7 +16,7 @@ final class ControllerFixture {
   let mockClient = MockTextInputClient()
   var mockGenmaiClient = MockGenmaiClient()
   var mockRenderer = MockRenderer()
-  let toolLauncher = MockToolLauncher()
+  let toolLauncher = MockAppLauncher()
   var openURLCount = 0
   var time: TimeInterval = 1000
   var controller: GenmaiInputController!
@@ -643,7 +643,7 @@ private func comparePreedit(_ expected: NSAttributedString, _ actual: NSAttribut
     #expect(f.mockGenmaiClient.sendCommandCalls.isEmpty)
   }
 
-  @Test func launchToolFromOutput() {
+  @Test func openAppFromOutput() {
     let f = ControllerFixture()
     f.mockClient.attributedString = NSAttributedString(string: "単語")
     f.mockClient.expectedRange = NSRange(location: 0, length: 2)

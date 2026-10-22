@@ -1,7 +1,7 @@
 // Port of mozc/src/gui/tool/mozc_tool_libmain.cc, the *_libmain.cc of each dialog and
 // gui/base/singleton_window_helper (3.35.6354).
 //
-// GenmaiTool (installed as Genmai.app in Genmai.app/Contents/Resources) hosts the SwiftUI dialogs of GenmaiGUI
+// GenmaiApp (installed as Genmai.app in Genmai.app/Contents/Resources) hosts the SwiftUI dialogs of GenmaiGUI
 // (and the update and welcome windows, not in Mozc). The mode comes from `--mode=<mode>` (or the FLAGS_mode
 // environment variable, like the C++ on macOS), the error type of the error dialog from `--error_type=` /
 // FLAGS_error_type, and the word register defaults from the environment variables set by the IME. Only one window
@@ -19,10 +19,10 @@ import SwiftUI
 
 /// Mirrors kWordRegisterEnvironmentReadingName (base/const.h).
 let kWordRegisterEnvironmentReadingName = "default_reading_entry_of_word_register"
-let kActivateNotificationName = Notification.Name("io.github.subdiox.genmai.inputmethod.Japanese.ActivateTool")
+let kActivateNotificationName = Notification.Name("io.github.subdiox.genmai.inputmethod.Japanese.ActivateApp")
 
-struct ToolOptions {
-  var mode = ToolMode.aboutDialog.rawValue  // ABSL_FLAG(std::string, mode, "about_dialog", ...)
+struct AppOptions {
+  var mode = AppScreen.aboutDialog.rawValue  // ABSL_FLAG(std::string, mode, "about_dialog", ...)
   var errorType = ""
 
   init(arguments: [String], environment: [String: String]) {
@@ -54,18 +54,18 @@ extension String {
 }
 
 @main
-struct GenmaiToolApp: App {
-  @NSApplicationDelegateAdaptor(ToolAppDelegate.self) private var delegate
-  private let mode: ToolMode
-  private let options: ToolOptions
+struct GenmaiApplication: App {
+  @NSApplicationDelegateAdaptor(AppDelegate.self) private var delegate
+  private let mode: AppScreen
+  private let options: AppOptions
 
   init() {
-    let options = ToolOptions(arguments: CommandLine.arguments, environment: ProcessInfo.processInfo.environment)
+    let options = AppOptions(arguments: CommandLine.arguments, environment: ProcessInfo.processInfo.environment)
     if options.mode != "administration_dialog" && !RunLevel.isValidClientRunLevel() {
       exit(-1)
     }
-    guard let mode = ToolMode(rawValue: options.mode) else {
-      NSLog("GenmaiTool: Unknown mode: %@", options.mode)
+    guard let mode = AppScreen(rawValue: options.mode) else {
+      NSLog("GenmaiApp: Unknown mode: %@", options.mode)
       exit(0)
     }
     if mode == .welcome {
@@ -78,7 +78,7 @@ struct GenmaiToolApp: App {
     if mode == .errorMessageDialog && ErrorMessageDialog.message(forErrorType: options.errorType) == nil {
       exit(0)  // Show() does nothing for an unknown error type
     }
-    if !ToolSingleton.acquire(mode) {
+    if !AppSingleton.acquire(mode) {
       exit(0)
     }
     self.mode = mode
@@ -87,8 +87,8 @@ struct GenmaiToolApp: App {
 
   var body: some Scene {
     // One id per mode: SwiftUI remembers the frame per id.
-    Window(ToolWindowContent.title(mode), id: mode.rawValue) {
-      ToolWindowContent(mode: mode, options: options)
+    Window(AppWindowContent.title(mode), id: mode.rawValue) {
+      AppWindowContent(mode: mode, options: options)
     }
     .windowResizability(mode.isResizable ? .contentMinSize : .contentSize)
     .defaultSize(mode.defaultSize)
@@ -97,7 +97,7 @@ struct GenmaiToolApp: App {
   }
 }
 
-extension ToolMode {
+extension AppScreen {
   /// Windows without a visible title bar (the content has its own heading).
   var isCompact: Bool { self == .aboutDialog || self == .welcome }
   var isResizable: Bool { self == .configDialog || self == .dictionaryTool }
@@ -112,9 +112,9 @@ extension ToolMode {
 }
 
 /// The window's content for the mode, with the close action of the dialogs.
-struct ToolWindowContent: View {
-  let mode: ToolMode
-  let options: ToolOptions
+struct AppWindowContent: View {
+  let mode: AppScreen
+  let options: AppOptions
   @Environment(\.dismissWindow) private var dismissWindow
 
   var body: some View {
@@ -134,19 +134,19 @@ struct ToolWindowContent: View {
   }
 
   @ViewBuilder private var content: some View {
-    let launchTool: @MainActor (String) -> Void = { GenmaiToolLauncher.launch(mode: $0) }
+    let openApp: @MainActor (String) -> Void = { GenmaiAppLauncher.launch(mode: $0) }
     switch mode {
     case .configDialog:
-      ConfigDialogView(client: ToolClient.shared, launchTool: launchTool)
+      ConfigDialogView(client: AppClient.shared, openApp: openApp)
     case .dictionaryTool:
-      DictionaryToolView(client: ToolClient.shared)
+      DictionaryToolView(client: AppClient.shared)
     case .wordRegisterDialog:
       let environment = ProcessInfo.processInfo.environment
       WordRegisterDialogView(
-        client: ToolClient.shared,
+        client: AppClient.shared,
         initialWord: environment[kWordRegisterEnvironmentName].flatMap { $0.isEmpty ? nil : $0 },
         initialReading: environment[kWordRegisterEnvironmentReadingName].flatMap { $0.isEmpty ? nil : $0 },
-        launchDictionaryTool: { launchTool(ToolMode.dictionaryTool.rawValue) })
+        launchDictionaryTool: { openApp(AppScreen.dictionaryTool.rawValue) })
     case .aboutDialog:
       AboutDialogView()
     case .errorMessageDialog:
@@ -154,11 +154,11 @@ struct ToolWindowContent: View {
     case .updateDialog:
       UpdateDialogView()
     case .welcome:
-      WelcomeView(client: ToolClient.shared) { launchTool(ToolMode.configDialog.rawValue) }
+      WelcomeView(client: AppClient.shared) { openApp(AppScreen.configDialog.rawValue) }
     }
   }
 
-  static func title(_ mode: ToolMode) -> String {
+  static func title(_ mode: AppScreen) -> String {
     switch mode {
     case .configDialog: tr("Settings", "[ProductName] Settings")
     case .dictionaryTool: tr("DictionaryTool", "[ProductName] Dictionary Tool")
@@ -173,18 +173,18 @@ struct ToolWindowContent: View {
 
 /// The client of the conversion server the dialogs talk to (one per process).
 @MainActor
-enum ToolClient {
-  static let shared = ToolSessionBackend.makeClient()
+enum AppClient {
+  static let shared = AppSessionBackend.makeClient()
 }
 
 /// SingletonWindowHelper: one window per "<mode>.<desktop name>".
 @MainActor
-enum ToolSingleton {
+enum AppSingleton {
   /// Held for the lifetime of the process.
   private static var mutex: ProcessMutex?
 
   /// False if another instance shows this mode already (it is asked to come to the front).
-  static func acquire(_ mode: ToolMode) -> Bool {
+  static func acquire(_ mode: AppScreen) -> Bool {
     if mode == .errorMessageDialog {
       return true
     }
@@ -213,7 +213,7 @@ enum ToolSingleton {
   }
 }
 
-final class ToolAppDelegate: NSObject, NSApplicationDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate {
   func applicationDidFinishLaunching(_ notification: Notification) {
     NSApp.activate()
   }
@@ -221,13 +221,13 @@ final class ToolAppDelegate: NSObject, NSApplicationDelegate {
   func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }
 
   func applicationWillTerminate(_ notification: Notification) {
-    MainActor.assumeIsolated { ToolSingleton.release() }
+    MainActor.assumeIsolated { AppSingleton.release() }
   }
 }
 
-/// Launches another GenmaiTool mode from inside the tool (e.g. "Edit user dictionary..." in the config dialog).
+/// Launches another GenmaiApp mode from inside the app (e.g. "Edit user dictionary..." in the config dialog).
 @MainActor
-enum GenmaiToolLauncher {
+enum GenmaiAppLauncher {
   static func launch(mode: String) {
     let configuration = NSWorkspace.OpenConfiguration()
     configuration.arguments = ["--mode=\(mode)"]
@@ -235,7 +235,7 @@ enum GenmaiToolLauncher {
     NSWorkspace.shared.openApplication(at: Bundle.main.bundleURL, configuration: configuration) {
       _, error in
       if let error {
-        NSLog("GenmaiTool: failed to launch %@: %@", mode, error.localizedDescription)
+        NSLog("GenmaiApp: failed to launch %@: %@", mode, error.localizedDescription)
       }
     }
   }

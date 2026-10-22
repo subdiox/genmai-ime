@@ -191,7 +191,7 @@ private func makeNonDefaultConfig() -> Genmai_Config_Config {
     #expect(client.clearUserPredictionCount == 0)
   }
 
-  @Test func editUserDictionaryLaunchesTool() {
+  @Test func editUserDictionaryOpensApp() {
     let client = ConfigDialogMockClient()
     let model = ConfigDialogModel(client: client)
     model.editUserDictionary()

@@ -178,7 +178,7 @@ public final class AIConversionHook: Sendable {
     return (kept, texts.filter { !kept.contains($0) })
   }
 
-  /// Re-reads `ai_conversion.json` (on the reload notification from GenmaiTool).
+  /// Re-reads `ai_conversion.json` (on the reload notification from GenmaiApp).
   public func reloadSettings() {
     apply(AIConversionSettings.load())
   }

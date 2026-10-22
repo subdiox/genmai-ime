@@ -12,8 +12,8 @@
 //   syncs the user history / learning data to disk);
 // - SYNC_DATA when the IME is deactivated / quits (`syncData()`, async: the session handler does not wait for
 //   the engine, so it awaits the engine's background tasks);
-// - RELOAD when GenmaiTool changed the config or the user dictionary (`reload()`; the config file is re-read
-//   first because the tool wrote it from another process).
+// - RELOAD when GenmaiApp changed the config or the user dictionary (`reload()`; the config file is re-read
+//   first because the Genmai app wrote it from another process).
 // If the data set cannot be loaded, `evalCommand` returns nil (the C++ IPC call failed): the clients then
 // report a fatal server status and every key is passed through to the application.
 //
@@ -94,7 +94,7 @@ public final class SessionHandlerBackend: SessionBackend {
     return evalCommand(input) != nil
   }
 
-  /// Re-reads the config file written by GenmaiTool and reloads the sessions, the user dictionary and the
+  /// Re-reads the config file written by GenmaiApp and reloads the sessions, the user dictionary and the
   /// learning data (RELOAD). The learning data is synced first so that RELOAD (which reads it back from
   /// disk) does not drop what was learned since the last sync.
   @discardableResult
@@ -159,7 +159,7 @@ private final class WatchDogClient: SessionWatchDogClient {
 extension InProcessClient {
   /// A client with its own session on `backend`.
   public static func make(
-    backend: any SessionBackend, toolLauncher: (any ToolLauncher)? = nil,
+    backend: any SessionBackend, toolLauncher: (any AppLauncher)? = nil,
     browserOpener: @escaping @MainActor (String) -> Bool = { _ in false }
   ) -> InProcessClient {
     InProcessClient(

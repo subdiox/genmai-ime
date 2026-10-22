@@ -1,14 +1,14 @@
 // Port of mozc/src/mac/mozc_imk_input_controller.{h,mm} (3.35.6354), the platform-independent part.
 //
 // `GenmaiInputController` holds all the logic of GenmaiImkInputController (key handling, preedit, candidate
-// window, mode switching, reconversion / undo, surrounding text, tool launching). The IMKInputController
+// window, mode switching, reconversion / undo, surrounding text, app launching). The IMKInputController
 // subclass (`GenmaiImkInputController` in GenmaiImkInputController.swift) only forwards InputMethodKit calls to
 // it, which lets the C++ unit tests (mozc_imk_input_controller_test.mm) be ported without an IMKServer.
 //
 // Mapping of the C++ dependencies:
 // - `[self client]` / the `sender` argument -> `any TextInputClient` (IMKTextInput proxy).
 // - `genmaiClient_` -> `any GenmaiClientProtocol`; `genmaiRenderer_` -> `any RendererInterface`.
-// - `MacProcess::LaunchGenmaiTool` -> `any ToolLauncher`; `NSWorkspace openURL` -> `urlOpener`.
+// - `MacProcess::LaunchGenmaiTool` -> `any AppLauncher`; `NSWorkspace openURL` -> `urlOpener`.
 // - `-markForStyle:atRange:` -> `markAttributes` (IMKInputController provides the real attributes).
 // - `performSelector:afterDelay:0` -> a main-actor Task (runs after the current event is handled).
 
@@ -189,7 +189,7 @@ public final class GenmaiInputController: ControllerCallback {
   private var queueGeneration = 0
 
   private let currentClient: @MainActor () -> (any TextInputClient)?
-  private let toolLauncher: (any ToolLauncher)?
+  private let toolLauncher: (any AppLauncher)?
   private let urlOpener: @MainActor (URL) -> Void
   private let markAttributes: @MainActor (Int32) -> [NSAttributedString.Key: Any]
   private let selectionRangeFallback: @MainActor () -> NSRange
@@ -205,7 +205,7 @@ public final class GenmaiInputController: ControllerCallback {
     genmaiClient: any GenmaiClientProtocol,
     renderer: (any RendererInterface)?,
     currentClient: @escaping @MainActor () -> (any TextInputClient)?,
-    toolLauncher: (any ToolLauncher)?,
+    toolLauncher: (any AppLauncher)?,
     urlOpener: @escaping @MainActor (URL) -> Void = { NSWorkspace.shared.open($0) },
     markAttributes: @escaping @MainActor (Int32) -> [NSAttributedString.Key: Any] =
       GenmaiInputController.defaultMarkAttributes,
@@ -398,8 +398,8 @@ public final class GenmaiInputController: ControllerCallback {
         }
       }
     }
-    toolLauncher?.launchTool(
-      mode: ToolMode.wordRegisterDialog.rawValue, extraArg: "", environment: environment)
+    toolLauncher?.openApp(
+      mode: AppScreen.wordRegisterDialog.rawValue, extraArg: "", environment: environment)
   }
 
   /// Conducts the reconvert event.  It could have several tricks such like invoking UNDO instead if
@@ -521,9 +521,9 @@ public final class GenmaiInputController: ControllerCallback {
     if output.hasLaunchToolMode {
       switch output.launchToolMode {
       case .configDialog:
-        toolLauncher?.launchTool(mode: ToolMode.configDialog.rawValue, extraArg: "", environment: [:])
+        toolLauncher?.openApp(mode: AppScreen.configDialog.rawValue, extraArg: "", environment: [:])
       case .dictionaryTool:
-        toolLauncher?.launchTool(mode: ToolMode.dictionaryTool.rawValue, extraArg: "", environment: [:])
+        toolLauncher?.openApp(mode: AppScreen.dictionaryTool.rawValue, extraArg: "", environment: [:])
       case .wordRegisterDialog:
         launchWordRegisterTool(sender)
       default:
@@ -969,12 +969,12 @@ public final class GenmaiInputController: ControllerCallback {
 
   /// "Configure Mozc..." menu item.
   public func configClicked() {
-    toolLauncher?.launchTool(mode: ToolMode.configDialog.rawValue, extraArg: "", environment: [:])
+    toolLauncher?.openApp(mode: AppScreen.configDialog.rawValue, extraArg: "", environment: [:])
   }
 
   /// "Dictionary Tool..." menu item.
   public func dictionaryToolClicked() {
-    toolLauncher?.launchTool(mode: ToolMode.dictionaryTool.rawValue, extraArg: "", environment: [:])
+    toolLauncher?.openApp(mode: AppScreen.dictionaryTool.rawValue, extraArg: "", environment: [:])
   }
 
   /// "Add a word..." menu item.
@@ -984,6 +984,6 @@ public final class GenmaiInputController: ControllerCallback {
 
   /// "About Mozc..." menu item.
   public func aboutDialogClicked() {
-    toolLauncher?.launchTool(mode: ToolMode.aboutDialog.rawValue, extraArg: "", environment: [:])
+    toolLauncher?.openApp(mode: AppScreen.aboutDialog.rawValue, extraArg: "", environment: [:])
   }
 }

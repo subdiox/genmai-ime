@@ -1,7 +1,7 @@
 // AI conversion settings (not part of Mozc).
 //
 // Stored as a small JSON file in the user profile directory (`ai_conversion.json`, next to config1.db), so the
-// Mozc Config proto and config1.db stay byte-compatible with Mozc. GenmaiTool's config dialog writes the file
+// Mozc Config proto and config1.db stay byte-compatible with Mozc. GenmaiApp's config dialog writes the file
 // before it sends SET_CONFIG; the IME re-reads it when it receives the reload notification.
 
 import Foundation
@@ -125,7 +125,7 @@ public struct AIConversionSettings: Codable, Equatable, Sendable {
   }
 }
 
-/// Whether the model files are present (checked without loading the model, so GenmaiTool does not need MLX), and
+/// Whether the model files are present (checked without loading the model, so GenmaiApp does not need MLX), and
 /// which release they are.
 public enum AIModelStatus: Equatable, Sendable {
   /// `info`: nil when the model was not installed from a release (`genmai-cli prepare`, older versions).

@@ -60,7 +60,7 @@ final class IMKTextInputClient: TextInputClient {
   }
 }
 
-/// Process-wide objects shared by all controllers (gRendererReceiver, the renderer, the tool launcher,
+/// Process-wide objects shared by all controllers (gRendererReceiver, the renderer, the app launcher,
 /// and the in-process conversion server).
 ///
 /// The C++ IME talks to one mozc_server process; here one `SessionHandlerBackend` (Engine + SessionHandler)
@@ -80,12 +80,12 @@ public final class GenmaiIMEEnvironment {
   public var aiHook: AIConversionHook? { (backend as? SessionHandlerBackend)?.aiHook }
 
   /// Creates the converter client of a new controller.
-  public lazy var clientFactory: @MainActor (any ToolLauncher) -> any GenmaiClientProtocol = { [unowned self] launcher in
+  public lazy var clientFactory: @MainActor (any AppLauncher) -> any GenmaiClientProtocol = { [unowned self] launcher in
     InProcessClient.make(backend: self.backend, toolLauncher: launcher)
   }
 
   public let rendererReceiver = RendererReceiver()
-  public let toolLauncher = MacToolLauncher()
+  public let toolLauncher = MacAppLauncher()
   public private(set) lazy var renderer: CandidateController = {
     let controller = CandidateController()
     controller.setSendCommandInterface(rendererReceiver)
@@ -106,7 +106,7 @@ public final class GenmaiIMEEnvironment {
 
   private init() {}
 
-  /// Loads the engine, starts the watch dog, observes GenmaiTool notifications and defers the application's
+  /// Loads the engine, starts the watch dog, observes GenmaiApp notifications and defers the application's
   /// termination until the learning data is written (`applicationDelegate`).
   public func start() {
     if let server = backend as? SessionHandlerBackend {
@@ -159,7 +159,7 @@ public final class GenmaiIMEEnvironment {
     await server.syncData()
   }
 
-  /// Observes the reload requests from GenmaiTool (config / user dictionary changes).
+  /// Observes the reload requests from GenmaiApp (config / user dictionary changes).
   public func startObservingToolNotifications() {
     guard observers.isEmpty else { return }
     let observer = DistributedNotificationCenter.default().addObserver(

@@ -1,4 +1,4 @@
-// The About window (tool mode about_dialog): the app icon, name, version and tagline, links to the website, the
+// The About window (app screen about_dialog): the app icon, name, version and tagline, links to the website, the
 // issue tracker and the acknowledgments (credits_en.html: the licenses of Mozc and the other open source software
 // Genmai is built on, which their licenses require to be shown), and the copyright.
 
@@ -27,14 +27,14 @@ public struct AboutDialogContent: Equatable, Sendable {
     creditsURL = URL(filePath: creditsPath)
   }
 
-  /// Where credits_en.html is installed: next to the tool app in Genmai.app/Contents/Resources, or in the tool's
+  /// Where credits_en.html is installed: next to the Genmai app in Genmai.app/Contents/Resources, or in the app's
   /// own resources.
   @MainActor
   public static func defaultCreditsPath() -> String {
-    let besideTool = Bundle.main.bundleURL.deletingLastPathComponent().appendingPathComponent(
+    let besideApp = Bundle.main.bundleURL.deletingLastPathComponent().appendingPathComponent(
       "credits_en.html")
-    if FileManager.default.fileExists(atPath: besideTool.path) {
-      return besideTool.path
+    if FileManager.default.fileExists(atPath: besideApp.path) {
+      return besideApp.path
     }
     return Bundle.main.path(forResource: "credits_en", ofType: "html")
       ?? FileUtil.joinPath(SystemUtil.getDocumentDirectory(), "credits_en.html")

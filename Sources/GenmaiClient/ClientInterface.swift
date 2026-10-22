@@ -57,9 +57,9 @@ public protocol GenmaiClientProtocol: AnyObject {
   func setClientCapability(_ capability: Capability)
 
   /// Launches mozc tool. `mode` is e.g. "config_dialog", "dictionary_tool".
-  @discardableResult func launchTool(mode: String, extraArg: String) -> Bool
+  @discardableResult func openApp(mode: String, extraArg: String) -> Bool
   /// Launches mozc_tool for `output.launchToolMode`; returns false for NO_TOOL / no value.
-  @discardableResult func launchToolWithProtoBuf(_ output: Output) -> Bool
+  @discardableResult func openAppWithProtoBuf(_ output: Output) -> Bool
   @discardableResult func openBrowser(_ url: String) -> Bool
 }
 
@@ -76,19 +76,19 @@ public protocol SendCommandInterface: AnyObject {
   @discardableResult func sendCommand(_ command: SessionCommand) -> Output?
 }
 
-/// Launches the tool app (GenmaiTool.app). Abstracted so that the IME and tests can replace it.
+/// Launches the Genmai app (GenmaiApp.app). Abstracted so that the IME and tests can replace it.
 @MainActor
-public protocol ToolLauncher: AnyObject {
+public protocol AppLauncher: AnyObject {
   /// `mode` is the mozc_tool mode ("config_dialog", "dictionary_tool", "word_register_dialog",
-  /// "about_dialog", "error_message_dialog", ...). `environment` is merged into the tool's environment.
-  @discardableResult func launchTool(mode: String, extraArg: String, environment: [String: String]) -> Bool
+  /// "about_dialog", "error_message_dialog", ...). `environment` is merged into the app's environment.
+  @discardableResult func openApp(mode: String, extraArg: String, environment: [String: String]) -> Bool
 }
 
 /// Mirrors `mozc::kWordRegisterEnvironmentName` (base/const.h).
 public let kWordRegisterEnvironmentName = "default_entry_of_word_register"
 
-/// Tool modes understood by GenmaiTool (gui/tool/mozc_tool_libmain.cc).
-public enum ToolMode: String, CaseIterable, Sendable {
+/// Tool modes understood by GenmaiApp (gui/tool/mozc_tool_libmain.cc).
+public enum AppScreen: String, CaseIterable, Sendable {
   case configDialog = "config_dialog"
   case dictionaryTool = "dictionary_tool"
   case wordRegisterDialog = "word_register_dialog"
@@ -99,7 +99,7 @@ public enum ToolMode: String, CaseIterable, Sendable {
   /// Not in Mozc: the welcome window (opened once by the installer).
   case welcome
 
-  /// Maps `Output.LaunchToolMode` to the tool mode string (client/client.cc LaunchToolWithProtoBuf).
+  /// Maps `Output.LaunchToolMode` to the app screen string (client/client.cc LaunchToolWithProtoBuf).
   public init?(_ mode: Output.ToolMode) {
     switch mode {
     case .configDialog: self = .configDialog

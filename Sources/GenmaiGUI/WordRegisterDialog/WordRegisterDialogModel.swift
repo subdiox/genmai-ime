@@ -1,6 +1,6 @@
 // Port of mozc/src/gui/word_register_dialog/word_register_dialog.{h,cc} (3.35.6354).
 //
-// GetEnv / SetDefaultEntryFromEnvironmentVariable are done by the host (GenmaiTool), which passes the trimmed
+// GetEnv / SetDefaultEntryFromEnvironmentVariable are done by the host (GenmaiApp), which passes the trimmed
 // entries as `initialWord` / `initialReading`. Clipboard fallback and EnableIME are Windows-only and omitted.
 
 import Foundation

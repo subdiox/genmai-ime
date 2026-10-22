@@ -4,11 +4,11 @@
 // - The C++ launches per-mode wrapper apps (ConfigDialog.app,
 //   DictionaryTool.app, ...) from the server directory and passes the mode /
 //   error type through the FLAGS_mode / FLAGS_error_type environment
-//   variables. The Swift bundle ships a single GenmaiTool.app
-//   (SystemUtil.getToolPath()) that takes `--mode=<mode>` and
+//   variables. The Swift bundle ships a single GenmaiApp.app
+//   (SystemUtil.getAppPath()) that takes `--mode=<mode>` and
 //   `--error_type=<type>` arguments, so LaunchGenmaiTool opens that app with
 //   those arguments (a new instance per launch, like the separate C++ apps).
-//   The IME itself uses GenmaiMac.MacToolLauncher, which follows the same
+//   The IME itself uses GenmaiMac.MacAppLauncher, which follows the same
 //   convention.
 // - -[NSWorkspace launchApplication:] is deprecated; openApplication(at:...)
 //   is asynchronous, so the result only says whether the app exists.
@@ -68,8 +68,8 @@ public enum MacProcess {
     #endif
   }
 
-  private static func launchGenmaiToolInternal(_ toolName: String, _ errorType: String) -> Bool {
-    let toolPath = SystemUtil.getToolPath()
+  private static func openGenmaiAppInternal(_ toolName: String, _ errorType: String) -> Bool {
+    let toolPath = SystemUtil.getAppPath()
     if toolPath.isEmpty {
       return false
     }
@@ -81,14 +81,14 @@ public enum MacProcess {
     return openApplication(toolPath, arguments: arguments)
   }
 
-  /// Launches GenmaiTool in mode `toolName` ("config_dialog", "dictionary_tool",
+  /// Launches GenmaiApp in mode `toolName` ("config_dialog", "dictionary_tool",
   /// "word_register_dialog", "about_dialog", ...).
-  public static func launchGenmaiTool(_ toolName: String) -> Bool {
-    launchGenmaiToolInternal(toolName, "")
+  public static func openGenmaiApp(_ toolName: String) -> Bool {
+    openGenmaiAppInternal(toolName, "")
   }
 
-  /// Launches the error message dialog of GenmaiTool.
+  /// Launches the error message dialog of GenmaiApp.
   public static func launchErrorMessageDialog(_ errorType: String) -> Bool {
-    launchGenmaiToolInternal("error_message_dialog", errorType)
+    openGenmaiAppInternal("error_message_dialog", errorType)
   }
 }

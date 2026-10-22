@@ -106,7 +106,7 @@ Then turn on **Use AI conversion** in the same tab. The settings are stored in
 | `Sources/GenmaiDataGen`, `genmai-datagen` | builds the data set (`Data/genmai.data`) from the dictionary sources |
 | `Sources/GenmaiAI`, `genmai-cli` | the genmai model on MLX (tokenizer, prompt, decoder) and its CLI |
 | `Sources/GenmaiClient`, `GenmaiAIClient` | client layer and the AI conversion hook |
-| `Sources/GenmaiMac`, `GenmaiRenderer`, `GenmaiGUI`, `GenmaiIME`, `GenmaiTool`, `GenmaiUninstaller` | the macOS app |
+| `Sources/GenmaiMac`, `GenmaiRenderer`, `GenmaiGUI`, `GenmaiIME`, `GenmaiApp`, `GenmaiUninstaller` | the macOS app |
 | `Vendor/mozc` | upstream Mozc (git submodule): dictionary sources and the reference implementation for parity tests |
 | `Tools/` | build, bundle, installer and parity scripts |
 

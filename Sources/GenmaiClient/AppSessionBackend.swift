@@ -1,12 +1,12 @@
-// The session backend used by the GenmaiTool process (config dialog, dictionary tool, word register, ...).
+// The session backend used by the GenmaiApp process (config dialog, dictionary tool, word register, ...).
 //
 // In C++ the tools talk to mozc_server over IPC (GET_CONFIG / SET_CONFIG / RELOAD / CLEAR_USER_HISTORY ...).
-// The Swift IME has no server process: the tool reads and writes the config file through `ConfigHandler`
+// The Swift IME has no server process: the Genmai app reads and writes the config file through `ConfigHandler`
 // directly and asks the IME process to reload via a distributed notification (`kReloadNotificationName`),
 // which the IME answers by calling `reload()` on its backend.
 //
 // Session commands (the word register dialog's reverse conversion: SEND_KEY ON, CONVERT_REVERSE, REVERT) go to
-// an engine of the tool's own (`SessionHandlerBackend`, created on first use). That engine never learns
+// an engine of the app's own (`SessionHandlerBackend`, created on first use). That engine never learns
 // anything (the dialog only reverts), so it never writes the learning data the IME owns.
 
 import Foundation
@@ -14,18 +14,18 @@ import GenmaiBase
 import GenmaiCore
 import GenmaiProtocol
 
-/// Posted by the tool process after it changed shared data (config, user dictionary).
+/// Posted by the Genmai app process after it changed shared data (config, user dictionary).
 /// The `object` is the command name ("reload", "clear_user_history", "clear_user_prediction").
 public let kReloadNotificationName = Notification.Name("io.github.subdiox.genmai.inputmethod.Japanese.Reload")
 
 @MainActor
-public final class ToolSessionBackend: SessionBackend {
+public final class AppSessionBackend: SessionBackend {
   private let notify: @MainActor (String) -> Void
   private let sessionBackendFactory: @MainActor () -> any SessionBackend
   private var sessionBackend: (any SessionBackend)?
 
   public init(
-    notify: @escaping @MainActor (String) -> Void = ToolSessionBackend.postDistributedNotification,
+    notify: @escaping @MainActor (String) -> Void = AppSessionBackend.postDistributedNotification,
     sessionBackendFactory: @escaping @MainActor () -> any SessionBackend = { SessionHandlerBackend() }
   ) {
     self.notify = notify
@@ -46,10 +46,10 @@ public final class ToolSessionBackend: SessionBackend {
       kReloadNotificationName, object: command, userInfo: nil, deliverImmediately: true)
   }
 
-  /// A client for the tool process.
+  /// A client for the Genmai app process.
   public static func makeClient() -> InProcessClient {
     InProcessClient(
-      backend: ToolSessionBackend(),
+      backend: AppSessionBackend(),
       initialConfig: ConfigHandler.getCopiedConfig(),
       directModeKeysExtractor: { _ in [] })
   }

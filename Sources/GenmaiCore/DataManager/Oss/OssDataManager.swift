@@ -4,7 +4,7 @@
 // executable. The Swift port memory-maps the data set file instead:
 // `$GENMAI_DATA_FILE` if set, else `genmai.data` in the resources of the running
 // app bundle (Mozc.app/Contents/Resources, installed by
-// Tools/make_ime_bundle.sh; the tool app (Genmai.app), which lives in that directory, finds
+// Tools/make_ime_bundle.sh; the Genmai app (Genmai.app), which lives in that directory, finds
 // it next to itself), else `Data/genmai.data` at the repository root (created by
 // Tools/build_oracle.sh) for development builds and tests.
 

@@ -54,7 +54,7 @@ Total runtime C++ lines in scope (incl. headers/comments): 119435
 | base/file_util_mock | 192 | T (GenmaiBase/FileUtilMock.swift) |
 | base/vlog | 112 | n/a (MOZC_VLOG → GenmaiLog) |
 | base/mac/mac_util | 456 | T (GenmaiBase/Mac/MacUtil.swift: directories, OS version, serial number; GetFrontmostWindowNameAndOwner / IsSuppressSuggestionWindow in GenmaiMac/MacWindowUtil.swift; StartLaunchdService and the prelauncher login-item functions n/a: no launchd converter/renderer services, no prelauncher in the in-process architecture) |
-| base/mac/mac_process | 182 | T (GenmaiBase/Mac/MacProcess.swift: OpenBrowserForMac, OpenApplication, LaunchGenmaiTool / LaunchErrorMessageDialog open the tool app (GenmaiTool, installed as Genmai.app in Genmai.app/Contents/Resources) with --mode / --error_type; the IME uses GenmaiMac/MacToolLauncher with the same convention) |
+| base/mac/mac_process | 182 | T (GenmaiBase/Mac/MacProcess.swift: OpenBrowserForMac, OpenApplication, LaunchGenmaiTool / LaunchErrorMessageDialog open the Genmai app (GenmaiApp, installed as Genmai.app in Genmai.app/Contents/Resources) with --mode / --error_type; the IME uses GenmaiMac/MacAppLauncher with the same convention) |
 | base/mac/scoped_cftyperef | 74 | n/a (CF types are ARC-managed in Swift) |
 | base/port/reversed_view, varint (+ _internal) | 277 | n/a (no runtime user in 3.35.6354; C++ template helpers) |
 | base/protobuf/* (coded_stream, descriptor, message, text_format, ...) | - | n/a (protobuf aliases; swift-protobuf in GenmaiProtocol) |
@@ -365,7 +365,7 @@ importer are ported. The non-Qt parts of the GUI import path live here too.
 | gui/config_dialog/character_form_editor | 254 | T (SwiftUI) |
 | gui/config_dialog/combobox_delegate | 161 | P (SwiftUI Picker) |
 | gui/config_dialog/config_dialog | 928 | T (SwiftUI) |
-| gui/config_dialog/config_dialog_libmain | 63 | P (GenmaiTool) |
+| gui/config_dialog/config_dialog_libmain | 63 | P (GenmaiApp) |
 | gui/config_dialog/generic_table_editor | 433 | T (SwiftUI) |
 | gui/config_dialog/keybinding_editor | 629 | T (SwiftUI) |
 | gui/config_dialog/keybinding_editor_delegate | 189 | P (SwiftUI) |
@@ -373,19 +373,19 @@ importer are ported. The non-Qt parts of the GUI import path live here too.
 | gui/config_dialog/roman_table_editor | 359 | T (SwiftUI) |
 | gui/dictionary_tool/dictionary_content_table_widget | 158 | P (SwiftUI Table) |
 | gui/dictionary_tool/dictionary_tool | 1836 | T (SwiftUI) |
-| gui/dictionary_tool/dictionary_tool_libmain | 74 | P (GenmaiTool) |
+| gui/dictionary_tool/dictionary_tool_libmain | 74 | P (GenmaiApp) |
 | gui/dictionary_tool/find_dialog | 223 | T (SwiftUI) |
 | gui/dictionary_tool/import_dialog | 277 | T (SwiftUI) |
 | gui/dictionary_tool/zero_width_splitter | 111 | n/a (HSplitView) |
-| gui/word_register_dialog/word_register_dialog | 590 | T (SwiftUI; GetReading uses real reverse conversion through GenmaiClient/ToolSessionBackend, as in C++) |
-| gui/word_register_dialog/word_register_dialog_libmain | 65 | P (GenmaiTool) |
+| gui/word_register_dialog/word_register_dialog | 590 | T (SwiftUI; GetReading uses real reverse conversion through GenmaiClient/AppSessionBackend, as in C++) |
+| gui/word_register_dialog/word_register_dialog_libmain | 65 | P (GenmaiApp) |
 | gui/about_dialog/about_dialog | 225 | T (SwiftUI) |
-| gui/about_dialog/about_dialog_libmain | 60 | P (GenmaiTool) |
+| gui/about_dialog/about_dialog_libmain | 60 | P (GenmaiApp) |
 | gui/base/debug_util | 119 | n/a (Qt) |
 | gui/base/encoding_util | 199 | T (GenmaiCore/UserDictionaryClient) |
 | gui/base/msime_user_dictionary_importer | 307 | n/a (Windows) |
 | gui/base/setup_util | 237 | n/a (Windows) |
-| gui/base/singleton_window_helper | 237 | P (GenmaiTool) |
+| gui/base/singleton_window_helper | 237 | P (GenmaiApp) |
 | gui/base/sjis_to_ucs2_table | 11319 | T (GenmaiCore/UserDictionaryClient) |
 | gui/base/stats_config_util | 298 | n/a (OSS: usage stats off) |
 | gui/base/table_util | 106 | n/a (Qt) |
@@ -393,12 +393,12 @@ importer are ported. The non-Qt parts of the GUI import path live here too.
 | gui/base/win_util | 405 | n/a (Windows) |
 | gui/base/window_title_modifier | 113 | n/a (Qt) |
 | gui/error_message_dialog/error_message_dialog | 209 | T (SwiftUI) |
-| gui/error_message_dialog/error_message_dialog_libmain | 60 | P (GenmaiTool `--mode=error_message_dialog --error_type=...`) |
+| gui/error_message_dialog/error_message_dialog_libmain | 60 | P (GenmaiApp `--mode=error_message_dialog --error_type=...`) |
 | gui/administration_dialog/* | 271 | n/a (Windows only) |
 | gui/post_install_dialog/* | 253 | n/a (Windows only, see mozc_tool_libmain) |
 | gui/tool/prelauncher_libmain | 69 | n/a (macOS login-item prelauncher that starts the converter / renderer servers early; nothing to pre-launch in-process. The config dialog's startup checkbox is a no-op in the OSS-build platform hooks) |
 | gui/tool/mozc_tool_main_noqt | 34 | n/a (non-Qt stub) |
-| gui/tool/mozc_tool_libmain | 207 | P (GenmaiTool) |
+| gui/tool/mozc_tool_libmain | 207 | P (GenmaiApp) |
 | client/client_interface | 225 | P (GenmaiClient) |
 | client/client | 1215 | T (GenmaiClient/InProcessClient; direct-mode key check via KeyInfoUtil, DELETE_SESSION on deinit; IPC parts n/a) |
 | client/client_mock | 98 | T (test target: GenmaiMacTests/Mocks.swift) |
@@ -407,7 +407,7 @@ importer are ported. The non-Qt parts of the GUI import path live here too.
 
 The IME app layer runs the converter and the renderer in the IME process: `GenmaiClient.InProcessClient` builds the
 same `commands::Input` messages as client/client.cc and hands them to `SessionHandlerBackend`, which owns the
-Engine (OSS data set) and GenmaiSession's SessionHandler (`FakeSessionBackend` is kept for UI tests only). GenmaiTool
+Engine (OSS data set) and GenmaiSession's SessionHandler (`FakeSessionBackend` is kept for UI tests only). GenmaiApp
 talks to the IME through the config file and a distributed "reload" notification instead of IPC. The IME keeps its
 user profile (learning data, user dictionary, settings) in `~/Library/Application Support/Genmai`, separate from an
 installed C++ Mozc.

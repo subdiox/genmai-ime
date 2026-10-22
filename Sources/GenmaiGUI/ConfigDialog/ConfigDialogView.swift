@@ -64,15 +64,15 @@ enum SettingsPane: String, CaseIterable, Identifiable {
 }
 
 public struct ConfigDialogView: View {
-  /// The window's ideal size; the tool's window follows it (`sizingOptions = .preferredContentSize`). It is the
+  /// The window's ideal size; the app's window follows it (`sizingOptions = .preferredContentSize`). It is the
   /// same for every pane so that the window does not jump when the selection changes; the panes scroll.
   public static let idealSize = CGSize(width: 760, height: 620)
 
   @State private var model: ConfigDialogModel
   @State private var selection: SettingsPane? = .general
 
-  public init(client: any GenmaiClientProtocol, launchTool: @escaping @MainActor (String) -> Void = { _ in }) {
-    let model = ConfigDialogModel(client: client, launchTool: launchTool)
+  public init(client: any GenmaiClientProtocol, openApp: @escaping @MainActor (String) -> Void = { _ in }) {
+    let model = ConfigDialogModel(client: client, openApp: openApp)
     model.savesChangesAutomatically = true
     _model = State(initialValue: model)
   }
@@ -544,12 +544,12 @@ struct UpdatesPane: View {
   }
 }
 
-/// Opens the uninstaller, which lives next to the tool app in Genmai.app/Contents/Resources.
+/// Opens the uninstaller, which lives next to the Genmai app in Genmai.app/Contents/Resources.
 @MainActor
 enum UninstallerLauncher {
   static let appName = "UninstallGenmai.app"
 
-  /// nil when the tool does not run from the input method bundle (development builds).
+  /// nil when the app does not run from the input method bundle (development builds).
   static var url: URL? {
     let url = Bundle.main.bundleURL.deletingLastPathComponent().appending(path: appName)
     return FileManager.default.fileExists(atPath: url.path(percentEncoded: false)) ? url : nil

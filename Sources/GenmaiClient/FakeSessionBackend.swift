@@ -39,7 +39,7 @@ public final class FakeSessionBackend: SessionBackend {
   }
 
   /// Convenience: an `InProcessClient` talking to a fresh fake backend.
-  public static func makeClient(toolLauncher: (any ToolLauncher)? = nil) -> InProcessClient {
+  public static func makeClient(toolLauncher: (any AppLauncher)? = nil) -> InProcessClient {
     InProcessClient(
       backend: FakeSessionBackend(),
       initialConfig: ConfigHandler.getCopiedConfig(),

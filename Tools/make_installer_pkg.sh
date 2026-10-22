@@ -16,7 +16,7 @@
 # Not ported: /Library/LaunchAgents/org.mozc.inputmethod.Japanese.{Converter,Renderer}.plist. The C++ starts
 # mozc_server and mozc_renderer through launchd; the Swift IME runs both in-process, so there is nothing to
 # launch. The Qt ConfigDialog / DictionaryTool symlinks in /Applications/Mozc (TweakForProductbuild with Qt)
-# are n/a as well: the dialogs live in the tool app inside the input method bundle.
+# are n/a as well: the dialogs live in the Genmai app inside the input method bundle.
 #
 # As in build_package.py, the component plist from `pkgbuild --analyze` gets BundleOverwriteAction = "" so an
 # upgrade overwrites the bundle in place and keeps the input source registration (google/mozc#1439). In

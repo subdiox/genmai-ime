@@ -1,4 +1,4 @@
-// The welcome window (tool mode welcome; not part of Mozc). The installer opens it once after the first installation
+// The welcome window (app screen welcome; not part of Mozc). The installer opens it once after the first installation
 // (Tools/installer/postflight_template.sh): it says how to switch to Genmai and offers to turn on AI conversion,
 // which is off by default and needs the model (downloaded here like the settings' Download button). A marker file
 // in the user profile keeps it from showing again after updates.

@@ -178,7 +178,7 @@ struct UpdateInstallView: View {
   }
 }
 
-/// The update dialog (tool mode update_dialog): checks when shown and offers the newest release with its notes.
+/// The update dialog (app screen update_dialog): checks when shown and offers the newest release with its notes.
 public struct UpdateDialogView: View {
   @State private var update: GenmaiUpdateModel
   @Environment(\.closeDialog) private var closeDialog

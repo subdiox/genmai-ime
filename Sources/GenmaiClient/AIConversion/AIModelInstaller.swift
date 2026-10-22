@@ -1,6 +1,6 @@
 // Download and installation of the genmai model (not part of Mozc).
 //
-// The model is not bundled with the IME. The config dialog (GenmaiTool) and `genmai-cli install` look up the newest
+// The model is not bundled with the IME. The config dialog (GenmaiApp) and `genmai-cli install` look up the newest
 // release on Hugging Face (`GenmaiModelRelease.latest`: the highest vX.Y.Z tag whose config.json this IME can run)
 // and download its weights in the runtime layout GenmaiAI loads (`AIModelVariant`: `model-8bit.safetensors`, the
 // linear layers quantized to 8 bits, 0.34 GB, the default; or `model-bf16.safetensors`, 0.62 GB), with config.json

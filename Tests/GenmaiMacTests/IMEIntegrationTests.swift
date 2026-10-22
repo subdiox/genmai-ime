@@ -52,7 +52,7 @@ final class IMEFixture {
   let client: InProcessClient
   let textClient = MockTextInputClient()
   let renderer = MockRenderer()
-  let toolLauncher = MockToolLauncher()
+  let toolLauncher = MockAppLauncher()
   let controller: GenmaiInputController
   private(set) var committed: [String] = []
   private var lastInsertCount = 0
@@ -316,7 +316,7 @@ struct IMEIntegrationTests {
   @Test func reloadNotificationAndDirectModeKeys() async throws {
     try await withIMEEnvironment {
       let ime = try IMEFixture()
-      // GenmaiTool writes the config file and posts RELOAD: the server re-reads it.
+      // GenmaiApp writes the config file and posts RELOAD: the server re-reads it.
       var config = ConfigHandler.getCopiedConfig()
       config.incognitoMode = true
       ConfigHandler.setConfig(config)

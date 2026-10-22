@@ -60,7 +60,7 @@ import Testing
 
   private func completeReadingAndLimits(_ path: String) {
     do {
-      let client = InProcessClient.make(backend: ToolSessionBackend(notify: { _ in }))
+      let client = InProcessClient.make(backend: AppSessionBackend(notify: { _ in }))
       let model = WordRegisterDialogModel(
         client: client, initialWord: nil, initialReading: nil, storage: UserDictionaryStorage(path))
       #expect(model.word.isEmpty)

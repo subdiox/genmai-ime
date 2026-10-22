@@ -37,7 +37,7 @@ Layers: GenmaiProtocol / GenmaiBase / GenmaiStorage → GenmaiCore → GenmaiSes
 | GenmaiCore/Config, Request, Composer, Transliteration, Dictionary, Converter, Rewriter (all 31), Prediction, Engine | same names | |
 | GenmaiSession | session/, usage_stats/ | |
 | genmai-engine | converter_main | CLI printing the oracle's format, for parity |
-| GenmaiClient, GenmaiRenderer, GenmaiGUI, GenmaiMac, GenmaiIME, GenmaiTool, GenmaiUninstaller | client/, renderer/, gui/, mac/ | InputMethodKit app; SwiftUI UI |
+| GenmaiClient, GenmaiRenderer, GenmaiGUI, GenmaiMac, GenmaiIME, GenmaiApp, GenmaiUninstaller | client/, renderer/, gui/, mac/ | InputMethodKit app; SwiftUI UI |
 | GenmaiAI, genmai-cli | — | the genmai model on MLX; independent of GenmaiCore |
 | GenmaiClient/AIConversion, GenmaiAIClient | — | the IME's AI conversion hook and its genmai augmenter |
 
@@ -247,9 +247,9 @@ unchanged; the hook only forwards). GenmaiCore and GenmaiSession contain no AI c
 ## GUI design (not in Mozc)
 
 The windows keep Mozc's options and dialog logic (`ConfigDialogModel`, `DictionaryToolModel`, ...) but not its
-Qt layouts. GenmaiTool is a SwiftUI `App` with one `Window` scene per process (id = the mode, so SwiftUI keeps a
+Qt layouts. GenmaiApp is a SwiftUI `App` with one `Window` scene per process (id = the mode, so SwiftUI keeps a
 frame per mode), so the windows get the system's chrome; startup checks (mode, run level, singleton, welcome
-marker) run in `GenmaiToolApp.init`, closing the window quits. the settings window is a sidebar of panes (General / Input / Conversion / Suggestions / AI / Privacy /
+marker) run in `GenmaiApplication.init`, closing the window quits. the settings window is a sidebar of panes (General / Input / Conversion / Suggestions / AI / Privacy /
 Updates), each starting with a System Settings-like header (icon, name, summary; no toolbar title), whose edits are saved automatically (`savesChangesAutomatically`, 300 ms after the last edit and on
 close; no OK / Cancel / Apply), the candidate window a Liquid Glass panel (window background at 70 % underneath for legibility; metrics in
 `CandidateDesign`, the infolist a card layout in `InfolistDesign` instead of renderer_style.textproto), the
@@ -263,8 +263,8 @@ table; use "…" and "ユーザー".
 
 ## App updates and releases (not in Mozc)
 
-- The tool app (product GenmaiTool) is bundled as `Genmai.app/Contents/Resources/Genmai.app` with executable
-  `Genmai` (`GenmaiConst.kGenmaiTool`), so the Dock, the app switcher and Activity Monitor show "Genmai". The user
+- The Genmai app (product GenmaiApp) is bundled as `Genmai.app/Contents/Resources/Genmai.app` with executable
+  `Genmai` (`GenmaiConst.kGenmaiApp`), so the Dock, the app switcher and Activity Monitor show "Genmai". The user
   facing copyright is "Copyright © 2026 subdiox"; Mozc's license notices stay in `credits_en.html` (linked from the
   About dialog; required by Mozc's BSD license). Google-only features (usage statistics upload, uninstall survey)
   were removed.
@@ -279,13 +279,13 @@ table; use "…" and "ユーザー".
   package and creates the release (a manual run only builds and keeps the package as an artifact).
   `Tools/make_release.sh [--publish]` does the same locally. The package installs into `/Library/Input Methods`,
   removes a copy in the console user's `~/Library/Input Methods` (same bundle id), needs no logout, and opens the
-  welcome window (tool mode `welcome`, `GenmaiGUI/Welcome`: how to switch to Genmai, "Turn On AI Conversion" =
+  welcome window (app screen `welcome`, `GenmaiGUI/Welcome`: how to switch to Genmai, "Turn On AI Conversion" =
   model download + `enabled`) once per user (marker `<profile>/welcome_shown`).
 - Updates (GenmaiClient/Update): `GenmaiAppRelease.latest` (GitHub API `/repos/.../releases`: highest vX.Y.Z, no
   drafts / pre-releases, with a .pkg asset; size + SHA-256 `digest`), `GenmaiUpdater.download` (shared
   `FileDownload`, also used by the model installer), `GenmaiUpdateSettings` (`<profile>/update.json`:
   `automatic_check` (default on), `last_check`, `skipped_version`). The IME (`GenmaiMac/GenmaiUpdateChecker`) checks
-  once a day and posts a notification that opens the tool mode `update_dialog`; the config dialog's tab "Misc" has
+  once a day and posts a notification that opens the app screen `update_dialog`; the config dialog's tab "Misc" has
   the "Updates" section (`GenmaiUpdateModel`). The downloaded package has no quarantine attribute and is opened with
   Installer.
 

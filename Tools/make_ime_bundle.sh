@@ -1,5 +1,5 @@
 #!/bin/zsh
-# Builds the macOS input method bundle build/Genmai.app from the SwiftPM products GenmaiIME and GenmaiTool.
+# Builds the macOS input method bundle build/Genmai.app from the SwiftPM products GenmaiIME and GenmaiApp.
 #
 # Layout (mirrors the C++ Mozc.app built by mac/BUILD.bazel, minus the separate server/renderer processes,
 # which run in-process in the Swift port):
@@ -15,9 +15,9 @@
 #   Genmai.app/Contents/Resources/{English,Japanese}.lproj/InfoPlist.strings
 #   Genmai.app/Contents/Resources/credits_en.html  <- data/installer/credits_en.html
 #   Genmai.app/Contents/Resources/genmai.data        <- Data/genmai.data (the OSS data set, Tools/build_oracle.sh);
-#                                                   OssDataManager finds it via Bundle.main (the tool app
+#                                                   OssDataManager finds it via Bundle.main (the Genmai app
 #                                                   finds it next to itself)
-#   Genmai.app/Contents/Resources/Genmai.app       <- GenmaiTool (config dialog, dictionary tool, word register,
+#   Genmai.app/Contents/Resources/Genmai.app       <- GenmaiApp (config dialog, dictionary tool, word register,
 #                                                   about, error, update), named after the product so that the
 #                                                   Dock, the app switcher and Activity Monitor show "Genmai"
 #   Genmai.app/Contents/Resources/UninstallGenmai.app <- Tools/make_uninstaller_bundle.sh, opened from the
@@ -81,9 +81,9 @@ if [[ ! -f $UPSTREAM_SRC/mac/Info.plist ]]; then
   exit 1
 fi
 
-echo "==> swift build -c $CONFIGURATION (GenmaiIME, GenmaiTool)"
+echo "==> swift build -c $CONFIGURATION (GenmaiIME, GenmaiApp)"
 swift build --package-path "$ROOT" --build-path "$BUILD_PATH" -c $CONFIGURATION --product GenmaiIME
-swift build --package-path "$ROOT" --build-path "$BUILD_PATH" -c $CONFIGURATION --product GenmaiTool
+swift build --package-path "$ROOT" --build-path "$BUILD_PATH" -c $CONFIGURATION --product GenmaiApp
 BIN_DIR=$(swift build --package-path "$ROOT" --build-path "$BUILD_PATH" -c $CONFIGURATION --show-bin-path)
 
 echo "==> mlx.metallib (Tools/build_mlx_metallib.sh, safe math)"
@@ -138,10 +138,10 @@ for lproj in English Japanese; do
   plutil -lint "$OUT/Contents/Resources/$lproj.lproj/InfoPlist.strings" >/dev/null
 done
 
-# --- Genmai.app in Contents/Resources (GenmaiTool, the dialogs) ---
+# --- Genmai.app in Contents/Resources (GenmaiApp, the dialogs) ---
 TOOL=$OUT/Contents/Resources/$PRODUCT_NAME.app
 mkdir -p "$TOOL/Contents/MacOS" "$TOOL/Contents/Resources"
-cp "$BIN_DIR/GenmaiTool" "$TOOL/Contents/MacOS/$PRODUCT_NAME"
+cp "$BIN_DIR/GenmaiApp" "$TOOL/Contents/MacOS/$PRODUCT_NAME"
 cp "$ROOT/Tools/assets/genmai.icns" "$TOOL/Contents/Resources/product_icon.icns"
 cp "$ROOT/Tools/assets/product_logo.png" "$TOOL/Contents/Resources/product_logo.png"
 cat >| "$TOOL/Contents/Info.plist" <<PLIST

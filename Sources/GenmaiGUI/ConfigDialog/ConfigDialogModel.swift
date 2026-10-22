@@ -304,7 +304,7 @@ public final class ConfigDialogModel {
   public var activeEditor: ConfigDialogEditor?
 
   private let client: any GenmaiClientProtocol
-  private let launchTool: @MainActor (String) -> Void
+  private let openApp: @MainActor (String) -> Void
   private var baseConfig = Genmai_Config_Config()
   private var isLoading = false
   private let aiSettingsURL: URL?
@@ -316,13 +316,13 @@ public final class ConfigDialogModel {
   /// `aiSettingsURL`: where the AI settings are stored (nil: `AIConversionSettings.fileURL` in the profile).
   public init(
     client: any GenmaiClientProtocol,
-    launchTool: @escaping @MainActor (String) -> Void = { _ in },
+    openApp: @escaping @MainActor (String) -> Void = { _ in },
     aiSettingsURL: URL? = nil,
     appUpdate: GenmaiUpdateModel? = nil
   ) {
     self.appUpdate = appUpdate ?? GenmaiUpdateModel()
     self.client = client
-    self.launchTool = launchTool
+    self.openApp = openApp
     self.aiSettingsURL = aiSettingsURL
     reload()
   }
@@ -563,8 +563,8 @@ public final class ConfigDialogModel {
   /// "Edit user dictionary...".
   public func editUserDictionary() {
     markButtonClicked()
-    if !client.launchTool(mode: "dictionary_tool", extraArg: "") {
-      launchTool("dictionary_tool")
+    if !client.openApp(mode: "dictionary_tool", extraArg: "") {
+      openApp("dictionary_tool")
     }
   }
 

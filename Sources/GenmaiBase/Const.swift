@@ -21,9 +21,9 @@ public enum GenmaiConst {
   public static let kGenmaiServerName = kProductPrefix + "Converter.app"
   /// kGenmaiRenderer = kProductPrefix "Renderer.app"
   public static let kGenmaiRenderer = kProductPrefix + "Renderer.app"
-  /// The tool app (the dialogs) in Genmai.app/Contents/Resources. The C++ kMozcTool is kProductPrefix "Tool.app";
+  /// The Genmai app (the dialogs) in Genmai.app/Contents/Resources. The C++ kMozcTool is kProductPrefix "Tool.app";
   /// the port names it after the product, so that the Dock, the app switcher and Activity Monitor show "Genmai".
-  public static let kGenmaiTool = kProductPrefix + ".app"
+  public static let kGenmaiApp = kProductPrefix + ".app"
   /// kEventPathPrefix
   public static let kEventPathPrefix = "Genmai.event."
 

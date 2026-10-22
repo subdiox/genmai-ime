@@ -3,7 +3,7 @@
 
 import SwiftUI
 
-/// Closes the window hosting the dialog. The host (GenmaiTool) installs it; `QDialog::accept/reject` map to it.
+/// Closes the window hosting the dialog. The host (GenmaiApp) installs it; `QDialog::accept/reject` map to it.
 public struct CloseDialogAction: Sendable {
   private let action: @MainActor @Sendable () -> Void
 

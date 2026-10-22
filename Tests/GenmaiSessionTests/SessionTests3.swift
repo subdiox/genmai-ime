@@ -1097,7 +1097,7 @@ func makeTable(_ request: Genmai_Commands_Request) -> Table {
     }
   }
 
-  @Test func launchTool() throws {
+  @Test func openApp() throws {
     try withScopedSessionEnvironment {
       let f = try SessionTestFixture()
       let engine = MockEngine()

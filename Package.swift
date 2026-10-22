@@ -28,7 +28,7 @@ let package = Package(
         .library(name: "GenmaiGUI", targets: ["GenmaiGUI"]),
         .library(name: "GenmaiMac", targets: ["GenmaiMac"]),
         .executable(name: "GenmaiIME", targets: ["GenmaiIME"]),
-        .executable(name: "GenmaiTool", targets: ["GenmaiTool"]),
+        .executable(name: "GenmaiApp", targets: ["GenmaiApp"]),
         .executable(name: "GenmaiUninstaller", targets: ["GenmaiUninstaller"]),
         // genmai: LLM-based kana-kanji conversion (GPT-2 char-level model on MLX).
         .library(name: "GenmaiAI", targets: ["GenmaiAI"]),
@@ -61,7 +61,7 @@ let package = Package(
         ),
         // IME app layer. GenmaiClient mirrors client/ (ClientInterface + user dictionary storage/importer);
         // GenmaiRenderer mirrors renderer/ (+ renderer/mac with SwiftUI views); GenmaiGUI mirrors gui/ (SwiftUI);
-        // GenmaiMac mirrors mac/ (KeyCodeMap, the IMK input controller); GenmaiIME / GenmaiTool are the app entry points.
+        // GenmaiMac mirrors mac/ (KeyCodeMap, the IMK input controller); GenmaiIME / GenmaiApp are the app entry points.
         .target(
             name: "GenmaiClient",
             dependencies: ["GenmaiBase", "GenmaiProtocol", "GenmaiCore", "GenmaiSession"],
@@ -90,7 +90,7 @@ let package = Package(
             swiftSettings: swiftSettings
         ),
         .executableTarget(
-            name: "GenmaiTool",
+            name: "GenmaiApp",
             dependencies: ["GenmaiGUI", "GenmaiClient", "GenmaiBase"],
             swiftSettings: swiftSettings
         ),

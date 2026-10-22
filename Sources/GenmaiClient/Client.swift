@@ -47,7 +47,7 @@ public final class InProcessClient: GenmaiClientProtocol {
 
   private let backend: any SessionBackend
   private let directModeKeysExtractor: DirectModeKeysExtractor
-  private let toolLauncher: (any ToolLauncher)?
+  private let toolLauncher: (any AppLauncher)?
   private let browserOpener: @MainActor (String) -> Bool
 
   private(set) var id: UInt64 = 0
@@ -63,7 +63,7 @@ public final class InProcessClient: GenmaiClientProtocol {
     backend: any SessionBackend,
     initialConfig: Config,
     directModeKeysExtractor: @escaping DirectModeKeysExtractor = { KeyInfoUtil.extractSortedDirectModeKeys($0) },
-    toolLauncher: (any ToolLauncher)? = nil,
+    toolLauncher: (any AppLauncher)? = nil,
     browserOpener: @escaping @MainActor (String) -> Bool = { _ in false }
   ) {
     self.backend = backend
@@ -89,7 +89,7 @@ public final class InProcessClient: GenmaiClientProtocol {
     }
   }
 
-  /// Re-extracts the direct mode keys, e.g. after another process (GenmaiTool) changed the keymap.
+  /// Re-extracts the direct mode keys, e.g. after another process (GenmaiApp) changed the keymap.
   public func updateDirectModeKeys(_ config: Config) {
     directModeKeys = directModeKeysExtractor(config)
   }
@@ -315,7 +315,7 @@ public final class InProcessClient: GenmaiClientProtocol {
     self.request = request
   }
 
-  public func launchTool(mode: String, extraArg: String) -> Bool {
+  public func openApp(mode: String, extraArg: String) -> Bool {
     if !isValidRunLevel() {
       return false
     }
@@ -324,15 +324,15 @@ public final class InProcessClient: GenmaiClientProtocol {
     if mode.isEmpty || mode.utf8.count >= kModeMaxSize {
       return false
     }
-    return toolLauncher?.launchTool(mode: mode, extraArg: extraArg, environment: [:]) ?? false
+    return toolLauncher?.openApp(mode: mode, extraArg: extraArg, environment: [:]) ?? false
   }
 
-  public func launchToolWithProtoBuf(_ output: Output) -> Bool {
-    guard output.hasLaunchToolMode, let mode = ToolMode(output.launchToolMode) else {
+  public func openAppWithProtoBuf(_ output: Output) -> Bool {
+    guard output.hasLaunchToolMode, let mode = AppScreen(output.launchToolMode) else {
       return false
     }
     // TODO(nona): extends output message to support extra argument.
-    return launchTool(mode: mode.rawValue, extraArg: "")
+    return openApp(mode: mode.rawValue, extraArg: "")
   }
 
   public func openBrowser(_ url: String) -> Bool {

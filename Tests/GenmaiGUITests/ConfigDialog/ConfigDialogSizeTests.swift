@@ -1,4 +1,4 @@
-// The settings window keeps its size whichever pane is shown (the tool's window follows the preferred content
+// The settings window keeps its size whichever pane is shown (the app's window follows the preferred content
 // size).
 
 import AppKit

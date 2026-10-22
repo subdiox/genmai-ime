@@ -509,7 +509,7 @@ private var isCompositionModeXCommandSupported: Bool {
     }
   }
 
-  @Test func launchToolTest() {
+  @Test func openAppTest() {
     withScopedSessionEnvironment {
       do {  // ATOK
         let manager = KeyMapManager(getDefaultConfig(.atok))

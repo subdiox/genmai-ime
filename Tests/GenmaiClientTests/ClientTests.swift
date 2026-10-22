@@ -43,9 +43,9 @@ final class RecordingBackend: SessionBackend {
 }
 
 @MainActor
-final class RecordingLauncher: ToolLauncher {
+final class RecordingLauncher: AppLauncher {
   var modes: [String] = []
-  func launchTool(mode: String, extraArg: String, environment: [String: String]) -> Bool {
+  func openApp(mode: String, extraArg: String, environment: [String: String]) -> Bool {
     modes.append(mode)
     return true
   }
@@ -141,18 +141,18 @@ private func key(_ c: Character) -> KeyEvent {
     #expect(!client.isDirectModeCommand(key("a")))
   }
 
-  @Test func launchToolWithProtoBuf() {
+  @Test func openAppWithProtoBuf() {
     let launcher = RecordingLauncher()
     let client = makeClient(RecordingBackend(), launcher: launcher)
     var output = Output()
-    #expect(!client.launchToolWithProtoBuf(output))
+    #expect(!client.openAppWithProtoBuf(output))
     output.launchToolMode = .noTool
-    #expect(!client.launchToolWithProtoBuf(output))
+    #expect(!client.openAppWithProtoBuf(output))
     output.launchToolMode = .dictionaryTool
-    #expect(client.launchToolWithProtoBuf(output))
+    #expect(client.openAppWithProtoBuf(output))
     #expect(launcher.modes == ["dictionary_tool"])
-    #expect(!client.launchTool(mode: "", extraArg: ""))
-    #expect(!client.launchTool(mode: String(repeating: "x", count: 32), extraArg: ""))
+    #expect(!client.openApp(mode: "", extraArg: ""))
+    #expect(!client.openApp(mode: String(repeating: "x", count: 32), extraArg: ""))
   }
 }
 

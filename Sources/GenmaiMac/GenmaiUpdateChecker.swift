@@ -3,7 +3,7 @@
 // While the input method runs, it looks up the newest release once a day (`GenmaiUpdateSettings.isCheckDue`; the
 // time of the last check is shared with the settings, so a check there counts too) if "Check for updates
 // automatically" is on. A release newer than the running version that the user did not skip is announced with a
-// notification once per version; clicking it opens the update dialog of the tool app. Nothing is downloaded
+// notification once per version; clicking it opens the update dialog of the Genmai app. Nothing is downloaded
 // without the user.
 
 import AppKit
@@ -17,12 +17,12 @@ public final class GenmaiUpdateChecker: NSObject, UNUserNotificationCenterDelega
   /// How often the IME looks whether a check is due.
   static let pollInterval: Duration = .seconds(60 * 60)
 
-  private let launcher: MacToolLauncher
+  private let launcher: MacAppLauncher
   private var task: Task<Void, Never>?
   /// The version last announced by this process.
   private var notifiedVersion: String?
 
-  public init(launcher: MacToolLauncher = MacToolLauncher()) {
+  public init(launcher: MacAppLauncher = MacAppLauncher()) {
     self.launcher = launcher
   }
 
@@ -75,7 +75,7 @@ public final class GenmaiUpdateChecker: NSObject, UNUserNotificationCenterDelega
     _ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse
   ) async {
     await MainActor.run {
-      _ = launcher.launchTool(mode: ToolMode.updateDialog.rawValue, extraArg: "", environment: [:])
+      _ = launcher.openApp(mode: AppScreen.updateDialog.rawValue, extraArg: "", environment: [:])
     }
   }
 

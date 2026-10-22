@@ -114,8 +114,8 @@ final class MockGenmaiClient: GenmaiClientProtocol {
   func enableCascadingWindow(_ enable: Bool) {}
   func setSuppressErrorDialog(_ suppress: Bool) {}
   func setClientCapability(_ capability: Capability) { self.capability = capability }
-  func launchTool(mode: String, extraArg: String) -> Bool { true }
-  func launchToolWithProtoBuf(_ output: Output) -> Bool { true }
+  func openApp(mode: String, extraArg: String) -> Bool { true }
+  func openAppWithProtoBuf(_ output: Output) -> Bool { true }
   func openBrowser(_ url: String) -> Bool { true }
 }
 
@@ -144,9 +144,9 @@ final class MockRenderer: RendererInterface {
 }
 
 @MainActor
-final class MockToolLauncher: ToolLauncher {
+final class MockAppLauncher: AppLauncher {
   var launches: [(mode: String, environment: [String: String])] = []
-  func launchTool(mode: String, extraArg: String, environment: [String: String]) -> Bool {
+  func openApp(mode: String, extraArg: String, environment: [String: String]) -> Bool {
     launches.append((mode, environment))
     return true
   }

@@ -13,7 +13,7 @@ public enum SystemUtil {
   // base/const.h (macOS, OSS branding).
   static let kGenmaiServerName = GenmaiConst.kGenmaiServerName
   static let kGenmaiRenderer = GenmaiConst.kGenmaiRenderer
-  static let kGenmaiTool = GenmaiConst.kGenmaiTool
+  static let kGenmaiApp = GenmaiConst.kGenmaiApp
 
   private static let userProfileDir = Mutex("")
   private static let programInvocationName = Mutex("")
@@ -120,12 +120,12 @@ public enum SystemUtil {
   }
 
   /// Returns the path of the mozc tool.
-  public static func getToolPath() -> String {
+  public static func getAppPath() -> String {
     let serverPath = getServerDirectory()
     if serverPath.isEmpty {
       return ""
     }
-    return FileUtil.joinPath(serverPath, kGenmaiTool)
+    return FileUtil.joinPath(serverPath, kGenmaiApp)
   }
 
   /// Returns the directory where the documents are installed.

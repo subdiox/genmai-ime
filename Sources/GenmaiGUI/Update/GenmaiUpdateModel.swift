@@ -1,5 +1,5 @@
 // Updates of Genmai itself (not part of Mozc): the state behind the "Updates" section of the config dialog (tab
-// "Misc") and the update dialog (tool mode update_dialog, opened from the IME's update notification).
+// "Misc") and the update dialog (app screen update_dialog, opened from the IME's update notification).
 
 import AppKit
 import Foundation

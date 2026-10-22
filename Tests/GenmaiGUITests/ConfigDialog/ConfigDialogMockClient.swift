@@ -56,10 +56,10 @@ final class ConfigDialogMockClient: GenmaiClientProtocol {
   func enableCascadingWindow(_ enable: Bool) {}
   func setSuppressErrorDialog(_ suppress: Bool) {}
   func setClientCapability(_ capability: Capability) {}
-  func launchTool(mode: String, extraArg: String) -> Bool {
+  func openApp(mode: String, extraArg: String) -> Bool {
     launchedTools.append(mode)
     return true
   }
-  func launchToolWithProtoBuf(_ output: Output) -> Bool { false }
+  func openAppWithProtoBuf(_ output: Output) -> Bool { false }
   func openBrowser(_ url: String) -> Bool { false }
 }

@@ -132,7 +132,7 @@ public enum GenmaiProcess {
     defaultResult
   }
 
-  /// Launches the error message dialog of GenmaiTool.
+  /// Launches the error message dialog of GenmaiApp.
   public static func launchErrorMessageDialog(_ errorType: String) -> Bool {
     if !MacProcess.launchErrorMessageDialog(errorType) {
       GenmaiLog.error("cannot error message dialog")
