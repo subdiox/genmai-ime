@@ -12,6 +12,7 @@ import GenmaiClient
 import GenmaiCore
 import GenmaiProtocol
 import Observation
+import Synchronization
 
 /// The widget values of the config dialog.
 public struct ConfigDialogValues: Equatable, Sendable {
@@ -259,6 +260,18 @@ public enum ConfigDialogEditor: Identifiable, Equatable, Sendable {
   }
 }
 
+/// Not in Mozc: the model download of the AI tab.
+public enum AIModelInstallState: Equatable, Sendable {
+  case idle
+  case running(AIModelInstaller.Phase)
+  case failed(String)
+
+  public var isRunning: Bool {
+    if case .running = self { return true }
+    return false
+  }
+}
+
 @MainActor
 @Observable
 public final class ConfigDialogModel {
@@ -285,6 +298,14 @@ public final class ConfigDialogModel {
   }
   /// Whether the model files exist in the selected model directory.
   public private(set) var aiModelStatus = AIModelStatus.check(AIConversionSettings.defaultModelDirectory)
+  /// Not in Mozc: the model download / installation started from the AI tab.
+  public private(set) var aiModelInstall = AIModelInstallState.idle
+  private var aiModelInstallTask: Task<Void, Never>?
+  /// Downloads and installs the current model release into a directory (replaced by tests).
+  var aiModelInstaller: @Sendable (URL, @escaping @Sendable (AIModelInstaller.Phase) -> Void) async throws -> Void = {
+    directory, progress in
+    try await AIModelInstaller.install(to: directory, progress: progress)
+  }
   /// 'Apply' button is disabled on launching and enabled by any edit.
   public private(set) var applyEnabled = false
   public var pendingMessage: GUIMessage?
@@ -356,6 +377,52 @@ public final class ConfigDialogModel {
   /// Re-checks the model directory (the "Check again" button).
   public func refreshAIModelStatus() {
     aiModelStatus = AIModelStatus.check(aiValues.resolvedModelDirectory)
+  }
+
+  /// Downloads the current model release from Hugging Face and installs it into the model directory (the
+  /// "Download" / "Update" button). The IME is told to reload, so a running IME switches to the new model.
+  public func installAIModel() {
+    guard aiModelInstallTask == nil else { return }
+    let directory = aiValues.resolvedModelDirectory
+    aiModelInstall = .running(.downloading(received: 0, total: GenmaiModelRelease.current.downloadSize))
+    let installer = aiModelInstaller
+    // Progress arrives for every network chunk: forward it only when the shown permille changes.
+    let lastShown = Mutex<Int>(-1)
+    let report: @Sendable (AIModelInstaller.Phase) -> Void = { [weak self] phase in
+      let key: Int
+      switch phase {
+      case .downloading(let received, let total): key = Int(received * 1000 / max(total, 1))
+      case .verifying: key = 1001
+      case .converting: key = 1002
+      }
+      guard lastShown.withLock({ last in defer { last = key }; return last != key }) else { return }
+      Task { @MainActor [weak self] in
+        if case .running = self?.aiModelInstall { self?.aiModelInstall = .running(phase) }
+      }
+    }
+    aiModelInstallTask = Task { [weak self] in
+      let result: AIModelInstallState
+      do {
+        try await installer(directory, report)
+        result = .idle
+      } catch is CancellationError {
+        result = .idle
+      } catch {
+        result = .failed("\(error)")
+      }
+      guard let self else { return }
+      self.aiModelInstallTask = nil
+      self.aiModelInstall = result
+      self.refreshAIModelStatus()
+      if result == .idle, self.aiModelStatus.isFound {
+        _ = self.client.reload()
+      }
+    }
+  }
+
+  /// Cancels the running download / installation (the model directory is left as it was).
+  public func cancelAIModelInstall() {
+    aiModelInstallTask?.cancel()
   }
 
   /// ConvertFromProto.

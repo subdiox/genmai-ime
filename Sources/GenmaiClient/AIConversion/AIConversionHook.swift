@@ -49,6 +49,8 @@ public final class AIConversionHook: Sendable {
     public var timedOut: Bool
     public var error: String?
     public var outcome: AIConversionMerger.Outcome
+    /// AI candidates dropped by the reading check.
+    public var unreadable: [String] = []
   }
 
   struct SessionState {
@@ -97,6 +99,17 @@ public final class AIConversionHook: Sendable {
   /// The opt-in debug log (`debug_log` in the settings).
   public let debugLog: AIConversionDebugLog
 
+  struct ReadingCheckState {
+    /// The engine's data set (set by `AugmentedEngine`).
+    var dataManager: DataManager?
+    var checker: AIReadingChecker?
+    var task: Task<Void, Never>?
+  }
+
+  /// The reading check of AI candidates, built in the background from the engine's system dictionary once AI
+  /// conversion is enabled. Until it is ready, candidates are not checked.
+  private let readingCheck = Mutex(ReadingCheckState())
+
   public init(
     augmenter: any ConversionAugmenter, settings: AIConversionSettings = AIConversionSettings(),
     debugLog: AIConversionDebugLog = AIConversionDebugLog()
@@ -117,6 +130,52 @@ public final class AIConversionHook: Sendable {
     state.withLock { $0.settings = s }
     debugLog.configure(enabled: s.enabled && s.debugLog)
     augmenter.configure(s)
+    startReadingCheckIfNeeded()
+  }
+
+  // MARK: - Reading check
+
+  /// The data set whose system dictionary the reading check uses (called by `AugmentedEngine`).
+  func attachReadingCheckData(_ dataManager: DataManager) {
+    readingCheck.withLock { $0.dataManager = dataManager }
+    startReadingCheckIfNeeded()
+  }
+
+  private func startReadingCheckIfNeeded() {
+    let s = settings
+    guard s.enabled, s.readingCheck else { return }
+    readingCheck.withLock { r in
+      guard r.checker == nil, r.task == nil, let dataManager = r.dataManager else { return }
+      r.task = Task.detached { [weak self] in
+        let checker: AIReadingChecker?
+        do {
+          checker = try AIReadingChecker(dataManager: dataManager)
+        } catch {
+          GenmaiLog.error("AI reading check unavailable: \(error)")
+          checker = nil
+        }
+        self?.readingCheck.withLock { $0.checker = checker }
+      }
+    }
+  }
+
+  /// Waits until the reading check is built (evaluation, tests); returns at once if it is not being built.
+  public func waitForReadingCheck() async {
+    await readingCheck.withLock { $0.task }?.value
+  }
+
+  /// The AI texts in the conversion character form, without empty and duplicate ones, and without those that do
+  /// not read as `key` (the conversion key, hiragana) when the reading check is on. `dropped`: the texts the check
+  /// removed.
+  func candidateTexts(_ raw: [String], key: String, settings: AIConversionSettings) -> (texts: [String], dropped: [String]) {
+    let forms = CharacterFormManager.getCharacterFormManager()
+    var seen = Set<String>()
+    let texts = raw.map { forms.convertConversionString($0) }.filter { !$0.isEmpty && seen.insert($0).inserted }
+    guard settings.readingCheck, let checker = readingCheck.withLock({ $0.checker }) else {
+      return (texts, [])
+    }
+    let kept = checker.filter(texts, reading: key)
+    return (kept, texts.filter { !kept.contains($0) })
   }
 
   /// Re-reads `ai_conversion.json` (on the reload notification from GenmaiTool).
@@ -252,8 +311,7 @@ public final class AIConversionHook: Sendable {
     // The model reads the composition as displayed (preedit character form: "？", "（", as in its training
     // data; also what `prepare` saw) and its output gets Mozc's conversion character form, like Mozc's own
     // candidates (VariantsRewriter).
-    let forms = CharacterFormManager.getCharacterFormManager()
-    let reading = forms.convertPreeditString(key)
+    let reading = CharacterFormManager.getCharacterFormManager().convertPreeditString(key)
     let context = conversionContext(segments)
     // Never wait here (main thread): a result still in flight was awaited before this key (`conversionWait`).
     let ready = augmenter.readyResult(reading: reading, context: context, maxResults: settings.candidateCount)
@@ -273,9 +331,9 @@ public final class AIConversionHook: Sendable {
         record.timedOut = true
       }
     case let raw?:
-      var seen = Set<String>()
-      let texts = raw.map { forms.convertConversionString($0) }.filter { !$0.isEmpty && seen.insert($0).inserted }
+      let (texts, dropped) = candidateTexts(raw, key: key, settings: settings)
       record.texts = texts
+      record.unreadable = dropped
       let rejected = Set(state.withLock { $0.rejected })
       record.outcome = AIConversionMerger.apply(
         texts, to: segments, request: request, converter: converter, maxCandidates: settings.candidateCount,
@@ -293,6 +351,7 @@ public final class AIConversionHook: Sendable {
       var note = "waited=\(Int(AIConversionDebugLog.milliseconds(record.waited)))ms"
       if let info { note += info.exact ? " exact" : " draft" }
       if record.outcome.keptLearned > 0 { note += " keptLearned=\(record.outcome.keptLearned)" }
+      if !record.unreadable.isEmpty { note += " unreadable=\(record.unreadable)" }
       if let error = record.error { note += " error=\(error)" }
       note += " segments=" + (0..<segments.conversionSegmentsSize).map { segments.conversionSegment($0).key }
         .joined(separator: "|")
@@ -345,8 +404,7 @@ public final class AIConversionHook: Sendable {
       keepLastSuggestion(reading: reading, context: context, segments)
       return
     }
-    var seen = Set<String>()
-    let texts = raw.map { forms.convertConversionString($0) }.filter { !$0.isEmpty && seen.insert($0).inserted }
+    let (texts, dropped) = candidateTexts(raw, key: key, settings: settings)
     guard !texts.isEmpty else { return }
     var options = ConversionRequest.Options()
     options.enableUserHistoryForConversion = request.options().enableUserHistoryForConversion
@@ -379,6 +437,7 @@ public final class AIConversionHook: Sendable {
       var note = type == .suggestion ? "suggestion" : "prediction"
       if shown == engineTop { note += " same-as-engine-suggestion" }
       if outcome.keptLearned > 0 { note += " keptLearned=\(outcome.keptLearned)" }
+      if !dropped.isEmpty { note += " unreadable=\(dropped)" }
       debugLog.write(
         AIConversionDebugLog.Event(
           source: info?.exact == true ? .refine : .suggestion, reading: reading, context: context,
@@ -533,6 +592,9 @@ public final class AugmentedEngine: EngineInterface {
     base = engine
     converterProvider = { engine.getConverter() }
     self.hook = hook
+    if let dataManager = engine.getDataManager() {
+      hook.attachReadingCheckData(dataManager)
+    }
   }
 
   public func createEngineConverter() -> any EngineConverterInterface {

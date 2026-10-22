@@ -350,6 +350,9 @@ func conversionRequest() -> ConversionRequest {
     #expect(decoded.modelDirectory == nil)
     #expect(decoded.sanitized.timeoutMilliseconds == AIConversionSettings.timeoutRange.lowerBound)
     #expect(decoded.candidateCount == 5)
+    #expect(decoded.readingCheck)
+    let off = try JSONDecoder().decode(AIConversionSettings.self, from: Data(#"{"reading_check": false}"#.utf8))
+    #expect(!off.readingCheck)
   }
 
   @Test func brokenFileFallsBackToDefaults() throws {
@@ -367,7 +370,99 @@ func conversionRequest() -> ConversionRequest {
     for f in AIModelStatus.requiredFiles {
       try Data().write(to: dir.appending(path: f))
     }
-    #expect(AIModelStatus.check(dir).isFound)
+    let status = AIModelStatus.check(dir)
+    #expect(status == .found(dir, info: nil))
+    #expect(status.needsInstall())
+    #expect(AIModelStatus.identity(dir) != nil)
+    try GenmaiModelRelease.current.info.save(to: dir)
+    #expect(AIModelStatus.check(dir) == .found(dir, info: GenmaiModelRelease.current.info))
+    #expect(!AIModelStatus.check(dir).needsInstall())
+    #expect(AIModelStatus.check(dir.appending(path: "none")).needsInstall())
+  }
+}
+
+// MARK: - Model installation
+
+@Suite struct GenmaiSafetensorsTests {
+  /// Writes a safetensors file with F32 tensors.
+  static func write(_ tensors: [(String, [Int], [Float])], to url: URL) throws {
+    var header: [String: Any] = ["__metadata__": ["format": "pt"]]
+    var body = Data()
+    for (name, shape, values) in tensors {
+      header[name] = ["dtype": "F32", "shape": shape, "data_offsets": [body.count, body.count + values.count * 4]]
+      for v in values {
+        var bits = v.bitPattern.littleEndian
+        body.append(Data(bytes: &bits, count: 4))
+      }
+    }
+    let json = try JSONSerialization.data(withJSONObject: header)
+    var length = UInt64(json.count).littleEndian
+    var data = Data(bytes: &length, count: 8)
+    data.append(json)
+    data.append(body)
+    try data.write(to: url)
+  }
+
+  static func read(_ url: URL) throws -> (header: [String: Any], body: Data) {
+    let data = try Data(contentsOf: url)
+    let n = data.prefix(8).withUnsafeBytes { Int($0.loadUnaligned(as: UInt64.self).littleEndian) }
+    let header = try JSONSerialization.jsonObject(with: data[8..<(8 + n)]) as! [String: Any]
+    return (header, Data(data[(8 + n)...]))
+  }
+
+  @Test func bfloat16RoundsToNearestEven() {
+    #expect(GenmaiSafetensors.bfloat16(Float(1).bitPattern) == 0x3F80)
+    #expect(GenmaiSafetensors.bfloat16(0x3F80_8000) == 0x3F80)  // tie, even stays
+    #expect(GenmaiSafetensors.bfloat16(0x3F81_8000) == 0x3F82)  // tie, odd rounds up
+    #expect(GenmaiSafetensors.bfloat16(0x3F80_8001) == 0x3F81)
+    #expect(GenmaiSafetensors.bfloat16(Float.infinity.bitPattern) == 0x7F80)
+    #expect(GenmaiSafetensors.bfloat16(Float.nan.bitPattern) & 0x7FC0 == 0x7FC0)
+    #expect(GenmaiSafetensors.bfloat16((-2.5 as Float).bitPattern) == 0xC020)
+  }
+
+  @Test func convertsToTheRuntimeLayout() throws {
+    let dir = FileManager.default.temporaryDirectory.appending(path: "safetensors-\(UUID())")
+    try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: dir) }
+    let src = dir.appending(path: "in.safetensors")
+    let dst = dir.appending(path: "out.safetensors")
+    try Self.write(
+      [
+        ("transformer.h.0.attn.c_attn.weight", [2, 3], [1, 2, 3, 4, 5, 6]),  // (in 2, out 3)
+        ("transformer.ln_f.bias", [2], [0.5, -1]),
+        ("lm_head.weight", [1], [9]),
+      ], to: src)
+    try GenmaiSafetensors.prepare(source: src, destination: dst)
+    let (header, body) = try Self.read(dst)
+    #expect((header["__metadata__"] as? [String: String])?["format"] == GenmaiSafetensors.preparedFormat)
+    #expect(Set(header.keys) == ["__metadata__", "h.0.attn.c_attn.weight", "ln_f.bias"])
+    let w = header["h.0.attn.c_attn.weight"] as! [String: Any]
+    #expect(w["dtype"] as? String == "BF16")
+    #expect(w["shape"] as? [Int] == [3, 2])
+    #expect(w["data_offsets"] as? [Int] == [0, 12])
+    let values = body.withUnsafeBytes { raw in
+      (0..<(body.count / 2)).map { Float(bitPattern: UInt32(raw.loadUnaligned(fromByteOffset: $0 * 2, as: UInt16.self)) << 16) }
+    }
+    // transposed: (out, in)
+    #expect(values == [1, 4, 2, 5, 3, 6, 0.5, -1])
+  }
+
+  @Test func rejectsGarbage() throws {
+    let url = FileManager.default.temporaryDirectory.appending(path: "garbage-\(UUID()).safetensors")
+    defer { try? FileManager.default.removeItem(at: url) }
+    try Data("xx".utf8).write(to: url)
+    #expect(throws: AIModelInstallError.self) {
+      try GenmaiSafetensors.prepare(source: url, destination: url.appendingPathExtension("out"))
+    }
+  }
+
+  @Test func releaseURLs() {
+    let r = GenmaiModelRelease.current
+    #expect(r.files.map(\.name).sorted() == ["config.json", "model.safetensors", "tokenizer.json"])
+    #expect(r.files.allSatisfy { $0.sha256.count == 64 })
+    #expect(
+      r.url(of: r.files.last!).absoluteString
+        == "https://huggingface.co/subdiox/genmai/resolve/\(r.info.revision)/model.safetensors")
   }
 }
 
@@ -497,6 +592,29 @@ struct AIConversionHookTests {
       let next = ai.special(.right)
       #expect(SessionDriver.descriptions(next).first?.hasPrefix("AI") == true)
       #expect(SessionDriver.candidates(next).first?.hasPrefix("渡り") == true)
+    }
+  }
+
+  @Test func readingCheckDropsCandidatesThatDoNotReadAsTheInput() async throws {
+    try await withScopedProfile {
+      let texts = ["母は歯が痛いらしい", "母は歯痒いらしい", "ハハハハが痛いらしい"]
+      let fake = FakeAugmenter(["ははははがいたいらしい": texts])
+      let (ai, hook) = makeAI(fake)
+      await hook.waitForReadingCheck()
+      _ = await ai.convert("hahahahagaitairasii")
+      let record = try #require(hook.lastConversion)
+      #expect(record.texts == ["母は歯が痛いらしい", "ハハハハが痛いらしい"])
+      #expect(record.unreadable == ["母は歯痒いらしい"])
+      #expect(!SessionDriver.candidates(ai.special(.space)).contains("母は歯痒いらしい"))
+      _ = ai.special(.escape)
+      _ = ai.special(.escape)
+
+      var off = Self.enabled
+      off.readingCheck = false
+      let (plain, plainHook) = makeAI(FakeAugmenter(["ははははがいたいらしい": texts]), settings: off)
+      _ = await plain.convert("hahahahagaitairasii")
+      #expect(plainHook.lastConversion?.texts == texts)
+      #expect(plainHook.lastConversion?.unreadable == [])
     }
   }
 

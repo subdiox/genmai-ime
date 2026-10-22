@@ -13,6 +13,7 @@ final class ConfigDialogMockClient: GenmaiClientProtocol {
   private(set) var clearUserHistoryCount = 0
   private(set) var clearUserPredictionCount = 0
   private(set) var launchedTools: [String] = []
+  private(set) var reloadCount = 0
 
   init(config: Genmai_Config_Config? = Genmai_Config_Config()) {
     self.config = config
@@ -44,7 +45,10 @@ final class ConfigDialogMockClient: GenmaiClientProtocol {
   }
   func shutdown() -> Bool { true }
   func syncData() -> Bool { true }
-  func reload() -> Bool { true }
+  func reload() -> Bool {
+    reloadCount += 1
+    return true
+  }
   func cleanup() -> Bool { true }
   func reset() {}
   func pingServer() -> Bool { true }

@@ -9,8 +9,9 @@ import SwiftUI
 public enum AIStrings {
   public enum Key: CaseIterable, Sendable {
     case tab, sectionAI, enable, explanation, sectionSettings, timeout, candidates, modelDirectory,
-      modelDirectoryPlaceholder, sectionModel, modelFound, modelMissing, modelHowTo, checkAgain, saveFailed,
-      milliseconds
+      modelDirectoryPlaceholder, sectionModel, modelFound, modelMissing, modelVersion, modelVersionUnknown,
+      modelUpToDate, download, update, downloadNote, downloading, verifying, converting, cancel, installFailed,
+      checkAgain, saveFailed, milliseconds
   }
 
   static let english: [Key: String] = [
@@ -27,7 +28,18 @@ public enum AIStrings {
     .sectionModel: "Model",
     .modelFound: "Model found: %@",
     .modelMissing: "Model not found: %@ (missing %@)",
-    .modelHowTo: "Prepare it with Tools/prepare_genmai_model.sh in the genmai-ime repository.",
+    .modelVersion: "Version: genmai %@",
+    .modelVersionUnknown: "Version: unknown (not installed from a release)",
+    .modelUpToDate: "genmai %@ is the latest version.",
+    .download: "Download genmai %@",
+    .update: "Update to genmai %@",
+    .downloadNote:
+      "Downloads %@ from Hugging Face (%@) and installs it into the model folder (%@ on disk). Only the model is downloaded; your input is never sent.",
+    .downloading: "Downloading… %@ of %@",
+    .verifying: "Verifying the download…",
+    .converting: "Installing…",
+    .cancel: "Cancel",
+    .installFailed: "Could not install the model: %@",
     .checkAgain: "Check again",
     .saveFailed: "Failed to save the AI conversion settings.",
     .milliseconds: "%d ms",
@@ -47,7 +59,18 @@ public enum AIStrings {
     .sectionModel: "モデル",
     .modelFound: "モデルが見つかりました: %@",
     .modelMissing: "モデルが見つかりません: %@ (%@ がありません)",
-    .modelHowTo: "genmai-ime リポジトリの Tools/prepare_genmai_model.sh で準備してください。",
+    .modelVersion: "バージョン: genmai %@",
+    .modelVersionUnknown: "バージョン: 不明 (リリースからインストールされていません)",
+    .modelUpToDate: "genmai %@ は最新版です。",
+    .download: "genmai %@ をダウンロード",
+    .update: "genmai %@ にアップデート",
+    .downloadNote:
+      "Hugging Face (%2$@) から %1$@ をダウンロードしてモデルのフォルダにインストールします (ディスク上は %3$@)。ダウンロードするのはモデルだけで、入力内容が送信されることはありません。",
+    .downloading: "ダウンロード中… %@ / %@",
+    .verifying: "ダウンロードを検証中…",
+    .converting: "インストール中…",
+    .cancel: "キャンセル",
+    .installFailed: "モデルをインストールできませんでした: %@",
     .checkAgain: "再確認",
     .saveFailed: "AI 変換の設定を保存できませんでした。",
     .milliseconds: "%d ミリ秒",
@@ -61,11 +84,42 @@ public enum AIStrings {
   /// The model status line.
   public static func modelStatus(_ status: AIModelStatus, language: GUILanguage = .current) -> String {
     switch status {
-    case .found(let url):
+    case .found(let url, _):
       return String(format: text(.modelFound, language: language), url.path)
     case .missing(let url, let files):
       return String(format: text(.modelMissing, language: language), url.path, files.joined(separator: ", "))
     }
+  }
+
+  /// The installed version line (nil when no model is found).
+  public static func modelVersion(_ status: AIModelStatus, language: GUILanguage = .current) -> String? {
+    guard case .found(_, let info) = status else { return nil }
+    guard let info else { return text(.modelVersionUnknown, language: language) }
+    return String(format: text(.modelVersion, language: language), info.version)
+  }
+
+  /// What the running installation is doing.
+  public static func installPhase(_ phase: AIModelInstaller.Phase, language: GUILanguage = .current) -> String {
+    switch phase {
+    case .downloading(let received, let total):
+      return String(format: text(.downloading, language: language), bytes(received), bytes(total))
+    case .verifying:
+      return text(.verifying, language: language)
+    case .converting:
+      return text(.converting, language: language)
+    }
+  }
+
+  /// The explanation under the download button.
+  public static func downloadNote(_ release: GenmaiModelRelease = .current, language: GUILanguage = .current) -> String {
+    // The converted weights are half the size of the downloaded fp32 file.
+    String(
+      format: text(.downloadNote, language: language), bytes(release.downloadSize), release.info.repository,
+      bytes(release.downloadSize / 2))
+  }
+
+  static func bytes(_ count: Int64) -> String {
+    count.formatted(.byteCount(style: .file))
   }
 }
 
@@ -117,12 +171,14 @@ struct AIConversionTab: View {
         ) {
           Text(verbatim: AIStrings.text(.modelDirectory))
         }
+        .disabled(model.aiModelInstall.isRunning)
       } header: {
         Text(verbatim: AIStrings.text(.sectionSettings))
       }
       .disabled(!model.aiValues.enabled)
       Section {
         AIModelStatusRow(status: model.aiModelStatus) { model.refreshAIModelStatus() }
+        AIModelInstallRow(model: model)
       } header: {
         Text(verbatim: AIStrings.text(.sectionModel))
       }
@@ -144,15 +200,62 @@ struct AIModelStatusRow: View {
         Text(verbatim: AIStrings.modelStatus(status))
           .textSelection(.enabled)
           .fixedSize(horizontal: false, vertical: true)
-        if !status.isFound {
-          Text(verbatim: AIStrings.text(.modelHowTo))
+        if let version = AIStrings.modelVersion(status) {
+          Text(verbatim: version)
             .font(.callout)
             .foregroundStyle(.secondary)
-            .fixedSize(horizontal: false, vertical: true)
         }
       }
       Spacer()
       Button(AIStrings.text(.checkAgain), action: checkAgain)
+    }
+  }
+}
+
+/// Download / update of the model from Hugging Face, with its progress.
+struct AIModelInstallRow: View {
+  let model: ConfigDialogModel
+
+  var body: some View {
+    let release = GenmaiModelRelease.current
+    switch model.aiModelInstall {
+    case .running(let phase):
+      HStack {
+        VStack(alignment: .leading, spacing: 4) {
+          Text(verbatim: AIStrings.installPhase(phase))
+            .monospacedDigit()
+          if case .downloading(let received, let total) = phase {
+            ProgressView(value: Double(received), total: Double(max(total, 1)))
+          } else {
+            ProgressView()
+              .progressViewStyle(.linear)
+          }
+        }
+        Button(AIStrings.text(.cancel)) { model.cancelAIModelInstall() }
+      }
+    case .idle, .failed:
+      if model.aiModelStatus.needsInstall(release) {
+        VStack(alignment: .leading, spacing: 6) {
+          Button(String(format: AIStrings.text(model.aiModelStatus.isFound ? .update : .download), release.info.version)) {
+            model.installAIModel()
+          }
+          Text(verbatim: AIStrings.downloadNote(release))
+            .font(.callout)
+            .foregroundStyle(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
+          if case .failed(let message) = model.aiModelInstall {
+            Text(verbatim: String(format: AIStrings.text(.installFailed), message))
+              .font(.callout)
+              .foregroundStyle(.red)
+              .textSelection(.enabled)
+              .fixedSize(horizontal: false, vertical: true)
+          }
+        }
+      } else {
+        Text(verbatim: String(format: AIStrings.text(.modelUpToDate), release.info.version))
+          .font(.callout)
+          .foregroundStyle(.secondary)
+      }
     }
   }
 }

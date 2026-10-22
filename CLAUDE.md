@@ -79,10 +79,13 @@ mozc/src/...` provenance comments.
 
 ## AI conversion (GenmaiAI)
 
-The genmai model ([subdiox/genmai](https://huggingface.co/subdiox/genmai): GPT-2, character-level,
-24 layers, 1024 dim, 310M parameters, CC BY-SA 4.0) decodes the conversion from the reading by beam search on MLX
-(mlx-swift **0.32.3**, pinned `exact`). The Swift code is a port of the Python MLX reference decoder used in
-training and gives bit-identical n-best lists and scores (`Tests/Fixtures/genmai/python_mlx_daily.json`).
+The genmai model ([subdiox/genmai](https://huggingface.co/subdiox/genmai), release **0.2.0** = git tag `v0.2.0`:
+GPT-2, character-level, 24 layers, 1024 dim, 310M parameters, CC BY-SA 4.0) decodes the conversion from the
+reading by beam search on MLX (mlx-swift **0.32.3**, pinned `exact`). The Swift code is a port of the Python MLX reference decoder used in
+training and gives bit-identical n-best lists and scores (`Tests/Fixtures/genmai/python_mlx_daily.json`, made with
+`mlx_eval.py --incremental` of the genmai research repo on the 0.2.0 weights; regenerate it when the release
+changes — the reference model directory needs `tokenizer_config.json`, without it the HF tokenizer gets wrong
+BOS / EOS ids and the outputs end in garbage).
 
 - `GenmaiTokenizer` (byte-level BPE from tokenizer.json, ids identical to the HF GPT2Tokenizer; fixtures in
   `Tests/Fixtures/genmai/`), `GenmaiPrompt` (format `zenzlc`: left context first, up to 500 characters, then the
@@ -91,12 +94,21 @@ training and gives bit-identical n-best lists and scores (`Tests/Fixtures/genmai
   40-character chunks), `GenmaiConverter` (actor owning the model; `mlxLock` serializes all MLX work — two
   converters on MLX's default stream at once crash Metal), `GenmaiIncrementalConverter` (converts finished chunks
   while typing).
-- The model is not bundled: `Tools/prepare_genmai_model.sh` downloads it from Hugging Face and writes the compact
-  layout (bf16, 0.62 GB, safetensors metadata `format=genmai-bf16-out-in`, plus tokenizer.json / config.json /
-  genmai_fmt.txt) to `~/Library/Application Support/Genmai/model`. Tests use `$GENMAI_MODEL_DIR`, else
-  that directory, and skip without it.
-- `genmai-cli`: `convert`, `eval [--incremental] [--every-key] [--draft] [--no-kv-reuse]` (per-item latency in the
-  JSON), `compare`, `logprobs`, `prepare`, `session-eval` (below).
+- The model is not bundled. `AIModelInstaller` (GenmaiClient/AIConversion) downloads the pinned release
+  (`GenmaiModelRelease.current`: repository, tag, file sizes and sha256) from Hugging Face, converts it with
+  `GenmaiSafetensors.prepare` (plain Swift, no MLX — GenmaiTool does not link it; bf16 round-to-nearest-even,
+  bit-identical to MLX `astype`; Conv1D weights (out, in); metadata `format=genmai-bf16-out-in`; 0.62 GB) and
+  replaces config.json / tokenizer.json / model.safetensors / `genmai_model.json` (installed release) in the model
+  directory one file at a time (other files are left alone). Downloads are kept in `~/Library/Caches/Genmai/download`
+  until the install succeeds. Front ends: the settings tab "AI" (Download / Update button with progress and
+  cancel; afterwards it sends RELOAD and `GenmaiAugmenter` reloads because `AIModelStatus.identity` — size and
+  mtime of the weights — changed), `genmai-cli install` and `Tools/prepare_genmai_model.sh`. The prompt format is
+  `genmai_prompt_format` in config.json (0.1.0 installs had genmai_fmt.txt, removed on install). **New release:**
+  update `GenmaiModelRelease.current` (sizes / sha256 from `https://huggingface.co/api/models/subdiox/genmai/tree/<tag>`),
+  the Python fixture and the score in `convertDaily`. Tests use `$GENMAI_MODEL_DIR`, else
+  `~/Library/Application Support/Genmai/model`, and skip without it.
+- `genmai-cli`: `install`, `prepare` (local HF directory), `convert`, `eval [--incremental] [--every-key] [--draft]
+  [--no-kv-reuse]` (per-item latency in the JSON), `compare`, `logprobs`, `session-eval` (below).
 
 ### MLX Metal kernels
 
@@ -161,32 +173,46 @@ unchanged; the hook only forwards). GenmaiCore and GenmaiSession contain no AI c
   candidate window; stale refreshes (another output meanwhile, queued keys, different preedit) are ignored.
 - **Candidate window stability:** size and position change in one `setFrame`; `CandidatePlacement.keepSide` keeps
   the window above the preedit for the rest of a composition once it went there; unchanged lists are not redrawn.
+- **Reading check (`AIReadingChecker`):** before merging (conversion and suggestion), AI candidates that cannot be
+  read as the conversion key are dropped; the order is kept and if none passes the first stays. Lenient by design
+  (one possible reading suffices; an exact reverse-conversion check lost correct answers): both sides are folded
+  (NFKC, katakana → hiragana, voicing marks removed, small kana enlarged, ー / 〜 removed) and a DP reads the text
+  with system dictionary words (reverse lookup on a second `SystemDictionary` built with the reverse lookup index in
+  the background when AI is enabled, from `Engine.getDataManager()`), their one-character entries for single kanji,
+  kana / symbols as themselves, wildcards for digit / Latin runs (+ one counter kanji) and kanji without entries, and
+  one か / の / つ between two kanji. ~0.16 ms per candidate (release), results cached. Setting `reading_check`
+  (default on, no UI); `session-eval --no-reading-check` compares; the debug log notes `unreadable=[...]`.
 - **Left context:** IMK surrounding text up to 500 characters plus text committed in the session; reset on
   activation, RESET_CONTEXT or an empty preceding text. The model tends to copy the context: a wrong conversion
   committed earlier in the same field can be repeated.
 - **Settings:** `<profile>/ai_conversion.json` (`AIConversionSettings`: `enabled`, `timeout_ms`, `candidates`,
-  `model_directory`, `debug_log`), edited in the settings tab "AI" and re-read on the reload notification.
+  `model_directory`, `reading_check`, `debug_log`), edited in the settings tab "AI" and re-read on the reload notification.
 - **Debug log (opt-in):** `"debug_log": true` appends one line per AI event to `<profile>/ai_debug.log` (rotated at
   8 MB): source (`ready` / `awaited` / `timeout` / `error` / `suggestion` / `refine`), reading, last 40 characters of
   context, latency, n-best and what was shown. **It contains the typed text**; turn it off after diagnosing.
 - **Evaluation:** `genmai-cli session-eval [--timeout-ms N] [--settle none|chunks|idle] [--typing-ms N[,N]]
-  [--space-delay-ms N] [--trace] [--errors] [--profile-copy DIR] [--debug-log] [--out-dir D] <set.json>...` types
-  each reading through `SessionHandlerBackend` with and without the hook (real-time typing with `--typing-ms`),
+  [--space-delay-ms N] [--trace] [--errors] [--profile-copy DIR] [--debug-log] [--no-reading-check] [--out-dir D]
+  <set.json>...` types each reading through `SessionHandlerBackend` with and without the hook (real-time typing with `--typing-ms`),
   presses the conversion key and reports accuracy, latency, where the result came from and the GPU time per
   keystroke. `--trace` prints the suggestions per key including refreshes; `--profile-copy` runs on a copy of a
-  user profile (never written). Results (M4 Pro, 120 ms per kana; "now" = key right after the last kana, "+1" = one
-  interval later):
+  user profile (never written). Results (genmai 0.2.0 with the reading check, M4 Pro, 120 ms per kana; "now" = key
+  right after the last kana, "+1" = one interval later):
 
   | daily (101) / AJIMEE (200) | strict top-1 | key median / p90 | ready at key | timeouts |
   |---|---|---|---|---|
-  | engine alone | 73 / 103 | 3 / 7 · 7 / 27 ms | | |
-  | AI, now | 93 / 179 | 43 / 82 · 66 / 181 ms | 0 / 0 % | 0 / 5 |
-  | AI, +1 | 93 / 181 | 9 / 14 · 16 / 93 ms | 97 / 84 % | 0 / 2 |
+  | engine alone | 73 / 103 | 3 / 6 · 7 / 27 ms | | |
+  | AI, now | 93 / 188 | 45 / 86 · 64 / 137 ms | 0 / 0 % | 0 / 1 |
+  | AI, +1 | 93 / 188 | 11 / 16 · 19 / 57 ms | 100 / 90 % | 0 / 0 |
+
+  (0.1.0: AI now 93 / 179, +1 93 / 181.) The reading check drops 19–37 % of the AI candidates in these runs
+  (speculative n-best lists of partial readings included), never a correct one; with `--settle chunks`
+  (AJIMEE / daily / hard) it changes top-1 by 187 / 94 / 20 vs. 186 / 94 / 20 without it, at the same key latency.
 
 - **Known model weaknesses:** readings that repeat one sound (きしゃのきしゃがきしゃできしゃした,
   にわにはにわにわとりがいる) map every occurrence to the same word or drop part of the reading; fine homophone
-  distinctions and rare proper nouns. A reverse-conversion reading check was tried and lowered AJIMEE accuracy.
-- Tests: GenmaiClientTests (aligner, merger, settings, the hook in the real session layer with `FakeAugmenter`),
+  distinctions and rare proper nouns.
+- Tests: GenmaiClientTests (aligner, merger, settings, reading check, safetensors conversion, the hook in the real
+  session layer with `FakeAugmenter`), GenmaiGUITests (AI tab, model installation with a fake installer),
   GenmaiMacTests (key queue, suggestion refresh), GenmaiRendererTests (`CandidatePlacement`), GenmaiAITests
   (tokenizer, decoding, KV reuse / draft vs. plain), GenmaiAIClientTests (model-backed speculation).
 

@@ -1,8 +1,11 @@
 // genmai-cli: model preparation, conversion, evaluation and parity checks for GenmaiAI.
 //
+//   genmai-cli install [destination dir]
+//       downloads the current model release from Hugging Face (GenmaiModelRelease.current) and installs it like the
+//       config dialog does (default destination: the IME's model directory)
 //   genmai-cli prepare <source model dir> <destination dir>
-//       writes the compact runtime model (bf16, Conv1D weights as (out, in)) + tokenizer.json, config.json,
-//       genmai_fmt.txt
+//       writes the compact runtime model (bf16, Conv1D weights as (out, in)) + tokenizer.json, config.json for a
+//       local HF model directory (e.g. a checkpoint that is not a release)
 //   genmai-cli convert [--model DIR] [--context TEXT] [--beams N] <reading>...
 //   genmai-cli eval [--model DIR] --tag TAG [--beams 5] [--incremental] [--out-dir DIR] <eval set>...
 //       eval sets: anco-format .json (query / answer / left_context) or ime_v1 .jsonl (reading / positives /
@@ -22,6 +25,8 @@
 
 import Foundation
 import GenmaiAI
+import GenmaiClient
+import Synchronization
 
 func fail(_ msg: String) -> Never {
     FileHandle.standardError.write(Data((msg + "\n").utf8))
@@ -30,7 +35,7 @@ func fail(_ msg: String) -> Never {
 
 var args = Array(CommandLine.arguments.dropFirst())
 guard let command = args.first else {
-    fail("usage: genmai-cli prepare|convert|eval|compare|session-eval ... (see Sources/genmai-cli/main.swift)")
+    fail("usage: genmai-cli install|prepare|convert|eval|compare|session-eval ... (see Sources/genmai-cli/main.swift)")
 }
 args.removeFirst()
 
@@ -105,23 +110,44 @@ func prefix(_ s: String, _ n: Int) -> String {
 }
 
 switch command {
+case "install":
+    let release = GenmaiModelRelease.current
+    let dst = args.first.map { URL(filePath: $0) } ?? GenmaiConverter.defaultModelDirectory
+    print("installing genmai \(release.info.version) (\(release.info.repository)@\(release.info.revision)) into \(dst.path)")
+    let last = Mutex<String>("")
+    do {
+        let t = Date()
+        try await AIModelInstaller.install(release, to: dst) { phase in
+            let line: String
+            switch phase {
+            case .downloading(let received, let total):
+                line = String(format: "downloading %.0f%%", Double(received) / Double(max(total, 1)) * 100)
+            case .verifying:
+                line = "verifying"
+            case .converting:
+                line = "converting"
+            }
+            let changed = last.withLock { l in
+                defer { l = line }
+                return l != line
+            }
+            if changed { print(line) }
+        }
+        print(String(format: "installed in %.1f s", Date().timeIntervalSince(t)))
+        let c = try GenmaiConverter(directory: dst)
+        print("check:", try await c.convert("きょうはいいてんきですね").first?.text ?? "-")
+    } catch {
+        fail("install failed: \(error)")
+    }
+
 case "prepare":
     guard args.count == 2 else { fail("usage: genmai-cli prepare <source dir> <destination dir>") }
     let src = URL(filePath: args[0])
     let dst = URL(filePath: args[1])
     do {
-        try FileManager.default.createDirectory(at: dst, withIntermediateDirectories: true)
         let t = Date()
-        let tmp = dst.appending(path: "model.tmp.safetensors")
-        try GenmaiModel.prepare(source: src.appending(path: "model.safetensors"), destination: tmp)
+        try await AIModelInstaller.prepare(source: src, destination: dst)
         let out = dst.appending(path: "model.safetensors")
-        try? FileManager.default.removeItem(at: out)
-        try FileManager.default.moveItem(at: tmp, to: out)
-        for f in ["config.json", "tokenizer.json", "genmai_fmt.txt"] {
-            let d = dst.appending(path: f)
-            try? FileManager.default.removeItem(at: d)
-            try FileManager.default.copyItem(at: src.appending(path: f), to: d)
-        }
         let size = (try FileManager.default.attributesOfItem(atPath: out.path)[.size] as? Int) ?? 0
         print(String(format: "wrote %@ (%.0f MB) in %.1f s", out.path, Double(size) / 1e6, Date().timeIntervalSince(t)))
         // sanity check: load the result

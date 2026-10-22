@@ -78,10 +78,12 @@ public struct GenmaiConfig: Sendable, Codable {
     public var layerNormEpsilon: Float
     public var vocabSize: Int
     public var nPositions: Int
+    /// The prompt format the model was trained with (`genmai_prompt_format`; only "zenzlc" is supported).
+    public var promptFormat: String?
 
     enum CodingKeys: String, CodingKey {
         case nLayer = "n_layer", nEmbd = "n_embd", nHead = "n_head", layerNormEpsilon = "layer_norm_epsilon"
-        case vocabSize = "vocab_size", nPositions = "n_positions"
+        case vocabSize = "vocab_size", nPositions = "n_positions", promptFormat = "genmai_prompt_format"
     }
 }
 
@@ -90,8 +92,8 @@ public struct GenmaiConfig: Sendable, Codable {
 public final class GenmaiModel {
     /// KV cache sizes; a decode step is compiled per (rows, bucket).
     public static let buckets = [128, 256, 512, 1024]
-    /// Metadata value of `format` in a safetensors file written by `GenmaiConverter.prepare`: bf16 weights with
-    /// the Conv1D matrices already transposed to (out, in).
+    /// Metadata value of `format` in a safetensors file written by GenmaiClient's `GenmaiSafetensors.prepare` (the
+    /// model installer, `genmai-cli prepare`): bf16 weights with the Conv1D matrices already transposed to (out, in).
     public static let preparedFormat = "genmai-bf16-out-in"
 
     public let config: GenmaiConfig
@@ -149,7 +151,7 @@ public final class GenmaiModel {
     }
 
     /// Loads `config.json`, `tokenizer.json` and `model.safetensors` from `directory`. The weights may be the
-    /// original HF fp32 file (converted to bf16 / (out, in) here) or a file written by `prepare`.
+    /// original HF fp32 file (converted to bf16 / (out, in) here) or a file written by the model installer.
     public init(directory: URL) throws {
         let t0 = Date()
         Self.configureMetallib()
@@ -160,9 +162,7 @@ public final class GenmaiModel {
             throw GenmaiError.missingFile(u)
         }
         let cfg = try JSONDecoder().decode(GenmaiConfig.self, from: Data(contentsOf: cfgURL))
-        if let fmt = try? String(contentsOf: directory.appending(path: "genmai_fmt.txt"), encoding: .utf8),
-            fmt.trimmingCharacters(in: .whitespacesAndNewlines) != "zenzlc"
-        {
+        if let fmt = cfg.promptFormat, fmt != "zenzlc" {
             throw GenmaiError.badModel("prompt format \(fmt) (only zenzlc is supported)")
         }
         let w = try Self.loadWeights(wURL, dtype: .bfloat16)
@@ -252,13 +252,6 @@ public final class GenmaiModel {
             w[k] = a
         }
         return w
-    }
-
-    /// Writes the compact model file used at runtime: bf16, Conv1D weights transposed to (out, in).
-    public static func prepare(source: URL, destination: URL) throws {
-        let w = try loadWeights(source, dtype: .bfloat16)
-        eval(Array(w.values))
-        try save(arrays: w, metadata: ["format": preparedFormat], url: destination)
     }
 
     // MARK: - Model

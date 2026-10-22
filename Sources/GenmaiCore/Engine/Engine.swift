@@ -94,6 +94,12 @@ public final class Engine: EngineInterface, @unchecked Sendable {
     return []
   }
 
+  /// The data manager of the loaded data set (nil until initialized). Not in Mozc: GenmaiClient's AI conversion
+  /// hook reads the system dictionary through it (the reading check of AI candidates).
+  public func getDataManager() -> DataManager? {
+    converter != nil ? modules?.getDataManager() : nil
+  }
+
   /// For testing only.
   public func getModulesForTesting() -> Modules {
     precondition(converter != nil)

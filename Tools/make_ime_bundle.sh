@@ -9,8 +9,8 @@
 #   Genmai.app/Contents/MacOS/mlx.metallib         <- MLX's Metal kernels for AI conversion (genmai), compiled
 #                                                   with MLX's own safe-math flags (Tools/build_mlx_metallib.sh);
 #                                                   MLX loads a metallib colocated with the executable. The genmai
-#                                                   model itself is not bundled: Tools/prepare_genmai_model.sh
-#                                                   writes it to ~/Library/Application Support/Genmai/model.
+#                                                   model itself is not bundled: the settings (tab "AI") download
+#                                                   it to ~/Library/Application Support/Genmai/model.
 #   Genmai.app/Contents/Resources/*.tiff, *.icns   <- data/images/mac (input mode icons, product icon, logo)
 #   Genmai.app/Contents/Resources/{English,Japanese}.lproj/InfoPlist.strings
 #   Genmai.app/Contents/Resources/credits_en.html  <- data/installer/credits_en.html

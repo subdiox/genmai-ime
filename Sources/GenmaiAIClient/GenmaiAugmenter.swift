@@ -19,6 +19,8 @@ public final class GenmaiAugmenter: ConversionAugmenter {
   struct State {
     var status: AIConversionStatus = .disabled
     var directory: URL?
+    /// `AIModelStatus.identity` of the loaded weights: a model replaced by the installer is loaded again.
+    var modelIdentity: String?
     var options = GenmaiOptions()
     var generation = 0
     var loadTask: Task<Void, Never>?
@@ -111,6 +113,7 @@ public final class GenmaiAugmenter: ConversionAugmenter {
 
   public func configure(_ settings: AIConversionSettings) {
     let directory = settings.resolvedModelDirectory
+    let identity = AIModelStatus.identity(directory)
     let options = GenmaiOptions(beams: max(5, settings.candidateCount))
     let core = self.core
     state.withLock { s in
@@ -122,10 +125,13 @@ public final class GenmaiAugmenter: ConversionAugmenter {
         s.cancelAll()
         s.status = .disabled
         s.directory = nil
+        s.modelIdentity = nil
         Task.detached { await core.unload() }
         return
       }
-      if s.directory == directory, s.options == options, s.status == .ready || s.status == .loading {
+      if s.directory == directory, s.modelIdentity == identity, s.options == options,
+        s.status == .ready || s.status == .loading
+      {
         return
       }
       s.generation += 1
@@ -133,6 +139,7 @@ public final class GenmaiAugmenter: ConversionAugmenter {
       s.loadTask?.cancel()
       s.cancelAll()
       s.directory = directory
+      s.modelIdentity = identity
       s.options = options
       s.status = .loading
       s.loadTask = Task.detached { [weak self] in

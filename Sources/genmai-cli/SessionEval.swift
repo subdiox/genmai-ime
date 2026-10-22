@@ -2,7 +2,7 @@
 //
 //   genmai-cli session-eval [--timeout-ms N] [--candidates N] [--settle none|chunks|idle] [--limit N] [--errors]
 //                           [--typing-ms N[,N...]] [--space-delay-ms N] [--out-dir DIR] [--profile-copy DIR]
-//                           [--trace] [--debug-log] <anco-format set.json>...
+//                           [--trace] [--debug-log] [--no-reading-check] <anco-format set.json>...
 //
 // Every item is typed into a `SessionHandlerBackend` (Mozc Engine + SessionHandler) as direct kana input
 // (one SEND_KEY per character with key_string, hiragana mode), the left context is given as the IMK surrounding
@@ -23,7 +23,9 @@
 // the genmai model) into the temporary profile, so that the user's learning data and config take part (DIR itself
 // is never written). --trace prints, per key, the first suggestions (AI ones marked; also after the AI suggestion
 // refresh, which it awaits like the input controller does) and, at SPACE, the AI n-best and every segment's top
-// candidates. --debug-log enables ai_debug.log in the temporary profile and prints it.
+// candidates. --debug-log enables ai_debug.log in the temporary profile and prints it. --no-reading-check turns off
+// the reading check of AI candidates (AIReadingChecker); with it on, the report counts the candidates it dropped
+// and how many of them were a correct answer.
 
 import Foundation
 import GenmaiAI
@@ -239,6 +241,7 @@ func runSessionEval(_ arguments: [String]) async {
   let profileCopy = option("--profile-copy")
   let trace = flag("--trace")
   let debugLog = flag("--debug-log")
+  let readingCheck = !flag("--no-reading-check")
   if args.isEmpty {
     fail("usage: genmai-cli session-eval [--timeout-ms N] [--settle none|chunks|idle] [--typing-ms N[,N]] [--space-delay-ms N] [--errors] [--out-dir D] <set.json>...")
   }
@@ -275,7 +278,8 @@ func runSessionEval(_ arguments: [String]) async {
     fail("the Genmai engine is not available: \(String(describing: plain.loadError))")
   }
   var settings = AIConversionSettings(
-    enabled: true, timeoutMilliseconds: timeout, candidateCount: candidates, debugLog: debugLog)
+    enabled: true, timeoutMilliseconds: timeout, candidateCount: candidates, readingCheck: readingCheck,
+    debugLog: debugLog)
   if let model {
     settings.modelDirectory = model
   } else if let e = ProcessInfo.processInfo.environment["GENMAI_MODEL_DIR"] {
@@ -293,6 +297,8 @@ func runSessionEval(_ arguments: [String]) async {
       Date().timeIntervalSince(loadStart), settings.timeoutMilliseconds, settings.candidateCount,
       "settle \(settle.rawValue)"))
   let ai = SessionHandlerBackend(aiHook: hook)
+  await hook.waitForReadingCheck()
+  print("reading check \(readingCheck ? "on" : "off")")
 
   for path in args {
     var items = (try? loadSet(path)) ?? []
@@ -320,6 +326,9 @@ func runSessionEval(_ arguments: [String]) async {
       var replaced = 0
       var rawCorrect = 0
       var rawCorrectLost: [String] = []
+      var candidates = 0
+      var unreadable = 0
+      var unreadableCorrect: [String] = []
       var latencies: [Double] = []
       var errors: [String] = []
       var outputs: [[String: Any]] = []
@@ -342,6 +351,10 @@ func runSessionEval(_ arguments: [String]) async {
           if rec.timedOut { timedOut += 1 }
           if rec.error != nil { aiErrors += 1 }
           if rec.outcome.replacedTop { replaced += 1 }
+          candidates += rec.texts.count + rec.unreadable.count
+          unreadable += rec.unreadable.count
+          let answers = Set(item.answers.map(scoreNorm))
+          unreadableCorrect += rec.unreadable.filter { answers.contains(scoreNorm($0)) }.map { "   dropped \($0) / \(item.query)" }
           if let raw = rec.texts.first, Set(item.answers.map(scoreNorm)).contains(scoreNorm(raw)) {
             rawCorrect += 1
             if !n { rawCorrectLost.append("   AI \(raw) -> session \(r.top)") }
@@ -353,7 +366,7 @@ func runSessionEval(_ arguments: [String]) async {
         outputs.append([
           "query": item.query, "answers": item.answers, "left_context": item.context,
           "outputs": [["text": r.top]], "latency_ms": r.latency,
-          "ai_texts": r.record?.texts ?? [], "ai_timed_out": r.record?.timedOut ?? false,
+          "ai_texts": r.record?.texts ?? [], "ai_unreadable": r.record?.unreadable ?? [], "ai_timed_out": r.record?.timedOut ?? false,
           "ai_source": r.source?.rawValue ?? "", "busy_typing_ms": r.busyTyping, "busy_space_ms": r.busyConversion,
         ])
       }
@@ -370,6 +383,10 @@ func runSessionEval(_ arguments: [String]) async {
           "   AI top used \(replaced), timed out \(timedOut), errors \(aiErrors); raw genmai top-1 correct (norm) \(rawCorrect), of which lost in the session \(rawCorrectLost.count)"
         )
         if showErrors { rawCorrectLost.forEach { print($0) } }
+        if readingCheck {
+          print("   reading check: dropped \(unreadable) of \(candidates) AI candidates, \(unreadableCorrect.count) of them correct")
+          unreadableCorrect.forEach { print($0) }
+        }
         let n = Double(count)
         print(
           String(

@@ -16,6 +16,9 @@ public struct AIConversionSettings: Codable, Equatable, Sendable {
   public var candidateCount: Int
   /// The model directory; nil = `defaultModelDirectory`.
   public var modelDirectory: String?
+  /// Drops AI candidates that cannot be read as the input (`AIReadingChecker`). On by default; off only for
+  /// evaluation.
+  public var readingCheck: Bool
   /// Appends one line per AI conversion event to `<profile>/ai_debug.log` (`AIConversionDebugLog`). Off by
   /// default: the log contains the typed text and its left context.
   public var debugLog: Bool
@@ -28,12 +31,13 @@ public struct AIConversionSettings: Codable, Equatable, Sendable {
   public init(
     enabled: Bool = false, timeoutMilliseconds: Int = AIConversionSettings.defaultTimeoutMilliseconds,
     candidateCount: Int = AIConversionSettings.defaultCandidateCount, modelDirectory: String? = nil,
-    debugLog: Bool = false
+    readingCheck: Bool = true, debugLog: Bool = false
   ) {
     self.enabled = enabled
     self.timeoutMilliseconds = timeoutMilliseconds
     self.candidateCount = candidateCount
     self.modelDirectory = modelDirectory
+    self.readingCheck = readingCheck
     self.debugLog = debugLog
   }
 
@@ -42,6 +46,7 @@ public struct AIConversionSettings: Codable, Equatable, Sendable {
     case timeoutMilliseconds = "timeout_ms"
     case candidateCount = "candidates"
     case modelDirectory = "model_directory"
+    case readingCheck = "reading_check"
     case debugLog = "debug_log"
   }
 
@@ -56,6 +61,7 @@ public struct AIConversionSettings: Codable, Equatable, Sendable {
     if modelDirectory?.isEmpty == true {
       modelDirectory = nil
     }
+    readingCheck = try c.decodeIfPresent(Bool.self, forKey: .readingCheck) ?? readingCheck
     debugLog = try c.decodeIfPresent(Bool.self, forKey: .debugLog) ?? debugLog
   }
 
@@ -71,7 +77,7 @@ public struct AIConversionSettings: Codable, Equatable, Sendable {
 
   // MARK: - Model location
 
-  /// `~/Library/Application Support/Genmai/model`, written by Tools/prepare_genmai_model.sh
+  /// `~/Library/Application Support/Genmai/model`, written by the model installer (`AIModelInstaller`)
   /// (the same path as GenmaiAI's `GenmaiConverter.defaultModelDirectory`).
   public static var defaultModelDirectory: URL {
     URL.applicationSupportDirectory.appending(path: "Genmai/model", directoryHint: .isDirectory)
@@ -114,23 +120,42 @@ public struct AIConversionSettings: Codable, Equatable, Sendable {
   }
 }
 
-/// Whether the model files are present (checked without loading the model, so GenmaiTool does not need MLX).
+/// Whether the model files are present (checked without loading the model, so GenmaiTool does not need MLX), and
+/// which release they are.
 public enum AIModelStatus: Equatable, Sendable {
-  case found(URL)
+  /// `info`: nil when the model was not installed from a release (`genmai-cli prepare`, older versions).
+  case found(URL, info: GenmaiModelInfo?)
   case missing(URL, missingFiles: [String])
 
-  /// The files Tools/prepare_genmai_model.sh writes.
+  /// The files the model installer writes (besides `genmai_model.json`).
   public static let requiredFiles = ["config.json", "tokenizer.json", "model.safetensors"]
 
   public static func check(_ directory: URL) -> AIModelStatus {
     let missing = requiredFiles.filter {
       !FileManager.default.fileExists(atPath: directory.appending(path: $0).path)
     }
-    return missing.isEmpty ? .found(directory) : .missing(directory, missingFiles: missing)
+    return missing.isEmpty ? .found(directory, info: GenmaiModelInfo.load(from: directory)) : .missing(directory, missingFiles: missing)
   }
 
   public var isFound: Bool {
     if case .found = self { return true }
     return false
+  }
+
+  /// Whether `release` differs from what is installed (a model without release info counts as outdated).
+  public func needsInstall(_ release: GenmaiModelRelease = .current) -> Bool {
+    if case .found(_, let info) = self { return info != release.info }
+    return true
+  }
+
+  /// Identifies the installed weights (size and modification date of model.safetensors): changes when the model
+  /// is replaced, so that the IME reloads it.
+  public static func identity(_ directory: URL) -> String? {
+    guard let attributes = try? FileManager.default.attributesOfItem(atPath: directory.appending(path: "model.safetensors").path),
+      let size = attributes[.size] as? Int, let date = attributes[.modificationDate] as? Date
+    else {
+      return nil
+    }
+    return "\(size)-\(date.timeIntervalSinceReferenceDate)"
   }
 }

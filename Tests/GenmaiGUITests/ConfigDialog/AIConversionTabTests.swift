@@ -66,10 +66,68 @@ import Testing
     }
     model.refreshAIModelStatus()
     #expect(model.aiModelStatus.isFound)
+    #expect(model.aiModelStatus.needsInstall())  // no genmai_model.json
     #expect(AIStrings.modelStatus(model.aiModelStatus, language: .japanese).hasPrefix("モデルが見つかりました"))
     model.aiModelDirectoryText = ""
     #expect(model.aiValues.modelDirectory == nil)
     #expect(model.aiValues.resolvedModelDirectory == AIConversionSettings.defaultModelDirectory)
+  }
+
+  @Test func installsTheModelAndTellsTheIMEToReload() async throws {
+    let dir = TempDir()
+    let client = ConfigDialogMockClient()
+    let model = ConfigDialogModel(client: client, aiSettingsURL: dir.settings)
+    model.aiModelDirectoryText = dir.url.path
+    #expect(model.aiModelStatus.needsInstall())
+    let (phases, continuation) = AsyncStream<AIModelInstaller.Phase>.makeStream()
+    model.aiModelInstaller = { directory, progress in
+      progress(.downloading(received: 500, total: 1000))
+      progress(.converting)
+      for f in AIModelStatus.requiredFiles {
+        try Data().write(to: directory.appending(path: f))
+      }
+      try GenmaiModelRelease.current.info.save(to: directory)
+      continuation.finish()
+    }
+    model.installAIModel()
+    #expect(model.aiModelInstall.isRunning)
+    for await _ in phases {}
+    while model.aiModelInstall.isRunning { await Task.yield() }
+    #expect(model.aiModelInstall == .idle)
+    #expect(model.aiModelStatus == .found(model.aiValues.resolvedModelDirectory, info: GenmaiModelRelease.current.info))
+    #expect(!model.aiModelStatus.needsInstall())
+    #expect(client.reloadCount == 1)
+    #expect(AIStrings.modelVersion(model.aiModelStatus, language: .english) == "Version: genmai \(GenmaiModelRelease.current.info.version)")
+  }
+
+  @Test func failedOrCancelledInstallation() async throws {
+    let dir = TempDir()
+    let client = ConfigDialogMockClient()
+    let model = ConfigDialogModel(client: client, aiSettingsURL: dir.settings)
+    model.aiModelDirectoryText = dir.url.path
+    model.aiModelInstaller = { _, _ in throw AIModelInstallError.download("model.safetensors", status: 404) }
+    model.installAIModel()
+    while model.aiModelInstall.isRunning { await Task.yield() }
+    #expect(model.aiModelInstall == .failed("downloading model.safetensors failed (HTTP 404)"))
+    #expect(client.reloadCount == 0)
+
+    model.aiModelInstaller = { _, _ in try await Task.sleep(for: .seconds(60)) }
+    model.installAIModel()
+    #expect(model.aiModelInstall.isRunning)
+    model.cancelAIModelInstall()
+    while model.aiModelInstall.isRunning { await Task.yield() }
+    #expect(model.aiModelInstall == .idle)
+    #expect(!model.aiModelStatus.isFound)
+    #expect(client.reloadCount == 0)
+  }
+
+  @Test func installStrings() {
+    let downloading = AIStrings.installPhase(.downloading(received: 0, total: 1_000_000_000), language: .english)
+    #expect(downloading.hasPrefix("Downloading… "))
+    let note = AIStrings.downloadNote(language: .japanese)
+    #expect(note.contains("subdiox/genmai"))
+    #expect(AIStrings.modelVersion(.missing(URL(filePath: "/x"), missingFiles: []), language: .english) == nil)
+    #expect(AIStrings.modelVersion(.found(URL(filePath: "/x"), info: nil), language: .japanese)?.contains("不明") == true)
   }
 
   @Test func everyStringIsTranslated() {

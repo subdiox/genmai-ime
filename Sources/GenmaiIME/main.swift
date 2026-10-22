@@ -188,7 +188,7 @@ func runSelfTest() async -> Int32 {
     "AI conversion: \(userAISettings.enabled ? "enabled" : "disabled") in the user settings; timeout \(userAISettings.timeoutMilliseconds) ms, \(userAISettings.candidateCount) candidates; model \(modelStatus.isFound ? "found" : "missing") at \(modelDirectory.path)"
   )
   if !modelStatus.isFound {
-    print("  (prepare it with Tools/prepare_genmai_model.sh; skipping the AI samples)")
+    print("  (download it in the settings, tab \"AI\", or with Tools/prepare_genmai_model.sh; skipping the AI samples)")
     return failures == 0 ? 0 : 1
   }
   var aiSettings = userAISettings

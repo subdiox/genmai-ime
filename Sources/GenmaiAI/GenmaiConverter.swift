@@ -45,7 +45,7 @@ public actor GenmaiConverter {
     public nonisolated let tokenizer: GenmaiTokenizer
 
     /// The directory the IME loads the model from: `~/Library/Application Support/Genmai/model`
-    /// (written by Tools/prepare_genmai_model.sh).
+    /// (installed by the config dialog, `genmai-cli install` or Tools/prepare_genmai_model.sh).
     public static var defaultModelDirectory: URL {
         URL.applicationSupportDirectory.appending(path: "Genmai/model", directoryHint: .isDirectory)
     }
