@@ -7,6 +7,12 @@ import GenmaiProtocol
 import SwiftUI
 
 public struct ConfigDialogView: View {
+  /// The dialog's size, the same for every tab: GenmaiTool's window follows the content's ideal size
+  /// (`sizingOptions = .preferredContentSize`), which would otherwise change with the selected tab (the tabs' own
+  /// ideal sizes range from 490 × 200 to 744 × 651). Large enough for the largest tab (Advanced); the forms
+  /// scroll when the user makes the window smaller.
+  static let idealSize = CGSize(width: 780, height: 760)
+
   @State private var model: ConfigDialogModel
   @Environment(\.closeDialog) private var closeDialog
 
@@ -40,7 +46,9 @@ public struct ConfigDialogView: View {
       ConfigDialogButtons(model: model, close: closeDialog)
     }
     .padding(16)
-    .frame(minWidth: 560, minHeight: 560)
+    .frame(
+      minWidth: 560, idealWidth: Self.idealSize.width, maxWidth: .infinity,
+      minHeight: 560, idealHeight: Self.idealSize.height, maxHeight: .infinity)
     .navigationTitle(model.windowTitle)
     .genmaiMessageAlert($model.pendingMessage)
     .sheet(item: $model.activeEditor) { editor in
