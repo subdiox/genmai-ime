@@ -243,7 +243,9 @@ func runSessionEval(_ arguments: [String]) async {
   let debugLog = flag("--debug-log")
   let readingCheck = !flag("--no-reading-check")
   if args.isEmpty {
-    fail("usage: genmai-cli session-eval [--timeout-ms N] [--settle none|chunks|idle] [--typing-ms N[,N]] [--space-delay-ms N] [--errors] [--out-dir D] <set.json>...")
+    fail(
+      "usage: genmai-cli session-eval [--timeout-ms N] [--settle none|chunks|idle] [--typing-ms N[,N]] [--space-delay-ms N] [--errors] [--out-dir D] <set.json>..."
+    )
   }
 
   // A temporary user profile: no learning data of the user is read or written.
@@ -354,7 +356,9 @@ func runSessionEval(_ arguments: [String]) async {
           candidates += rec.texts.count + rec.unreadable.count
           unreadable += rec.unreadable.count
           let answers = Set(item.answers.map(scoreNorm))
-          unreadableCorrect += rec.unreadable.filter { answers.contains(scoreNorm($0)) }.map { "   dropped \($0) / \(item.query)" }
+          unreadableCorrect += rec.unreadable.filter { answers.contains(scoreNorm($0)) }.map {
+            "   dropped \($0) / \(item.query)"
+          }
           if let raw = rec.texts.first, Set(item.answers.map(scoreNorm)).contains(scoreNorm(raw)) {
             rawCorrect += 1
             if !n { rawCorrectLost.append("   AI \(raw) -> session \(r.top)") }
@@ -366,7 +370,8 @@ func runSessionEval(_ arguments: [String]) async {
         outputs.append([
           "query": item.query, "answers": item.answers, "left_context": item.context,
           "outputs": [["text": r.top]], "latency_ms": r.latency,
-          "ai_texts": r.record?.texts ?? [], "ai_unreadable": r.record?.unreadable ?? [], "ai_timed_out": r.record?.timedOut ?? false,
+          "ai_texts": r.record?.texts ?? [], "ai_unreadable": r.record?.unreadable ?? [],
+          "ai_timed_out": r.record?.timedOut ?? false,
           "ai_source": r.source?.rawValue ?? "", "busy_typing_ms": r.busyTyping, "busy_space_ms": r.busyConversion,
         ])
       }
@@ -374,7 +379,8 @@ func runSessionEval(_ arguments: [String]) async {
       let count = max(items.count, 1)
       print(
         String(
-          format: "%@ [%@]: strict %d/%d (%.1f%%)  norm %d/%d (%.1f%%)  conversion key: median %.1f ms, p90 %.1f, max %.1f",
+          format:
+            "%@ [%@]: strict %d/%d (%.1f%%)  norm %d/%d (%.1f%%)  conversion key: median %.1f ms, p90 %.1f, max %.1f",
           name, mode, strict, items.count, Double(strict) / Double(count) * 100, normalized, items.count,
           Double(normalized) / Double(count) * 100, median(latencies), percentile(latencies, 0.9),
           latencies.max() ?? 0))
@@ -384,7 +390,9 @@ func runSessionEval(_ arguments: [String]) async {
         )
         if showErrors { rawCorrectLost.forEach { print($0) } }
         if readingCheck {
-          print("   reading check: dropped \(unreadable) of \(candidates) AI candidates, \(unreadableCorrect.count) of them correct")
+          print(
+            "   reading check: dropped \(unreadable) of \(candidates) AI candidates, \(unreadableCorrect.count) of them correct"
+          )
           unreadableCorrect.forEach { print($0) }
         }
         let n = Double(count)
@@ -419,7 +427,9 @@ func runSessionEval(_ arguments: [String]) async {
       }
     }
   }
-  if debugLog, let log = try? String(contentsOf: profile.appending(path: AIConversionDebugLog.fileName), encoding: .utf8) {
+  if debugLog,
+    let log = try? String(contentsOf: profile.appending(path: AIConversionDebugLog.fileName), encoding: .utf8)
+  {
     print("--- ai_debug.log")
     print(log, terminator: "")
   }

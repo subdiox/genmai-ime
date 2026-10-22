@@ -38,9 +38,9 @@ enum FileCodecUtil {
 public final class DictionaryFileCodec: Sendable {
   /// Seed value for name string finger print.
   /// Mutable for reading sections (C++ uses std::atomic).
-  private let seed = Mutex<Int32>(2135654146)
+  private let seed = Mutex<Int32>(2_135_654_146)
   /// Magic value for simple file validation.
-  private let filemagic: Int32 = 20110701
+  private let filemagic: Int32 = 20_110_701
 
   public init() {}
 

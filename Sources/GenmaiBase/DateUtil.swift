@@ -8,7 +8,8 @@ import Foundation
 
 /// absl::Weekday: Monday (0) through Sunday (6).
 public enum Weekday: Int, Sendable, CaseIterable {
-  case monday = 0, tuesday, wednesday, thursday, friday, saturday, sunday
+  case monday = 0
+  case tuesday, wednesday, thursday, friday, saturday, sunday
 }
 
 /// Minimal absl::CivilDay.

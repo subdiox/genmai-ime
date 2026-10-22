@@ -29,9 +29,12 @@ public enum GenCounterSuffixArray {
       // reading_correction.tsv is passed in the list of input files due to the
       // restriction of build system.
       if filename.contains("reading_correction.tsv") { continue }
-      for cols in CodeGenUtil.parseColumnStream(try Py.readLines(filename, mode: .splitlines), numColumn: 5, delimiter: "\t") {
+      for cols in CodeGenUtil.parseColumnStream(
+        try Py.readLines(filename, mode: .splitlines), numColumn: 5, delimiter: "\t")
+      {
         guard cols.count == 5 else { throw DataGenError.invalidInput("\(filename): \(cols)") }
-        let lid = cols[1], rid = cols[2]
+        let lid = cols[1]
+        let rid = cols[2]
         if lid == rid && ids.contains(lid) && ids.contains(rid) {
           suffixes.insert(BStr(cols[4]))
         }

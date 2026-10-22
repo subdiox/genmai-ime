@@ -42,7 +42,10 @@ import Testing
     model.enableAI()
     #expect(model.aiState == .checking)
     while model.aiState != .enabled {
-      if case .failed(let m) = model.aiState { Issue.record("failed: \(m)"); return }
+      if case .failed(let m) = model.aiState {
+        Issue.record("failed: \(m)")
+        return
+      }
       await Task.yield()
     }
     #expect(AIConversionSettings.load(from: dir.settings).enabled)

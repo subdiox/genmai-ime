@@ -99,13 +99,18 @@ public enum UnverifiedSHA1 {
       fillMessage(source, index, &message)
       for i in 0..<16 {
         let b = i * 4
-        w[i] = UInt32(message[b]) << 24 | UInt32(message[b + 1]) << 16
+        w[i] =
+          UInt32(message[b]) << 24 | UInt32(message[b + 1]) << 16
           | UInt32(message[b + 2]) << 8 | UInt32(message[b + 3])
       }
       for t in 16..<80 {
         w[t] = rotl(w[t - 3] ^ w[t - 8] ^ w[t - 14] ^ w[t - 16], 1)
       }
-      var a = h[0], b = h[1], c = h[2], d = h[3], e = h[4]
+      var a = h[0]
+      var b = h[1]
+      var c = h[2]
+      var d = h[3]
+      var e = h[4]
       for t in 0..<80 {
         let tt = rotl(a, 5) &+ f(t, b, c, d) &+ e &+ w[t] &+ k(t)
         e = d

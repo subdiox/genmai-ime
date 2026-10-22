@@ -108,7 +108,8 @@ public final class WelcomeModel {
   var releaseFetcher: @Sendable () async throws -> GenmaiModelRelease = { try await GenmaiModelRelease.latest() }
   /// Installs a release (replaced by tests).
   var installer:
-    @Sendable (GenmaiModelRelease, AIModelVariant, URL, @escaping @Sendable (AIModelInstaller.Phase) -> Void) async throws
+    @Sendable (GenmaiModelRelease, AIModelVariant, URL, @escaping @Sendable (AIModelInstaller.Phase) -> Void)
+      async throws
       -> Void = { release, variant, directory, progress in
         try await AIModelInstaller.install(release, variant: variant, to: directory, progress: progress)
       }
@@ -153,7 +154,12 @@ public final class WelcomeModel {
         next = .installing
         key = 1001
       }
-      guard lastShown.withLock({ last in defer { last = key }; return last != key }) else { return }
+      guard
+        lastShown.withLock({ last in
+          defer { last = key }
+          return last != key
+        })
+      else { return }
       Task { @MainActor [weak self] in
         if self?.aiState.isBusy == true { self?.aiState = next }
       }

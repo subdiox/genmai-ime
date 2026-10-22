@@ -25,8 +25,9 @@ public func cityFingerprint(_ str: some StringProtocol) -> UInt64 {
 
 /// CityHash64 of raw bytes.
 public func cityFingerprint(bytes: UnsafeRawBufferPointer) -> UInt64 {
-  CityHash.cityHash64(UnsafeBufferPointer(
-    start: bytes.baseAddress?.assumingMemoryBound(to: UInt8.self), count: bytes.count))
+  CityHash.cityHash64(
+    UnsafeBufferPointer(
+      start: bytes.baseAddress?.assumingMemoryBound(to: UInt8.self), count: bytes.count))
 }
 
 /// CityHash64WithSeed of the UTF-8 bytes of `str`.
@@ -40,7 +41,7 @@ public func cityFingerprintWithSeed(_ str: some StringProtocol, _ seed: UInt64) 
 // These are about 5-7 times slower than CityFingerprint.
 // Do not use legacy Fingerprint in new code.
 
-private let kFingerPrint32Seed: UInt32 = 0xfd12deff
+private let kFingerPrint32Seed: UInt32 = 0xfd12_deff
 private let kFingerPrintSeed0: UInt32 = 0x6d6f
 private let kFingerPrintSeed1: UInt32 = 0x7a63
 
@@ -57,7 +58,7 @@ public func legacyFingerprintWithSeed(_ str: some StringProtocol, _ seed: UInt32
     let lo = legacyFingerprint32WithSeed(buf, kFingerPrintSeed1)
     var result = UInt64(hi) << 32 | UInt64(lo)
     if hi == 0 && lo < 2 {
-      result ^= 0x130f9bef94a0a928
+      result ^= 0x130f_9bef_94a0_a928
     }
     return result
   }
@@ -78,15 +79,33 @@ private func toUInt32(_ a: UInt8, _ b: UInt8, _ c: UInt8, _ d: UInt8) -> UInt32 
 
 @inline(__always)
 private func mix(_ a: inout UInt32, _ b: inout UInt32, _ c: inout UInt32) {
-  a &-= b; a &-= c; a ^= (c >> 13)
-  b &-= c; b &-= a; b ^= (a << 8)
-  c &-= a; c &-= b; c ^= (b >> 13)
-  a &-= b; a &-= c; a ^= (c >> 12)
-  b &-= c; b &-= a; b ^= (a << 16)
-  c &-= a; c &-= b; c ^= (b >> 5)
-  a &-= b; a &-= c; a ^= (c >> 3)
-  b &-= c; b &-= a; b ^= (a << 10)
-  c &-= a; c &-= b; c ^= (b >> 15)
+  a &-= b
+  a &-= c
+  a ^= (c >> 13)
+  b &-= c
+  b &-= a
+  b ^= (a << 8)
+  c &-= a
+  c &-= b
+  c ^= (b >> 13)
+  a &-= b
+  a &-= c
+  a ^= (c >> 12)
+  b &-= c
+  b &-= a
+  b ^= (a << 16)
+  c &-= a
+  c &-= b
+  c ^= (b >> 5)
+  a &-= b
+  a &-= c
+  a ^= (c >> 3)
+  b &-= c
+  b &-= a
+  b ^= (a << 10)
+  c &-= a
+  c &-= b
+  c ^= (b >> 15)
 }
 
 private func legacyFingerprint32WithSeed(_ str: UnsafeBufferPointer<UInt8>, _ seed: UInt32) -> UInt32 {
@@ -199,8 +218,9 @@ public enum CityHash {
     let b = fetch64(s, 8)
     let c = fetch64(s, len - 8) &* mul
     let d = fetch64(s, len - 16) &* k2
-    return hashLen16(rotate(a &+ b, 43) &+ rotate(c, 30) &+ d,
-                     a &+ rotate(b &+ k2, 18) &+ c, mul)
+    return hashLen16(
+      rotate(a &+ b, 43) &+ rotate(c, 30) &+ d,
+      a &+ rotate(b &+ k2, 18) &+ c, mul)
   }
 
   @inline(__always)
@@ -222,8 +242,9 @@ public enum CityHash {
   private static func weakHashLen32WithSeeds(
     _ s: UnsafePointer<UInt8>, _ i: Int, _ a: UInt64, _ b: UInt64
   ) -> (UInt64, UInt64) {
-    weakHashLen32WithSeeds(fetch64(s, i), fetch64(s, i + 8), fetch64(s, i + 16),
-                           fetch64(s, i + 24), a, b)
+    weakHashLen32WithSeeds(
+      fetch64(s, i), fetch64(s, i + 8), fetch64(s, i + 16),
+      fetch64(s, i + 24), a, b)
   }
 
   private static func hashLen33to64(_ s: UnsafePointer<UInt8>, _ len: Int) -> UInt64 {
@@ -285,8 +306,9 @@ public enum CityHash {
       p += 64
       len -= 64
     } while len != 0
-    return hashLen16(hashLen16(v.0, w.0) &+ shiftMix(y) &* k1 &+ z,
-                     hashLen16(v.1, w.1) &+ x)
+    return hashLen16(
+      hashLen16(v.0, w.0) &+ shiftMix(y) &* k1 &+ z,
+      hashLen16(v.1, w.1) &+ x)
   }
 
   public static func cityHash64WithSeed(_ buf: UnsafeBufferPointer<UInt8>, _ seed: UInt64) -> UInt64 {

@@ -296,7 +296,8 @@ struct ImmutableConverterTests {
     return ConversionRequestBuilder()
       .setRequest(request)
       .setOptions(
-        options(.prediction, maxConversionCandidatesSize: 100, createPartialCandidates: true))
+        options(.prediction, maxConversionCandidatesSize: 100, createPartialCandidates: true)
+      )
       .build()
   }
 

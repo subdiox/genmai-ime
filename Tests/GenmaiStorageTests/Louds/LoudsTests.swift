@@ -1,6 +1,7 @@
 // Port of mozc/src/storage/louds/louds_test.cc (3.35.6354).
 
 import Testing
+
 @testable import GenmaiStorage
 
 private func makeSequence(_ s: String) -> [UInt8] {

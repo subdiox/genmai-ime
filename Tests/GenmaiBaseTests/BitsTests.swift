@@ -1,6 +1,7 @@
 // Port of mozc/src/base/bits_test.cc (3.35.6354).
 
 import Testing
+
 @testable import GenmaiBase
 
 @Suite struct BitsTest {
@@ -8,23 +9,23 @@ import Testing
     let kArray: [UInt8] = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
     #expect(Bits.loadUnaligned(kArray, 2, as: UInt8.self) == 2)
     #expect(Bits.hostToLittle(Bits.loadUnaligned(kArray, 1, as: UInt16.self)) == 0x0201)
-    #expect(Bits.hostToLittle(Bits.loadUnaligned(kArray, 5, as: UInt32.self)) == 0x08070605)
-    #expect(Bits.hostToLittle(Bits.loadUnaligned(kArray, 3, as: UInt64.self)) == 0xa09080706050403)
+    #expect(Bits.hostToLittle(Bits.loadUnaligned(kArray, 5, as: UInt32.self)) == 0x0807_0605)
+    #expect(Bits.hostToLittle(Bits.loadUnaligned(kArray, 3, as: UInt64.self)) == 0xa09_0807_0605_0403)
 
     kArray.withUnsafeBytes { sv in
       var iter = 1
-      #expect(Bits.hostToLittle(Bits.loadUnalignedAdvance(sv, &iter, as: UInt32.self)) == 0x04030201)
-      #expect(Bits.hostToLittle(Bits.loadUnalignedAdvance(sv, &iter, as: UInt32.self)) == 0x08070605)
+      #expect(Bits.hostToLittle(Bits.loadUnalignedAdvance(sv, &iter, as: UInt32.self)) == 0x0403_0201)
+      #expect(Bits.hostToLittle(Bits.loadUnalignedAdvance(sv, &iter, as: UInt32.self)) == 0x0807_0605)
       #expect(iter == 1 + 2 * MemoryLayout<UInt32>.size)
-      #expect(Bits.loadLittleEndian(sv, 1, as: UInt32.self) == 0x04030201)
+      #expect(Bits.loadLittleEndian(sv, 1, as: UInt32.self) == 0x0403_0201)
     }
 
     do {
       let vec: [UInt16] = [0x1234, 0x5678, 0x9abc, 0xdef0]
       vec.withUnsafeBytes { buf in
         var iter = 0
-        #expect(Bits.hostToNet(Bits.loadUnalignedAdvance(buf, &iter, as: UInt32.self)) == 0x34127856)
-        #expect(Bits.hostToNet(Bits.loadUnalignedAdvance(buf, &iter, as: UInt32.self)) == 0xbc9af0de)
+        #expect(Bits.hostToNet(Bits.loadUnalignedAdvance(buf, &iter, as: UInt32.self)) == 0x3412_7856)
+        #expect(Bits.hostToNet(Bits.loadUnalignedAdvance(buf, &iter, as: UInt32.self)) == 0xbc9a_f0de)
         #expect(iter / MemoryLayout<UInt16>.size == 4)
       }
     }
@@ -38,13 +39,13 @@ import Testing
     #expect(buf[2...].allSatisfy { $0 == 0xff })
 
     buf = [UInt8](repeating: 0xff, count: 12)
-    var iter = Bits.storeUnaligned(Bits.hostToLittle(UInt32(0x31415926)), &buf, 5)
-    #expect(Bits.loadUnaligned(buf, 5, as: UInt32.self) == 0x31415926)
+    var iter = Bits.storeUnaligned(Bits.hostToLittle(UInt32(0x3141_5926)), &buf, 5)
+    #expect(Bits.loadUnaligned(buf, 5, as: UInt32.self) == 0x3141_5926)
     #expect(buf == [0xff, 0xff, 0xff, 0xff, 0xff, 0x26, 0x59, 0x41, 0x31, 0xff, 0xff, 0xff])
     #expect(iter == 5 + MemoryLayout<UInt32>.size)
 
     buf = [UInt8](repeating: 0xff, count: 12)
-    iter = Bits.storeUnaligned(Bits.hostToNet(UInt64(0x0123456789abcdef)), &buf, 3)
+    iter = Bits.storeUnaligned(Bits.hostToNet(UInt64(0x0123_4567_89ab_cdef)), &buf, 3)
     #expect(buf == [0xff, 0xff, 0xff, 0x01, 0x23, 0x45, 0x67, 0x89, 0xab, 0xcd, 0xef, 0xff])
     #expect(iter == 3 + MemoryLayout<UInt64>.size)
 
@@ -63,16 +64,16 @@ import Testing
     #expect(Bits.byteswap(Bits.byteswap(u16)) == u16)
     let i16: Int16 = 0x1234
     #expect(Bits.byteswap(i16) == 0x3412)
-    let u32: UInt32 = 0x12345678
-    #expect(Bits.byteswap(u32) == 0x78563412)
+    let u32: UInt32 = 0x1234_5678
+    #expect(Bits.byteswap(u32) == 0x7856_3412)
     #expect(Bits.byteswap(Bits.byteswap(u32)) == u32)
-    let i32: Int32 = 0x12345678
-    #expect(Bits.byteswap(i32) == 0x78563412)
-    let u64: UInt64 = 0x1234567890abcdef
-    #expect(Bits.byteswap(u64) == 0xefcdab9078563412)
+    let i32: Int32 = 0x1234_5678
+    #expect(Bits.byteswap(i32) == 0x7856_3412)
+    let u64: UInt64 = 0x1234_5678_90ab_cdef
+    #expect(Bits.byteswap(u64) == 0xefcd_ab90_7856_3412)
     #expect(Bits.byteswap(Bits.byteswap(u64)) == u64)
-    let i64: Int64 = 0x1234567890abcdef
-    #expect(Bits.byteswap(i64) == Int64(bitPattern: 0xefcdab9078563412))
+    let i64: Int64 = 0x1234_5678_90ab_cdef
+    #expect(Bits.byteswap(i64) == Int64(bitPattern: 0xefcd_ab90_7856_3412))
   }
 
   struct Data {

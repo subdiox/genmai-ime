@@ -57,7 +57,7 @@ func upstreamSourceFile(_ components: [String], filePath: String = #filePath) ->
   // Tests/GenmaiCoreTests/<Folder>/<File>.swift -> repository root.
   for _ in 0..<4 { url.deleteLastPathComponent() }
   let candidates = [
-    url.appendingPathComponent("Vendor/mozc/src").path,
+    url.appendingPathComponent("Vendor/mozc/src").path
   ]
   for root in candidates {
     let path = ([root] + components).joined(separator: "/")

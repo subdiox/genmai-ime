@@ -167,7 +167,9 @@ public final class AIConversionHook: Sendable {
   /// The AI texts in the conversion character form, without empty and duplicate ones, and without those that do
   /// not read as `key` (the conversion key, hiragana) when the reading check is on. `dropped`: the texts the check
   /// removed.
-  func candidateTexts(_ raw: [String], key: String, settings: AIConversionSettings) -> (texts: [String], dropped: [String]) {
+  func candidateTexts(_ raw: [String], key: String, settings: AIConversionSettings) -> (
+    texts: [String], dropped: [String]
+  ) {
     let forms = CharacterFormManager.getCharacterFormManager()
     var seen = Set<String>()
     let texts = raw.map { forms.convertConversionString($0) }.filter { !$0.isEmpty && seen.insert($0).inserted }
@@ -354,7 +356,9 @@ public final class AIConversionHook: Sendable {
       if record.outcome.keptUserWords > 0 { note += " keptUserWords=\(record.outcome.keptUserWords)" }
       if !record.unreadable.isEmpty { note += " unreadable=\(record.unreadable)" }
       if let error = record.error { note += " error=\(error)" }
-      note += " segments=" + (0..<segments.conversionSegmentsSize).map { segments.conversionSegment($0).key }
+      note +=
+        " segments="
+        + (0..<segments.conversionSegmentsSize).map { segments.conversionSegment($0).key }
         .joined(separator: "|")
       debugLog.write(
         AIConversionDebugLog.Event(
@@ -540,7 +544,10 @@ public final class AIConversionHook: Sendable {
       let start = ContinuousClock.now
       // The first of: the result (or its error), the timeout. On timeout the conversion is cancelled but not
       // awaited (it stops at its next decode step; a long prefill cannot be interrupted).
-      enum Event { case done(String?), timeout }
+      enum Event {
+        case done(String?)
+        case timeout
+      }
       let (events, sink) = AsyncStream<Event>.makeStream()
       let work = Task.detached {
         do {

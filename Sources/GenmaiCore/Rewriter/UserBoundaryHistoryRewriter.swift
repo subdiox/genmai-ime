@@ -17,7 +17,7 @@ import GenmaiStorage
 
 private let kValueSize = 4
 private let kLruSize = 5000
-private let kSeedValue: UInt32 = 0x761fea81
+private let kSeedValue: UInt32 = 0x761f_ea81
 
 private let kFileName = "user://boundary.db"
 

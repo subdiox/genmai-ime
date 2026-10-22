@@ -1585,8 +1585,7 @@ public final class ImmutableConverter: ImmutableConverterInterface, @unchecked S
   }
 
   /// Accepts the internal lattice structure for debugging.
-  public func convert(_ options: ConversionOptions, _ segments: Segments, _ lattice: Lattice) -> Bool
-  {
+  public func convert(_ options: ConversionOptions, _ segments: Segments, _ lattice: Lattice) -> Bool {
     let isPrediction = options.requestType == .prediction || options.requestType == .suggestion
 
     if !makeLattice(options, segments, lattice) {

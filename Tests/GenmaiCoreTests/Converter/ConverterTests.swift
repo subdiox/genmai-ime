@@ -34,8 +34,7 @@ private typealias UserEntry = Genmai_UserDictionary_UserDictionary.Entry
 private typealias PosType = Genmai_UserDictionary_UserDictionary.PosType
 
 @discardableResult
-private func addSegment(_ key: String, _ type: Segment.SegmentType, _ segments: Segments) -> Segment
-{
+private func addSegment(_ key: String, _ type: Segment.SegmentType, _ segments: Segments) -> Segment {
   let segment = segments.addSegment()
   segment.setKey(key)
   segment.setSegmentType(type)

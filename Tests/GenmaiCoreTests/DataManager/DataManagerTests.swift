@@ -5,9 +5,12 @@
 import Foundation
 import GenmaiBase
 import Testing
+
 @testable import GenmaiCore
 
-@Suite(.enabled(if: DataManagerTestSupport.hasOssData, "Data/genmai.data is missing; run Tools/build_oracle.sh to create it"))
+@Suite(
+  .enabled(if: DataManagerTestSupport.hasOssData, "Data/genmai.data is missing; run Tools/build_oracle.sh to create it")
+)
 struct DataManagerOssDataSetTest {
   static let kAllSections = [
     "pos_matcher", "pos_id_map", "user_pos_token", "user_pos_string", "coll", "cols", "conn",

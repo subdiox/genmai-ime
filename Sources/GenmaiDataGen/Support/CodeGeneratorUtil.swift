@@ -17,7 +17,8 @@ public enum CodeGenUtil {
 
   /// `code_generator_util.ParseColumnStream(stream, num_column, delimiter)`.
   /// `delimiter == nil` splits at whitespace runs (Python `str.split()`).
-  public static func parseColumnStream(_ lines: [String], numColumn: Int? = nil, delimiter: String? = nil) -> [[String]] {
+  public static func parseColumnStream(_ lines: [String], numColumn: Int? = nil, delimiter: String? = nil) -> [[String]]
+  {
     lines.map { line in
       let l = Py.chompLF(line)
       let cols = delimiter.map { Py.split(l, $0) } ?? Py.split(l)

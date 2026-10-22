@@ -1,7 +1,7 @@
 // Port of mozc/src/base/run_level.{h,cc} (3.35.6354). Non-Windows semantics.
 
 #if canImport(Darwin)
-import Darwin
+  import Darwin
 #endif
 
 public enum RunLevel {

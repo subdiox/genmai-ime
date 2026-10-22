@@ -2,6 +2,7 @@
 // (3.35.6354).
 
 import Testing
+
 @testable import GenmaiStorage
 
 struct BitVectorCacheSizeParam: Sendable, CustomTestStringConvertible {

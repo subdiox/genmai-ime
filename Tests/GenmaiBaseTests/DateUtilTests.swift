@@ -2,6 +2,7 @@
 
 import Foundation
 import Testing
+
 @testable import GenmaiBase
 
 @Suite struct DateUtilTest {

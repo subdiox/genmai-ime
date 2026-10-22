@@ -1,6 +1,7 @@
 // Port of mozc/src/base/text_normalizer_test.cc (3.35.6354).
 
 import Testing
+
 @testable import GenmaiBase
 
 @Suite struct TextNormalizerTest {

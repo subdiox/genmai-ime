@@ -19,7 +19,6 @@ import GenmaiBase
 import GenmaiProtocol
 import Synchronization
 
-
 /// config::kConfigVersion
 public let kConfigVersion = 1
 

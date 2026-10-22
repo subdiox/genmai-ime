@@ -3,6 +3,7 @@
 import Foundation
 import GenmaiBase
 import Testing
+
 @testable import GenmaiStorage
 
 private let kSeed: UInt32 = 0x76fef  // Seed for fingerprint.

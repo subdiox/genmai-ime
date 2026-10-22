@@ -3,6 +3,7 @@
 import GenmaiBase
 import GenmaiProtocol
 import Testing
+
 @testable import GenmaiCore
 
 @Suite(.enabled(if: R2RewriterTestSupport.hasMockData, R2RewriterTestSupport.mockDataMissing))

@@ -1,6 +1,7 @@
 // Port of mozc/src/base/strings/internal/utf8_internal_test.cc (3.35.6354).
 
 import Testing
+
 @testable import GenmaiBase
 
 @Suite struct Utf8InternalTest {

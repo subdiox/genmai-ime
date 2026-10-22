@@ -460,7 +460,8 @@ public enum GenmaiSafetensors {
       guard ["F32", "F16", "BF16"].contains(dtype), !transpose || shape.count == 2 else {
         throw AIModelInstallError.badModel("\(key): \(dtype) \(shape)")
       }
-      let t = Tensor(name: name, dtype: dtype, shape: transpose ? [shape[1], shape[0]] : shape,
+      let t = Tensor(
+        name: name, dtype: dtype, shape: transpose ? [shape[1], shape[0]] : shape,
         begin: base + offsets[0], end: base + offsets[1], transpose: transpose)
       guard t.end <= data.count, t.end - t.begin == t.count * (dtype == "F32" ? 4 : 2) else {
         throw AIModelInstallError.badModel("\(key): bad data offsets")
@@ -475,7 +476,8 @@ public enum GenmaiSafetensors {
       outHeader[t.name] = ["dtype": "BF16", "shape": t.shape, "data_offsets": [offset, offset + t.count * 2]]
       offset += t.count * 2
     }
-    var headerData = try JSONSerialization.data(withJSONObject: outHeader, options: [.sortedKeys, .withoutEscapingSlashes])
+    var headerData = try JSONSerialization.data(
+      withJSONObject: outHeader, options: [.sortedKeys, .withoutEscapingSlashes])
     headerData.append(contentsOf: [UInt8](repeating: 0x20, count: (8 - headerData.count % 8) % 8))
 
     FileManager.default.createFile(atPath: destination.path, contents: nil)

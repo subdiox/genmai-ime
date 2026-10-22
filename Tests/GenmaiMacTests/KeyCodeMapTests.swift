@@ -58,19 +58,36 @@ private func createKeyEvent(
   // Test for romaji typing
   @Test func normaKeyEvent() {
     let testCases = [
-      TestCase(title: "normal a", characters: "a", unmodCharacters: nil, flags: [], keyCode: kVK_ANSI_A, expected: key(code: "a")),
-      TestCase(title: "\\S-a", characters: "A", unmodCharacters: "a", flags: .shift, keyCode: kVK_ANSI_A, expected: key(code: "A")),
-      TestCase(title: "\\C-a", characters: "\u{01}", unmodCharacters: "a", flags: .control, keyCode: kVK_ANSI_A, expected: key(code: "a", modifiers: [.ctrl])),
-      TestCase(title: "\\S-C-a", characters: "a", unmodCharacters: nil, flags: [.control, .shift], keyCode: kVK_ANSI_A, expected: key(code: "a", modifiers: [.shift, .ctrl])),
-      TestCase(title: "Tab key", characters: "\u{09}", unmodCharacters: nil, flags: [], keyCode: kVK_Tab, expected: key(special: .tab)),
-      TestCase(title: "\\S-Tab", characters: "\u{09}", unmodCharacters: nil, flags: .shift, keyCode: kVK_Tab, expected: key(special: .tab, modifiers: [.shift])),
-      TestCase(title: "function key", characters: "\u{10}", unmodCharacters: nil, flags: [], keyCode: kVK_F1, expected: key(special: .f1)),
-      TestCase(title: "tenkey", characters: "0", unmodCharacters: nil, flags: [], keyCode: kVK_ANSI_Keypad0, expected: key(special: .numpad0)),
+      TestCase(
+        title: "normal a", characters: "a", unmodCharacters: nil, flags: [], keyCode: kVK_ANSI_A,
+        expected: key(code: "a")),
+      TestCase(
+        title: "\\S-a", characters: "A", unmodCharacters: "a", flags: .shift, keyCode: kVK_ANSI_A,
+        expected: key(code: "A")),
+      TestCase(
+        title: "\\C-a", characters: "\u{01}", unmodCharacters: "a", flags: .control, keyCode: kVK_ANSI_A,
+        expected: key(code: "a", modifiers: [.ctrl])),
+      TestCase(
+        title: "\\S-C-a", characters: "a", unmodCharacters: nil, flags: [.control, .shift], keyCode: kVK_ANSI_A,
+        expected: key(code: "a", modifiers: [.shift, .ctrl])),
+      TestCase(
+        title: "Tab key", characters: "\u{09}", unmodCharacters: nil, flags: [], keyCode: kVK_Tab,
+        expected: key(special: .tab)),
+      TestCase(
+        title: "\\S-Tab", characters: "\u{09}", unmodCharacters: nil, flags: .shift, keyCode: kVK_Tab,
+        expected: key(special: .tab, modifiers: [.shift])),
+      TestCase(
+        title: "function key", characters: "\u{10}", unmodCharacters: nil, flags: [], keyCode: kVK_F1,
+        expected: key(special: .f1)),
+      TestCase(
+        title: "tenkey", characters: "0", unmodCharacters: nil, flags: [], keyCode: kVK_ANSI_Keypad0,
+        expected: key(special: .numpad0)),
     ]
     let map = KeyCodeMap()
     for testCase in testCases {
       var event = KeyEvent()
-      #expect(createKeyEvent(map, testCase.characters, testCase.unmodCharacters, testCase.flags, testCase.keyCode, &event))
+      #expect(
+        createKeyEvent(map, testCase.characters, testCase.unmodCharacters, testCase.flags, testCase.keyCode, &event))
       #expect(event == testCase.expected, Comment(rawValue: testCase.title))
     }
   }
@@ -78,21 +95,40 @@ private func createKeyEvent(
   // Test for kana typing
   @Test func kanaEvent() {
     let testCases = [
-      TestCase(title: "a -> ち", characters: "a", unmodCharacters: nil, flags: [], keyCode: kVK_ANSI_A, expected: key(code: "a", keyString: "ち")),
-      TestCase(title: "yen mark", characters: "¥", unmodCharacters: nil, flags: [], keyCode: kVK_JIS_Yen, expected: key(code: "\\", keyString: "ー")),
-      TestCase(title: "\\S-2 -> ふ", characters: "@", unmodCharacters: "2", flags: .shift, keyCode: kVK_ANSI_2, expected: key(code: "@", keyString: "ふ")),
-      TestCase(title: "\\C-a -> \\C-a", characters: "\u{01}", unmodCharacters: "a", flags: .control, keyCode: kVK_ANSI_A, expected: key(code: "a", modifiers: [.ctrl], keyString: "ち")),
-      TestCase(title: "\\S-0 -> を", characters: "0", unmodCharacters: nil, flags: .shift, keyCode: kVK_ANSI_0, expected: key(code: "0", keyString: "を")),
-      TestCase(title: "yen mark -> ー", characters: "￥", unmodCharacters: nil, flags: [], keyCode: kVK_JIS_Yen, expected: key(keyString: "ー")),
-      TestCase(title: "underscore -> ろ", characters: "_", unmodCharacters: nil, flags: [], keyCode: kVK_JIS_Underscore, expected: key(code: "_", keyString: "ろ")),
-      TestCase(title: "@ -> ゛ in JIS keyboard", characters: "@", unmodCharacters: nil, flags: [], keyCode: kVK_ANSI_LeftBracket, expected: key(code: "@", keyString: "゛")),
-      TestCase(title: "[ -> ゛ in US keyboard", characters: "[", unmodCharacters: nil, flags: [], keyCode: kVK_ANSI_LeftBracket, expected: key(code: "[", keyString: "゛")),
+      TestCase(
+        title: "a -> ち", characters: "a", unmodCharacters: nil, flags: [], keyCode: kVK_ANSI_A,
+        expected: key(code: "a", keyString: "ち")),
+      TestCase(
+        title: "yen mark", characters: "¥", unmodCharacters: nil, flags: [], keyCode: kVK_JIS_Yen,
+        expected: key(code: "\\", keyString: "ー")),
+      TestCase(
+        title: "\\S-2 -> ふ", characters: "@", unmodCharacters: "2", flags: .shift, keyCode: kVK_ANSI_2,
+        expected: key(code: "@", keyString: "ふ")),
+      TestCase(
+        title: "\\C-a -> \\C-a", characters: "\u{01}", unmodCharacters: "a", flags: .control, keyCode: kVK_ANSI_A,
+        expected: key(code: "a", modifiers: [.ctrl], keyString: "ち")),
+      TestCase(
+        title: "\\S-0 -> を", characters: "0", unmodCharacters: nil, flags: .shift, keyCode: kVK_ANSI_0,
+        expected: key(code: "0", keyString: "を")),
+      TestCase(
+        title: "yen mark -> ー", characters: "￥", unmodCharacters: nil, flags: [], keyCode: kVK_JIS_Yen,
+        expected: key(keyString: "ー")),
+      TestCase(
+        title: "underscore -> ろ", characters: "_", unmodCharacters: nil, flags: [], keyCode: kVK_JIS_Underscore,
+        expected: key(code: "_", keyString: "ろ")),
+      TestCase(
+        title: "@ -> ゛ in JIS keyboard", characters: "@", unmodCharacters: nil, flags: [],
+        keyCode: kVK_ANSI_LeftBracket, expected: key(code: "@", keyString: "゛")),
+      TestCase(
+        title: "[ -> ゛ in US keyboard", characters: "[", unmodCharacters: nil, flags: [], keyCode: kVK_ANSI_LeftBracket,
+        expected: key(code: "[", keyString: "゛")),
     ]
     let map = KeyCodeMap()
     map.inputMode = .kana
     for testCase in testCases {
       var event = KeyEvent()
-      #expect(createKeyEvent(map, testCase.characters, testCase.unmodCharacters, testCase.flags, testCase.keyCode, &event))
+      #expect(
+        createKeyEvent(map, testCase.characters, testCase.unmodCharacters, testCase.flags, testCase.keyCode, &event))
       #expect(event == testCase.expected, Comment(rawValue: testCase.title))
     }
   }
@@ -160,9 +196,14 @@ private func createKeyEvent(
 
   @Test func modeSwitchingKey() {
     let map = KeyCodeMap()
-    let eisu = KeyEventData(type: .keyDown, characters: " ", charactersIgnoringModifiers: " ", modifierFlags: [], keyCode: UInt16(kVK_JIS_Eisu))
-    let kana = KeyEventData(type: .keyDown, characters: " ", charactersIgnoringModifiers: " ", modifierFlags: [], keyCode: UInt16(kVK_JIS_Kana))
-    let a = KeyEventData(type: .keyDown, characters: "a", charactersIgnoringModifiers: "a", modifierFlags: [], keyCode: UInt16(kVK_ANSI_A))
+    let eisu = KeyEventData(
+      type: .keyDown, characters: " ", charactersIgnoringModifiers: " ", modifierFlags: [],
+      keyCode: UInt16(kVK_JIS_Eisu))
+    let kana = KeyEventData(
+      type: .keyDown, characters: " ", charactersIgnoringModifiers: " ", modifierFlags: [],
+      keyCode: UInt16(kVK_JIS_Kana))
+    let a = KeyEventData(
+      type: .keyDown, characters: "a", charactersIgnoringModifiers: "a", modifierFlags: [], keyCode: UInt16(kVK_ANSI_A))
     #expect(map.isModeSwitchingKey(eisu))
     #expect(map.isModeSwitchingKey(kana))
     #expect(!map.isModeSwitchingKey(a))

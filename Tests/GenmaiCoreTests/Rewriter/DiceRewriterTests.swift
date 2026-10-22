@@ -1,6 +1,7 @@
 // Port of mozc/src/rewriter/dice_rewriter_test.cc (3.35.6354).
 
 import Testing
+
 @testable import GenmaiCore
 
 @Suite struct DiceRewriterTests {

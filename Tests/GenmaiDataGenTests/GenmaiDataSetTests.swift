@@ -20,12 +20,14 @@ enum DataGenTestPaths {
 
   /// `@ja_usage_dict//:usage_dict.txt`: Data/external/ (Tools/build_data.sh downloads it), else the Bazel cache.
   static var usageDict: String? {
-    firstExisting([
-      repoRoot + "/Data/external/usage_dict.txt",
-    ] + bazelExternal("+http_archive+ja_usage_dict/usage_dict.txt"))
+    firstExisting(
+      [
+        repoRoot + "/Data/external/usage_dict.txt"
+      ] + bazelExternal("+http_archive+ja_usage_dict/usage_dict.txt"))
   }
   static var zipCodeKenAll: String? {
-    firstExisting([repoRoot + "/Data/external/KEN_ALL.CSV"] + bazelExternal("+http_archive+zip_code_ken_all/KEN_ALL.CSV"))
+    firstExisting(
+      [repoRoot + "/Data/external/KEN_ALL.CSV"] + bazelExternal("+http_archive+zip_code_ken_all/KEN_ALL.CSV"))
   }
   static var zipCodeJigyosyo: String? {
     firstExisting(

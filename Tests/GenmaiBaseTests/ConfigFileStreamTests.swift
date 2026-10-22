@@ -2,6 +2,7 @@
 
 import Foundation
 import Testing
+
 @testable import GenmaiBase
 
 // Returns true if |inputStream| is at the end of stream.
@@ -116,8 +117,9 @@ private func isEof(_ inputStream: InputFileStream) -> Bool {
     #expect(first?.isEmpty == false)
     #expect(ConfigFileStream.openReadText("system://no_such_file.tsv") == nil)
     let msime = ConfigFileStream.openReadBinary("system://ms-ime.tsv")?.readAll() ?? []
-    let onDisk = (try? FileUtil.getContentBytes(
-      vendorPath("Vendor/mozc/src/data/keymap/ms-ime.tsv"))) ?? [1]
+    let onDisk =
+      (try? FileUtil.getContentBytes(
+        vendorPath("Vendor/mozc/src/data/keymap/ms-ime.tsv"))) ?? [1]
     #expect(msime == onDisk)
   }
 }
@@ -126,10 +128,11 @@ private func isEof(_ inputStream: InputFileStream) -> Bool {
 func vendorPath(_ relative: String, file: String = #filePath) -> String {
   // Tests/GenmaiBaseTests/<file>.swift -> repository root
   // Resolve symlinks so that the path is inside the repository.
-  var url = realpath(file, nil).map { p in
-    defer { free(p) }
-    return String(cString: p)
-  } ?? file
+  var url =
+    realpath(file, nil).map { p in
+      defer { free(p) }
+      return String(cString: p)
+    } ?? file
   for _ in 0..<3 {
     url = FileUtil.dirname(url)
   }

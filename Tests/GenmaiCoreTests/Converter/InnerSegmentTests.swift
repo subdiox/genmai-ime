@@ -1,6 +1,7 @@
 // Port of mozc/src/converter/inner_segment_test.cc (3.35.6354).
 
 import Testing
+
 @testable import GenmaiCore
 
 @Suite struct InnerSegmentTests {

@@ -2,6 +2,7 @@
 
 import GenmaiBase
 import Testing
+
 @testable import GenmaiCore
 
 @Suite struct SerializedDictionaryTest {

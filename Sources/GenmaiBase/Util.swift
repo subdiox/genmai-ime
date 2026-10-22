@@ -399,7 +399,7 @@ public enum Util {
     var result: Char32 = 0
     var len = 0
     var minValue: Char32 = 0
-    var maxValue: Char32 = 0xffffffff
+    var maxValue: Char32 = 0xffff_ffff
     if leadingByte < 0x80 {
       return (Char32(leadingByte), s.dropFirst())
     }
@@ -433,7 +433,7 @@ public enum Util {
     } else if (leadingByte & 0xfe) == 0xfc {
       len = 6
       minValue = 0x4000000
-      maxValue = 0x7fffffff
+      maxValue = 0x7fff_ffff
       result = Char32(leadingByte & 0x01)
     } else {
       // Currently 0xFE and 0xFF are treated as invalid.
@@ -525,7 +525,8 @@ public enum Util {
     -> Substring
   {
     let sub = utf8SubString(src, start)
-    let end = sub.unicodeScalars.index(sub.startIndex, offsetBy: length, limitedBy: sub.endIndex)
+    let end =
+      sub.unicodeScalars.index(sub.startIndex, offsetBy: length, limitedBy: sub.endIndex)
       ?? sub.endIndex
     return sub[..<end]
   }
@@ -533,7 +534,8 @@ public enum Util {
   /// This version extracts the substring to the end.
   public static func utf8SubString(_ src: some StringProtocol, _ start: Int) -> Substring {
     let sub = Strings.toSubstring(src)
-    let begin = sub.unicodeScalars.index(sub.startIndex, offsetBy: start, limitedBy: sub.endIndex)
+    let begin =
+      sub.unicodeScalars.index(sub.startIndex, offsetBy: start, limitedBy: sub.endIndex)
       ?? sub.endIndex
     return sub[begin...]
   }

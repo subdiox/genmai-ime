@@ -3,6 +3,7 @@
 import GenmaiBase
 import GenmaiProtocol
 import Testing
+
 @testable import GenmaiCore
 
 @Suite struct DataSetReaderTest {
@@ -18,7 +19,10 @@ import Testing
 
     var r = DataSetReader()
     #expect(DataSetReader.verifyChecksum(image))
-    do { let ok = r.initialize(image, magic: Self.kTestMagicNumber); #expect(ok) }
+    do {
+      let ok = r.initialize(image, magic: Self.kTestMagicNumber)
+      #expect(ok)
+    }
 
     #expect(r.get("google")?.array == Self.kGoogle)
     #expect(r.getOffsetAndSize("google").map { [$0.offset, $0.size] } == [6, Self.kGoogle.count])
@@ -33,9 +37,18 @@ import Testing
 
   @Test func invalidMagicString() {
     var r = DataSetReader()
-    do { let ok = r.initialize(DataView(copying: ""), magic: Self.kTestMagicNumber); #expect(!ok) }
-    do { let ok = r.initialize(DataView(copying: "abc"), magic: Self.kTestMagicNumber); #expect(!ok) }
-    do { let ok = r.initialize(DataView(copying: "this is a text file"), magic: Self.kTestMagicNumber); #expect(!ok) }
+    do {
+      let ok = r.initialize(DataView(copying: ""), magic: Self.kTestMagicNumber)
+      #expect(!ok)
+    }
+    do {
+      let ok = r.initialize(DataView(copying: "abc"), magic: Self.kTestMagicNumber)
+      #expect(!ok)
+    }
+    do {
+      let ok = r.initialize(DataView(copying: "this is a text file"), magic: Self.kTestMagicNumber)
+      #expect(!ok)
+    }
   }
 
   @Test func brokenMetadata() {
@@ -44,28 +57,43 @@ import Testing
 
     // Only magic number, no metadata.
     #expect(!DataSetReader.verifyChecksum(DataView(copying: Self.kTestMagicNumber)))
-    do { let ok = r.initialize(DataView(copying: Self.kTestMagicNumber), magic: Self.kTestMagicNumber); #expect(!ok) }
+    do {
+      let ok = r.initialize(DataView(copying: Self.kTestMagicNumber), magic: Self.kTestMagicNumber)
+      #expect(!ok)
+    }
 
     // Metadata size is too small.
     var data = DataView(copying: Self.kTestMagicNumber + kContent + Util.serializeUint64(0))
     #expect(!DataSetReader.verifyChecksum(data))
-    do { let ok = r.initialize(data, magic: Self.kTestMagicNumber); #expect(!ok) }
+    do {
+      let ok = r.initialize(data, magic: Self.kTestMagicNumber)
+      #expect(!ok)
+    }
 
     // Metadata size is too small.
     data = DataView(copying: Self.kTestMagicNumber + kContent + Util.serializeUint64(4))
     #expect(!DataSetReader.verifyChecksum(data))
-    do { let ok = r.initialize(data, magic: Self.kTestMagicNumber); #expect(!ok) }
+    do {
+      let ok = r.initialize(data, magic: Self.kTestMagicNumber)
+      #expect(!ok)
+    }
 
     // Metadata size is too large.
     data = DataView(copying: Self.kTestMagicNumber + kContent + Util.serializeUint64(UInt64.max))
     #expect(!DataSetReader.verifyChecksum(data))
-    do { let ok = r.initialize(data, magic: Self.kTestMagicNumber); #expect(!ok) }
+    do {
+      let ok = r.initialize(data, magic: Self.kTestMagicNumber)
+      #expect(!ok)
+    }
 
     // Metadata chunk is not a serialized protobuf.
     data = DataView(
       copying: Self.kTestMagicNumber + kContent + Util.serializeUint64(UInt64(kContent.count)))
     #expect(!DataSetReader.verifyChecksum(data))
-    do { let ok = r.initialize(data, magic: Self.kTestMagicNumber); #expect(!ok) }
+    do {
+      let ok = r.initialize(data, magic: Self.kTestMagicNumber)
+      #expect(!ok)
+    }
   }
 
   @Test func brokenMetadataFields() throws {
@@ -94,7 +122,10 @@ import Testing
 
       var r = DataSetReader()
       #expect(!DataSetReader.verifyChecksum(image))
-      do { let ok = r.initialize(image, magic: Self.kTestMagicNumber); #expect(!ok) }
+      do {
+        let ok = r.initialize(image, magic: Self.kTestMagicNumber)
+        #expect(!ok)
+      }
     }
     do {
       // Create an image with broken size.
@@ -109,7 +140,10 @@ import Testing
 
       var r = DataSetReader()
       #expect(!DataSetReader.verifyChecksum(image))
-      do { let ok = r.initialize(image, magic: Self.kTestMagicNumber); #expect(!ok) }
+      do {
+        let ok = r.initialize(image, magic: Self.kTestMagicNumber)
+        #expect(!ok)
+      }
     }
   }
 
@@ -132,7 +166,10 @@ import Testing
 
     var r = DataSetReader()
     #expect(DataSetReader.verifyChecksum(DataView(copying: image)))
-    do { let ok = r.initialize(DataView(copying: image), magic: kTestMagicNumber); #expect(ok) }
+    do {
+      let ok = r.initialize(DataView(copying: image), magic: kTestMagicNumber)
+      #expect(ok)
+    }
 
     // Flip each bit and test if verifyChecksum fails.  (The byte range is
     // split over concurrent tasks because SHA1 is slow in debug builds.)

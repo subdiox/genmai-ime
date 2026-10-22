@@ -3,6 +3,7 @@
 import Foundation
 import Synchronization
 import Testing
+
 @testable import GenmaiBase
 
 @Suite struct CPUStatsTest {
@@ -54,4 +55,3 @@ private final class CancelFlag: Sendable {
   var isSet: Bool { flag.withLock { $0 } }
   func set() { flag.withLock { $0 = true } }
 }
-

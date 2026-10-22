@@ -4,6 +4,7 @@ import Foundation
 import GenmaiBase
 import GenmaiProtocol
 import Testing
+
 @testable import GenmaiCore
 
 private func insertASCIISequence(_ text: String, _ composer: inout Composer) {
@@ -20,7 +21,6 @@ private func setAkann(_ composer: inout Composer) {
 }
 
 private let transliterationMockData: MockDataManager? = try? MockDataManager()
-
 
 private func meta(_ seg: Segment, _ type: TransliterationType) -> Candidate {
   seg.metaCandidate(type.rawValue)

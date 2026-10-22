@@ -3,6 +3,7 @@
 
 import GenmaiBase
 import Testing
+
 @testable import GenmaiStorage
 
 @Suite struct EncryptedStringStorageTest {

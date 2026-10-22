@@ -7,8 +7,8 @@ import GenmaiBase
 import GenmaiCore
 import GenmaiProtocol
 import GenmaiSession
-import Testing
 import Synchronization
+import Testing
 
 @testable import GenmaiClient
 
@@ -245,7 +245,9 @@ func conversionRequest() -> ConversionRequest {
     AIConversionMerger.apply(
       ["汽車", "貴社", "帰社", "喜捨"], to: segments, request: conversionRequest(),
       converter: ResizingConverterStub(), maxCandidates: 2)
-    let values = (0..<segments.conversionSegment(0).candidatesSize).map { segments.conversionSegment(0).candidate($0).value }
+    let values = (0..<segments.conversionSegment(0).candidatesSize).map {
+      segments.conversionSegment(0).candidate($0).value
+    }
     #expect(values == ["汽車", "貴社", "記者"])
   }
 
@@ -381,7 +383,8 @@ func conversionRequest() -> ConversionRequest {
     #expect(d.candidateCount == 5)
     #expect(d.resolvedModelDirectory == AIConversionSettings.defaultModelDirectory)
     let decoded = try JSONDecoder().decode(
-      AIConversionSettings.self, from: Data(#"{"enabled": true, "timeout_ms": 1, "future": 3, "model_directory": ""}"#.utf8))
+      AIConversionSettings.self,
+      from: Data(#"{"enabled": true, "timeout_ms": 1, "future": 3, "model_directory": ""}"#.utf8))
     #expect(decoded.enabled)
     #expect(decoded.modelDirectory == nil)
     #expect(decoded.sanitized.timeoutMilliseconds == AIConversionSettings.timeoutRange.lowerBound)
@@ -474,7 +477,8 @@ func conversionRequest() -> ConversionRequest {
     let files = try GenmaiModelRelease.files(Self.tree)
     #expect(
       files.map(\.name) == ["config.json", "tokenizer.json", "model-8bit.safetensors", "model-bf16.safetensors"])
-    #expect(files[0] == .init(name: "config.json", size: 921, checksum: .gitBlob("70bb1e6b8b32086b8bccd5dcbb6d84ef3847669e")))
+    #expect(
+      files[0] == .init(name: "config.json", size: 921, checksum: .gitBlob("70bb1e6b8b32086b8bccd5dcbb6d84ef3847669e")))
     #expect(
       files[3]
         == .init(
@@ -489,7 +493,8 @@ func conversionRequest() -> ConversionRequest {
     #expect(r.downloadSize(for: .bf16) == 921 + 394_106 + 619_034_840)
     #expect(r.downloadSize(for: .q8) == 921 + 394_106 + 336_000_000)
     #expect(
-      r.url(of: files[3]).absoluteString == "https://huggingface.co/subdiox/genmai/resolve/v0.1.0/model-bf16.safetensors")
+      r.url(of: files[3]).absoluteString
+        == "https://huggingface.co/subdiox/genmai/resolve/v0.1.0/model-bf16.safetensors")
     let bf16Only = GenmaiModelRelease(info: r.info, files: files.filter { $0.name != "model-8bit.safetensors" })
     #expect(bf16Only.variants == [.bf16])
     #expect(bf16Only.files(for: .q8) == nil)
@@ -497,7 +502,9 @@ func conversionRequest() -> ConversionRequest {
 
   @Test func compatibility() {
     func config(_ extra: String) -> Data {
-      Data(#"{"model_type": "gpt2", "n_layer": 24, "n_embd": 1024, "n_head": 16, "vocab_size": 6000, "n_positions": 1024\#(extra)}"#.utf8)
+      Data(
+        #"{"model_type": "gpt2", "n_layer": 24, "n_embd": 1024, "n_head": 16, "vocab_size": 6000, "n_positions": 1024\#(extra)}"#
+          .utf8)
     }
     #expect(GenmaiModelRelease.isCompatible(config: config("")))
     #expect(GenmaiModelRelease.isCompatible(config: config(#", "genmai_prompt_format": "zenzlc""#)))
@@ -579,7 +586,9 @@ func conversionRequest() -> ConversionRequest {
     #expect(w["shape"] as? [Int] == [3, 2])
     #expect(w["data_offsets"] as? [Int] == [0, 12])
     let values = body.withUnsafeBytes { raw in
-      (0..<(body.count / 2)).map { Float(bitPattern: UInt32(raw.loadUnaligned(fromByteOffset: $0 * 2, as: UInt16.self)) << 16) }
+      (0..<(body.count / 2)).map {
+        Float(bitPattern: UInt32(raw.loadUnaligned(fromByteOffset: $0 * 2, as: UInt16.self)) << 16)
+      }
     }
     // transposed: (out, in)
     #expect(values == [1, 4, 2, 5, 3, 6, 0.5, -1])
@@ -692,7 +701,8 @@ struct AIConversionHookTests {
     return output
   }
 
-  func makeAI(_ augmenter: FakeAugmenter, settings: AIConversionSettings = enabled) -> (SessionDriver, AIConversionHook) {
+  func makeAI(_ augmenter: FakeAugmenter, settings: AIConversionSettings = enabled) -> (SessionDriver, AIConversionHook)
+  {
     let hook = AIConversionHook(augmenter: augmenter, settings: settings)
     return (SessionDriver(SessionHandlerBackend(aiHook: hook)), hook)
   }

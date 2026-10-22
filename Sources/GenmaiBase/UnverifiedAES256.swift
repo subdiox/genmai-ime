@@ -230,8 +230,12 @@ public enum UnverifiedAES256 {
     block[9] = block[13]
     block[13] = x
     // Row 2
-    x = block[2]; block[2] = block[10]; block[10] = x
-    x = block[6]; block[6] = block[14]; block[14] = x
+    x = block[2]
+    block[2] = block[10]
+    block[10] = x
+    x = block[6]
+    block[6] = block[14]
+    block[14] = x
     // Row 3
     x = block[3]
     block[3] = block[15]
@@ -249,8 +253,12 @@ public enum UnverifiedAES256 {
     block[9] = block[5]
     block[5] = x
     // Row 2
-    x = block[2]; block[2] = block[10]; block[10] = x
-    x = block[6]; block[6] = block[14]; block[14] = x
+    x = block[2]
+    block[2] = block[10]
+    block[10] = x
+    x = block[6]
+    block[6] = block[14]
+    block[14] = x
     // Row 3
     x = block[3]
     block[3] = block[7]

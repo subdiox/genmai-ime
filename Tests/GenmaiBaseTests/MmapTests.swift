@@ -2,6 +2,7 @@
 
 import Foundation
 import Testing
+
 @testable import GenmaiBase
 
 private func getRandomContents(_ size: Int) -> [UInt8] {

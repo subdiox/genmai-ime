@@ -3,15 +3,18 @@
 
 let kJapaneseTranslations: [String: [String: String]] = [
   "AboutDialog": [
-    "<html><body>[ProductName] <a href=\"[ProductUrl]\"><span style=\" text-decoration: underline; color:#0000ff;\">product information</span></a> <a href=\"[ForumUrl]\"><span style=\" text-decoration: underline; color:#0000ff;\">[ForumName]</span></a></body></html>": "<html><body> [ProductName] <a href=\"[ProductUrl]\"><span style=\" text-decoration: underline; color:#0000ff;\">製品情報</span></a> <a href=\"[ForumUrl]\"><span style=\" text-decoration: underline; color:#0000ff;\">[ForumName]</span></a></body></html>",
-    "<html><body>[ProductName] is made possible by <a href=\"file://credits_en.html\"><span style=\" text-decoration: underline; color:#0000ff;\">open source software</span></a>.</body></html>": "<html><body>[ProductName] は<a href=\"file://credits_en.html\"><span style=\" text-decoration: underline; color:#0000ff;\">オープンソースソフトウェア</span></a>を利用しています。</body></html>",
+    "<html><body>[ProductName] <a href=\"[ProductUrl]\"><span style=\" text-decoration: underline; color:#0000ff;\">product information</span></a> <a href=\"[ForumUrl]\"><span style=\" text-decoration: underline; color:#0000ff;\">[ForumName]</span></a></body></html>":
+      "<html><body> [ProductName] <a href=\"[ProductUrl]\"><span style=\" text-decoration: underline; color:#0000ff;\">製品情報</span></a> <a href=\"[ForumUrl]\"><span style=\" text-decoration: underline; color:#0000ff;\">[ForumName]</span></a></body></html>",
+    "<html><body>[ProductName] is made possible by <a href=\"file://credits_en.html\"><span style=\" text-decoration: underline; color:#0000ff;\">open source software</span></a>.</body></html>":
+      "<html><body>[ProductName] は<a href=\"file://credits_en.html\"><span style=\" text-decoration: underline; color:#0000ff;\">オープンソースソフトウェア</span></a>を利用しています。</body></html>",
     "About [ProductName]": "[ProductName] について",
     "[ProductName]": "[ProductName]",
   ],
   "AdministrationDialog": [
     "Always allocate conversion dictionary into physical memory": "辞書を常に物理メモリに配置し、変換を高速化する",
     "Disable [ProductName] for UAC-elevated applications": "UACで昇格されたアプリケーション上で [ProductName]を無効にする",
-    "Help make [ProductName] better by automatically sending usage statistics and crash reports to Google (changes will take effect after you log out and log back in)": "使用統計データや障害レポートを Google に自動送信して\n[ProductName]の機能向上に役立てる（再ログイン後に変更は完了します）",
+    "Help make [ProductName] better by automatically sending usage statistics and crash reports to Google (changes will take effect after you log out and log back in)":
+      "使用統計データや障害レポートを Google に自動送信して\n[ProductName]の機能向上に役立てる（再ログイン後に変更は完了します）",
     "[ProductName] administrator settings": "[ProductName] 管理者用プロパティ",
   ],
   "ConfigDialog": [
@@ -40,7 +43,8 @@ let kJapaneseTranslations: [String: [String: String]] = [
     "Emoticon conversion": "顔文字変換",
     "Fullwidth/Halfwidth": "半角・全角",
     "General": "一般",
-    "Help make [ProductName] better by automatically sending usage statistics and crash reports to Google (changes will take effect after you log out and log back in)": "使用統計データや障害レポートを Google に自動送信して\n[ProductName]の機能向上に役立てる（再ログイン後に変更は完了します）",
+    "Help make [ProductName] better by automatically sending usage statistics and crash reports to Google (changes will take effect after you log out and log back in)":
+      "使用統計データや障害レポートを Google に自動送信して\n[ProductName]の機能向上に役立てる（再ログイン後に変更は完了します）",
     "Homonym dictionary": "同音異義語辞書",
     "Input Assistance": "入力補助",
     "Input from numpad keys": "テンキーからの入力",
@@ -77,7 +81,8 @@ let kJapaneseTranslations: [String: [String: String]] = [
     "Symbol conversion": "記号変換",
     "Symbol style": "記号",
     "Temporarily disable all suggestions": "一時的にすべてのサジェスト機能を無効にする",
-    "Temporarily disable conversion personalization, history-based suggestions and user dictionary": "一時的に学習機能、入力履歴からのサジェスト機能、ユーザ辞書機能を無効にする",
+    "Temporarily disable conversion personalization, history-based suggestions and user dictionary":
+      "一時的に学習機能、入力履歴からのサジェスト機能、ユーザ辞書機能を無効にする",
     "Usage dictionary": "用例辞書",
     "Usage statistics and crash reports": "使用統計情報と障害レポート",
     "Use input history": "入力履歴からのサジェスト自動表示を有効にする",
@@ -122,13 +127,19 @@ let kJapaneseTranslations: [String: [String: String]] = [
   ],
   "QObject": [
     "Alphabets": "アルファベット",
-    "Candidate window renderer has been upgraded. Please restart this application to enable new candidate window renderer. If the problem persists, please restart your computer.": "候補ウィンドウ レンダラーがアップグレードされました。新しい [ProductName]を利用するためにアプリケーションを再起動してください。問題が解決されない場合はコンピュータを再起動してください。",
-    "Cannot start candidate window renderer. Please restart your computer.": "候補ウィンドウ レンダラーの起動に失敗しました。新しい [ProductName]を利用するためにコンピュータを再起動してください。",
-    "Cannot start conversion engine. Please restart your computer.": "変換エンジンプログラムの起動に失敗しました。新しい [ProductName]を利用するためにコンピュータを再起動してください。",
-    "Connecting to an incompatible conversion engine. Please restart your computer to enable [ProductName]. If this problem persists, please uninstall [ProductName] and install it again.": "互換性のない変換エンジンプログラムに接続しています。新しい [ProductName]を利用するためにコンピュータを再起動してください。問題が解決されない場合は、お手数ですが一度アンインストールしてから再インストールしてください。",
-    "Conversion engine has been upgraded. Please restart this application to enable conversion engine. If the problem persists, please restart your computer.": "変換エンジンプログラムがアップグレードされました。新しい [ProductName]を利用するためにアプリケーションを再起動してください。問題が解決されない場合はコンピュータを再起動してください。",
+    "Candidate window renderer has been upgraded. Please restart this application to enable new candidate window renderer. If the problem persists, please restart your computer.":
+      "候補ウィンドウ レンダラーがアップグレードされました。新しい [ProductName]を利用するためにアプリケーションを再起動してください。問題が解決されない場合はコンピュータを再起動してください。",
+    "Cannot start candidate window renderer. Please restart your computer.":
+      "候補ウィンドウ レンダラーの起動に失敗しました。新しい [ProductName]を利用するためにコンピュータを再起動してください。",
+    "Cannot start conversion engine. Please restart your computer.":
+      "変換エンジンプログラムの起動に失敗しました。新しい [ProductName]を利用するためにコンピュータを再起動してください。",
+    "Connecting to an incompatible conversion engine. Please restart your computer to enable [ProductName]. If this problem persists, please uninstall [ProductName] and install it again.":
+      "互換性のない変換エンジンプログラムに接続しています。新しい [ProductName]を利用するためにコンピュータを再起動してください。問題が解決されない場合は、お手数ですが一度アンインストールしてから再インストールしてください。",
+    "Conversion engine has been upgraded. Please restart this application to enable conversion engine. If the problem persists, please restart your computer.":
+      "変換エンジンプログラムがアップグレードされました。新しい [ProductName]を利用するためにアプリケーションを再起動してください。問題が解決されない場合はコンピュータを再起動してください。",
     "Conversion engine is killed unexceptionally. Restarting the engine...": "変換エンジンプログラムが異常終了しました。再起動しています。",
-    "Conversion engine is not responding. Please restart this application.": "変換エンジンプログラムが反応していません。このアプリケーションを再起動してください。",
+    "Conversion engine is not responding. Please restart this application.":
+      "変換エンジンプログラムが反応していません。このアプリケーションを再起動してください。",
     "Fullwidth": "全角",
     "Google Japanese Input": "Google 日本語入力",
     "Halfwidth": "半角",
@@ -149,10 +160,14 @@ let kJapaneseTranslations: [String: [String: String]] = [
     "[ProductName] Word Register Dialog": "[ProductName] 単語登録",
   ],
   "genmai::gui::AdministrationDialog": [
-    "Failed to change the configuration of on-memory dictionary. Administrator privilege is required to change the configuration.": "オンメモリ辞書の設定に失敗しました。設定変更には管理者権限が必要です。",
-    "Failed to change the configuration of usage statistics and crash report. Administrator privilege is required to change the configuration.": "使用統計と障害レポートの設定に失敗しました。設定変更には管理者権限が必要です。",
-    "Failed to save the UAC policy setting. Administrator privilege is required to change UAC settings.": "UACポリシーの設定に失敗しました。UACの設定変更には管理者権限が必要です。",
-    "This computer does not have enough memory to load dictionary into physical memory.": "お使いのコンピューターは辞書を物理メモリに展開するための十分なメモリがありません。",
+    "Failed to change the configuration of on-memory dictionary. Administrator privilege is required to change the configuration.":
+      "オンメモリ辞書の設定に失敗しました。設定変更には管理者権限が必要です。",
+    "Failed to change the configuration of usage statistics and crash report. Administrator privilege is required to change the configuration.":
+      "使用統計と障害レポートの設定に失敗しました。設定変更には管理者権限が必要です。",
+    "Failed to save the UAC policy setting. Administrator privilege is required to change UAC settings.":
+      "UACポリシーの設定に失敗しました。UACの設定変更には管理者権限が必要です。",
+    "This computer does not have enough memory to load dictionary into physical memory.":
+      "お使いのコンピューターは辞書を物理メモリに展開するための十分なメモリがありません。",
     "[ProductName] administration settings": "[ProductName] 管理者用プロパティ",
   ],
   "genmai::gui::CharacterFormEditor": [
@@ -173,7 +188,8 @@ let kJapaneseTranslations: [String: [String: String]] = [
     "Custom keymap": "カスタム",
     "Direct input": "直接入力",
     "Do you want to clear all history data?": "すべての入力履歴が削除されます。実行しますか？",
-    "Do you want to clear personalization data? Input history is not reset with this operation. Please open \"suggestion\" tab to remove input history data.": "学習結果がリセットされます。実行しますか？ 入力履歴データはリセットされません。入力履歴データのリセットは「サジェスト→全入力履歴の削除」で行えます。",
+    "Do you want to clear personalization data? Input history is not reset with this operation. Please open \"suggestion\" tab to remove input history data.":
+      "学習結果がリセットされます。実行しますか？ 入力履歴データはリセットされません。入力履歴データのリセットは「サジェスト→全入力履歴の削除」で行えます。",
     "Do you want to clear unused history data?": "サジェスト経由で入力されなかった履歴が削除されます。実行しますか？",
     "Failed to get current config values.": "設定の取得に失敗しました。",
     "Failed to update config": "設定の反映に失敗しました",
@@ -191,8 +207,10 @@ let kJapaneseTranslations: [String: [String: String]] = [
     "Romaji": "ローマ字入力",
     "Romaji (switchable)": "ローマ字入力 (切替可)",
     "Romaji/Kana setting is enabled from new applications.": "ローマ字・かな入力の設定は新しいアプリケーションから有効になります。",
-    "The current custom keymap table is empty. When custom keymap is selected, you must customize it.": "有効なキー設定がありません。カスタム キーマップを選択した場合は、キーマップを編集する必要があります。",
-    "When you reset [ProductName] settings, any changes you've made will be reverted to the default settings. Do you want to reset settings? The following items are not reset with this operation.\n - Personalization data\n - Input history\n - Usage statistics and crash reports\n - Administrator settings": "この機能を実行すると [ProductName]の設定が標準状態に戻ります。実行しますか？ 以下の設定はリセットされません。\n - 学習履歴\n - 入力履歴\n - 使用統計と障害レポート\n - 管理者用設定",
+    "The current custom keymap table is empty. When custom keymap is selected, you must customize it.":
+      "有効なキー設定がありません。カスタム キーマップを選択した場合は、キーマップを編集する必要があります。",
+    "When you reset [ProductName] settings, any changes you've made will be reverted to the default settings. Do you want to reset settings? The following items are not reset with this operation.\n - Personalization data\n - Input history\n - Usage statistics and crash reports\n - Administrator settings":
+      "この機能を実行すると [ProductName]の設定が標準状態に戻ります。実行しますか？ 以下の設定はリセットされません。\n - 学習履歴\n - 入力履歴\n - 使用統計と障害レポート\n - 管理者用設定",
     "Yen Sign ¥": "円記号(¥)",
     "Yes": "有効",
     "Yes (don't record new data)": "有効（新規学習はしない）",
@@ -201,9 +219,11 @@ let kJapaneseTranslations: [String: [String: String]] = [
     "[ProductName] Preferences": "[ProductName] 環境設定",
   ],
   "genmai::gui::DictionaryTool": [
-    "%1 doesn't have enough space to import all words in the file. First %2 entries are imported.": "%1 にはファイル中のすべての単語をインポートするための領域が不足しています。先頭の %2 単語のみインポートします。",
+    "%1 doesn't have enough space to import all words in the file. First %2 entries are imported.":
+      "%1 にはファイル中のすべての単語をインポートするための領域が不足しています。先頭の %2 単語のみインポートします。",
     "%1 entries are imported to %2.": "%1 エントリーを %2 にインポートしました。",
-    "%1 entries are imported to %2.\n\nSome imported words were not recognized by %3. Please check the original import file.": "%1 エントリーを %2 にインポートしました。\n\n%3 で取り扱えない可能性がある単語が含まれています。元のインポート対象ファイルを確認してください。",
+    "%1 entries are imported to %2.\n\nSome imported words were not recognized by %3. Please check the original import file.":
+      "%1 エントリーを %2 にインポートしました。\n\n%3 で取り扱えない可能性がある単語が含まれています。元のインポート対象ファイルを確認してください。",
     "%1: %2 entries": "%1: 総数 %2 個",
     "A fatal error occurred.": "エラーが発生しました。",
     "Add": "追加",
@@ -213,7 +233,8 @@ let kJapaneseTranslations: [String: [String: String]] = [
     "An invalid character is included in the reading.": "よみに使用できない文字が含まれています。",
     "Another process is accessing the user dictionary file.": "別のアプリケーションが辞書を編集中です。",
     "Can't open %1.": "%1を開けません。",
-    "Cannot move all the selected items.\nThe target dictionary can have maximum %1 entries.": "選択された全ての単語を移動できません。\n移動先の辞書は最大 %1 エントリまで格納できます。",
+    "Cannot move all the selected items.\nThe target dictionary can have maximum %1 entries.":
+      "選択された全ての単語を移動できません。\n移動先の辞書は最大 %1 エントリまで格納できます。",
     "Category": "品詞",
     "Change category to": "品詞を変更",
     "Comment": "コメント",
@@ -239,8 +260,10 @@ let kJapaneseTranslations: [String: [String: String]] = [
     "Import from %1's user dictionary...": "%1 のユーザ辞書をインポート",
     "Import to current dictionary...": "選択した辞書にインポート...",
     "Import to this dictionary...": "この辞書にインポート...",
-    "Making dangerously large user dictionary file. If the dictionary file turns out to be larger than 256Mbyte, the dictionary loader skips to handle all the words to prevent the converter from being halted.": "非常に大きなユーザ辞書を作成しようとしています。辞書サイズが 256MB を超える場合、変換エンジンプログラムのリソース不足による異常動作を回避するためすべての単語がロードされない場合があります。ご了承ください。",
-    "Microsoft IME dictionary import function doesn't work on UAC-elevated process.": "UACで昇格されたアプリケーションからは、Microsoft IME のユーザ辞書を読み込むことができません。",
+    "Making dangerously large user dictionary file. If the dictionary file turns out to be larger than 256Mbyte, the dictionary loader skips to handle all the words to prevent the converter from being halted.":
+      "非常に大きなユーザ辞書を作成しようとしています。辞書サイズが 256MB を超える場合、変換エンジンプログラムのリソース不足による異常動作を回避するためすべての単語がロードされない場合があります。ご了承ください。",
+    "Microsoft IME dictionary import function doesn't work on UAC-elevated process.":
+      "UACで昇格されたアプリケーションからは、Microsoft IME のユーザ辞書を読み込むことができません。",
     "Move the selected words to": "選択した単語を移動",
     "Move this word to": "この単語を移動",
     "Moving the selected words...": "単語を移動しています...",
@@ -260,11 +283,12 @@ let kJapaneseTranslations: [String: [String: String]] = [
     "Word": "単語",
     "You can't have more than %1 dictionaries.": "%1 個を超える辞書を作ることはできません。",
     "You can't have more than %1 words in one dictionary.": "%1 語を超える単語を 1 つの辞書の中に持つことはできません。",
-    "You have imported a file in an invalid or unsupported file format.\n\nPlease check the file format. ATOK11 or older format is not supported by %1.": "指定されたファイルは %1 でサポートされていないフォーマットで保存されています。\n\nインポート対象のファイルフォーマットを確認してください。\n\nATOK・ことえり・MS-IMEのバイナリ形式の辞書はインポートできません。一度ATOK・ことえり・MS-IMEの辞書ツールを使ってテキスト形式として書き出してから、インポートしてください。ATOK11 以前のファイル形式はサポートしていません。",
+    "You have imported a file in an invalid or unsupported file format.\n\nPlease check the file format. ATOK11 or older format is not supported by %1.":
+      "指定されたファイルは %1 でサポートされていないフォーマットで保存されています。\n\nインポート対象のファイルフォーマットを確認してください。\n\nATOK・ことえり・MS-IMEのバイナリ形式の辞書はインポートできません。一度ATOK・ことえり・MS-IMEの辞書ツールを使ってテキスト形式として書き出してから、インポートしてください。ATOK11 以前のファイル形式はサポートしていません。",
     "[ProductName]": "[ProductName]",
   ],
   "genmai::gui::FindDialog": [
-    "Cannot find pattern %1": "%1 は見つかりませんでした。",
+    "Cannot find pattern %1": "%1 は見つかりませんでした。"
   ],
   "genmai::gui::GenericTableEditorDialog": [
     "Edit": "編集",
@@ -297,7 +321,8 @@ let kJapaneseTranslations: [String: [String: String]] = [
     "Backspace": "左の文字を削除",
     "Cancel": "キャンセル",
     "CancelAndIMEOff": "キャンセル後 IME を無効化",
-    "Changes of keymaps for direct input mode will apply only to applications that are launched after making your modifications.": "直接入力モードに対するキーマップの変更は、新しいアプリケーションから有効になります。",
+    "Changes of keymaps for direct input mode will apply only to applications that are launched after making your modifications.":
+      "直接入力モードに対するキーマップの変更は、新しいアプリケーションから有効になります。",
     "Command": "コマンド",
     "Commit": "確定",
     "CommitFirstSuggestion": "最初の予測候補を確定",
@@ -322,7 +347,8 @@ let kJapaneseTranslations: [String: [String: String]] = [
     "ConvertToHalfWidth": "半角に変換",
     "ConvertToHiragana": "ひらがなに変換",
     "ConvertWithoutHistory": "学習を使わずに変換",
-    "Current keymap table is empty. You might want to import a pre-defined keymap table first.": "有効なキーマップがありません。定義済みのキーマップをインポートするか、有効なキーマップを追加してください。",
+    "Current keymap table is empty. You might want to import a pre-defined keymap table first.":
+      "有効なキーマップがありません。定義済みのキーマップをインポートするか、有効なキーマップを追加してください。",
     "Delete": "右の文字を削除",
     "DeleteSelectedCandidate": "選択候補を履歴から削除",
     "DirectInput": "直接入力",
@@ -377,7 +403,8 @@ let kJapaneseTranslations: [String: [String: String]] = [
     "Export to file...": "エクスポート...",
     "Import from file...": "インポート...",
     "Input": "入力",
-    "Input fields contain capital characters. \"Shift-mode-switch\" function should be Off with this new mapping.": "入力フィールドに大文字のアルファベットが含まれています。新しい設定では「シフトキーによる入力切替」をオフにしてください。",
+    "Input fields contain capital characters. \"Shift-mode-switch\" function should be Off with this new mapping.":
+      "入力フィールドに大文字のアルファベットが含まれています。新しい設定では「シフトキーによる入力切替」をオフにしてください。",
     "New entry": "新しいエントリー",
     "Next input": "次の入力",
     "Output": "出力",

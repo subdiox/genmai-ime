@@ -613,8 +613,7 @@ public final class UserHistoryPredictor: PredictorInterface, @unchecked Sendable
   func removeNgramChain(_ targetKey: String, _ targetValue: String, _ entry: EntrySnapshot)
     -> Bool
   {
-    if !targetKey.hasBytePrefix(entry.entry.key) || !targetValue.hasBytePrefix(entry.entry.value)
-    {
+    if !targetKey.hasBytePrefix(entry.entry.key) || !targetValue.hasBytePrefix(entry.entry.value) {
       return false
     }
 
@@ -1893,8 +1892,7 @@ public final class UserHistoryPredictor: PredictorInterface, @unchecked Sendable
   /// Rewrite the prefix white spaces in result.(value|key) to
   /// full or half width form depending on the config.
   /// If display_value capability is available, sets result.display_value.
-  static func maybeRewritePrefixSpace(_ request: ConversionRequest, _ result: inout PredictionResult)
-  {
+  static func maybeRewritePrefixSpace(_ request: ConversionRequest, _ result: inout PredictionResult) {
     // The space prefix in `result`. This prefix may be modified to
     // the actual `output_space_prefix`.
     var resultSpacePrefix = ""
@@ -2285,8 +2283,7 @@ public final class UserHistoryPredictor: PredictorInterface, @unchecked Sendable
   }
 
   /// Hook(s) for all mutable operations.
-  public func finish(_ request: ConversionRequest, _ results: [PredictionResult], _ revertId: UInt32)
-  {
+  public func finish(_ request: ConversionRequest, _ results: [PredictionResult], _ revertId: UInt32) {
     if request.incognitoMode() {
       return
     }

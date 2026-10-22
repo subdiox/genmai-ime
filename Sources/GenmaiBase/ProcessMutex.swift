@@ -11,10 +11,11 @@
 //     exit(-1)
 //   }
 
-#if canImport(Darwin)
-import Darwin
-#endif
 import Synchronization
+
+#if canImport(Darwin)
+  import Darwin
+#endif
 
 public final class ProcessMutex: Sendable {
   private struct State {

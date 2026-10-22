@@ -41,8 +41,7 @@ enum EngineTestSupport {
   static var mockDataPath: String { MockDataManager.defaultDataPath ?? "" }
   static var ossDataPath: String { OssDataManager.defaultDataPath }
 
-  static func request(_ path: String, _ magic: String, _ priority: Int32) -> Genmai_EngineReloadRequest
-  {
+  static func request(_ path: String, _ magic: String, _ priority: Int32) -> Genmai_EngineReloadRequest {
     var request = Genmai_EngineReloadRequest()
     request.filePath = path
     request.magicNumber = magic

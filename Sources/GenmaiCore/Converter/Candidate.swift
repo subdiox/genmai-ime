@@ -246,7 +246,8 @@ public final class Candidate {
     if !innerSegmentBoundary.isEmpty {
       os += " segbdd="
       for iter in innerSegments() {
-        os += "<\(iter.key.utf8.count),\(iter.value.utf8.count),\(iter.contentKey.utf8.count),\(iter.contentValue.utf8.count)>"
+        os +=
+          "<\(iter.key.utf8.count),\(iter.value.utf8.count),\(iter.contentKey.utf8.count),\(iter.contentValue.utf8.count)>"
       }
     }
     os += ")\n"

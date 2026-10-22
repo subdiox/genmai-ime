@@ -49,7 +49,8 @@ import Testing
   }
 
   /// GetReading through the real engine (reverse conversion of the OSS data set).
-  @Test(.enabled(if: FileManager.default.fileExists(atPath: OssDataManager.defaultDataPath), "Data/genmai.data is missing"))
+  @Test(
+    .enabled(if: FileManager.default.fileExists(atPath: OssDataManager.defaultDataPath), "Data/genmai.data is missing"))
   func completeReadingAndLimits() {
     withTempDictionaryFile { path in
       ConfigHandler.withScopedHandlerForTesting {

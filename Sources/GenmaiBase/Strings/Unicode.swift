@@ -73,7 +73,8 @@ public enum Strings {
     while it != bytes.endIndex && i < n {
       i += 1
       // std::advance past the end is UB in C++; clip at the end.
-      it = bytes.index(it, offsetBy: oneCharLen(bytes[it]), limitedBy: bytes.endIndex)
+      it =
+        bytes.index(it, offsetBy: oneCharLen(bytes[it]), limitedBy: bytes.endIndex)
         ?? bytes.endIndex
     }
     return i
@@ -182,7 +183,8 @@ public enum Strings {
   /// of Unicode characters. The result is clipped.
   public static func utf8Substring(_ s: some StringProtocol, _ pos: Int) -> Substring {
     let sub = toSubstring(s)
-    let first = sub.unicodeScalars.index(sub.startIndex, offsetBy: pos, limitedBy: sub.endIndex)
+    let first =
+      sub.unicodeScalars.index(sub.startIndex, offsetBy: pos, limitedBy: sub.endIndex)
       ?? sub.endIndex
     return sub[first...]
   }
@@ -191,7 +193,8 @@ public enum Strings {
   /// number of Unicode characters. The result is clipped.
   public static func utf8Substring(_ s: some StringProtocol, _ pos: Int, _ count: Int) -> Substring {
     let sub = utf8Substring(s, pos)
-    let last = sub.unicodeScalars.index(sub.startIndex, offsetBy: count, limitedBy: sub.endIndex)
+    let last =
+      sub.unicodeScalars.index(sub.startIndex, offsetBy: count, limitedBy: sub.endIndex)
       ?? sub.endIndex
     return sub[..<last]
   }
@@ -472,7 +475,7 @@ extension Strings {
       case (nil, nil): return 0
       case (nil, _): return -1
       case (_, nil): return 1
-      case let (x?, y?):
+      case (let x?, let y?):
         if x != y { return x < y ? -1 : 1 }
       }
     }

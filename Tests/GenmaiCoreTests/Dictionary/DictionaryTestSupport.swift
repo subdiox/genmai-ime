@@ -5,6 +5,7 @@ import Foundation
 import GenmaiBase
 import Synchronization
 import Testing
+
 @testable import GenmaiCore
 
 enum DictionaryTestSupport {

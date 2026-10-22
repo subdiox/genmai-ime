@@ -153,7 +153,8 @@ final class Counter {
     let script = AuthorizationPrivilegedCommandRunner.script(for: Uninstaller.deleteCommand(for: ["/x"]))
     #expect(script == "/bin/rm -rf '/x'; echo genmai-uninstaller-exit:$?")
     #expect(AuthorizationPrivilegedCommandRunner.exitStatus(in: "genmai-uninstaller-exit:0\n") == 0)
-    #expect(AuthorizationPrivilegedCommandRunner.exitStatus(in: "rm: x: Permission denied\ngenmai-uninstaller-exit:1\n") == 1)
+    #expect(
+      AuthorizationPrivilegedCommandRunner.exitStatus(in: "rm: x: Permission denied\ngenmai-uninstaller-exit:1\n") == 1)
     #expect(AuthorizationPrivilegedCommandRunner.exitStatus(in: "") == nil)
     #expect(AuthorizationPrivilegedCommandRunner.kAuthorizationErrors.contains(errAuthorizationCanceled))
   }
@@ -243,7 +244,10 @@ final class Counter {
     #expect(japanese.later == "後で")
     #expect(japanese.keptNote.contains("再インストール"))
     for strings in [english, japanese] {
-      for text in [strings.confirmMessage(needsAuthorization: true), strings.confirmMessage(needsAuthorization: false), strings.succeededMessage, strings.removalFailedMessage] {
+      for text in [
+        strings.confirmMessage(needsAuthorization: true), strings.confirmMessage(needsAuthorization: false),
+        strings.succeededMessage, strings.removalFailedMessage,
+      ] {
         #expect(!text.contains("Mozc") && !text.contains("Google") && !text.contains("..."))
       }
     }

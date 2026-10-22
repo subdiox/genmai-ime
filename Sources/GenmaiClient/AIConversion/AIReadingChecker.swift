@@ -40,7 +40,9 @@ public final class AIReadingChecker: Sendable {
   /// Reading characters allowed between two kanji (folded).
   static let linkingKana: Set<Unicode.Scalar> = ["か", "の", "つ"]
   /// Symbols that may continue a run of digits / letters in a wildcard (3.5, 10:30, 50%, A-1).
-  static let wildcardJoiners: Set<Character> = [".", ",", ":", "/", "%", "+", "-", "&", "．", "，", "：", "／", "％", "＋", "－", "＆"]
+  static let wildcardJoiners: Set<Character> = [
+    ".", ",", ":", "/", "%", "+", "-", "&", "．", "，", "：", "／", "％", "＋", "－", "＆",
+  ]
 
   /// Builds the checker from the data set: a second instance of the system dictionary with the reverse lookup
   /// index (~0.1 s, ~20 MB).
@@ -121,7 +123,10 @@ public final class AIReadingChecker: Sendable {
       var spans: [Int] = []
       if Self.isWildcardCharacter(c) {
         var q = p + 1
-        while q < n, Self.isWildcardCharacter(t[q]) || (Self.wildcardJoiners.contains(t[q]) && q + 1 < n && Self.isWildcardCharacter(t[q + 1])) {
+        while q < n,
+          Self.isWildcardCharacter(t[q])
+            || (Self.wildcardJoiners.contains(t[q]) && q + 1 < n && Self.isWildcardCharacter(t[q + 1]))
+        {
           q += 1
         }
         spans = Array((p + 1)...q)

@@ -113,9 +113,7 @@ public enum UserDictionaryUtil {
   ///   - if it isn't exceed the max length
   ///   - if it doesn't contain invalid character
   /// - Checks if a valid pos type is set.
-  public static func validateEntry(_ entry: Genmai_UserDictionary_UserDictionary.Entry) throws(
-    ExtendedErrorCode
-  ) {
+  public static func validateEntry(_ entry: Genmai_UserDictionary_UserDictionary.Entry) throws(ExtendedErrorCode) {
     let code = validateEntry(
       key: entry.key.utf8, value: entry.value.utf8, comment: entry.comment.utf8,
       hasPos: entry.hasPos)

@@ -65,7 +65,8 @@ public final class GenmaiUpdateChecker: NSObject, UNUserNotificationCenterDelega
     content.title = japanese ? "Genmai \(release.version) が利用可能です" : "Genmai \(release.version) is available"
     content.body = japanese ? "クリックしてアップデートします。" : "Click to update."
     do {
-      try await center.add(UNNotificationRequest(identifier: "update-\(release.version)", content: content, trigger: nil))
+      try await center.add(
+        UNNotificationRequest(identifier: "update-\(release.version)", content: content, trigger: nil))
     } catch {
       NSLog("Genmai: cannot post the update notification: %@", "\(error)")
     }

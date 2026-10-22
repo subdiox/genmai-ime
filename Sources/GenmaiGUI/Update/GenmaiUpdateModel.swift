@@ -42,11 +42,10 @@ public final class GenmaiUpdateModel {
   /// Looks up the newest release (replaced by tests).
   var fetcher: @Sendable () async throws -> GenmaiAppRelease? = { try await GenmaiAppRelease.latest() }
   /// Downloads and checks the package of a release (replaced by tests).
-  var downloader:
-    @Sendable (GenmaiAppRelease, @escaping @Sendable (Int64, Int64) -> Void) async throws -> URL = {
-      release, progress in
-      try await GenmaiUpdater.download(release, progress: progress)
-    }
+  var downloader: @Sendable (GenmaiAppRelease, @escaping @Sendable (Int64, Int64) -> Void) async throws -> URL = {
+    release, progress in
+    try await GenmaiUpdater.download(release, progress: progress)
+  }
   /// Installs the package where Genmai is installed (replaced by tests).
   var installPackage: @Sendable (URL) async -> Install = { await GenmaiPackageInstaller.install($0) }
 
@@ -102,7 +101,12 @@ public final class GenmaiUpdateModel {
     let lastShown = Mutex<Int64>(-1)
     let report: @Sendable (Int64, Int64) -> Void = { [weak self] received, total in
       let permille = received * 1000 / max(total, 1)
-      guard lastShown.withLock({ last in defer { last = permille }; return last != permille }) else { return }
+      guard
+        lastShown.withLock({ last in
+          defer { last = permille }
+          return last != permille
+        })
+      else { return }
       Task { @MainActor [weak self] in
         if case .downloading = self?.install { self?.install = .downloading(received: received, total: total) }
       }

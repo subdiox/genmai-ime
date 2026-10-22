@@ -33,8 +33,8 @@
 
 import AppKit
 import Foundation
-import Security
 import GenmaiBase
+import Security
 
 /// Where the port's files are installed. `systemRoot` / `homeDirectory` exist so that tests can point the
 /// uninstaller at a temporary directory; the app uses `.installed`.
@@ -109,7 +109,8 @@ struct UninstallerLayout: Sendable, Equatable {
     var paths: [UserDataKind: [URL]] = [:]
     paths[.aiModel] = inProfile(profileFiles.filter { $0 == "model" }) + [cachesDirectory]
     paths[.userDictionary] = inProfile(profileFiles.filter { $0.hasPrefix("user_dictionary") })
-    paths[.learning] = inProfile(profileFiles.filter { UserDataKind.learningFiles.contains($0) || $0.hasPrefix("ai_debug.log") })
+    paths[.learning] = inProfile(
+      profileFiles.filter { UserDataKind.learningFiles.contains($0) || $0.hasPrefix("ai_debug.log") })
     let classified = Set(paths.values.joined().map(\.lastPathComponent))
     paths[.settings] = inProfile(profileFiles.filter { !classified.contains($0) })
     return UserDataKind.allCases.compactMap { kind in
@@ -127,7 +128,8 @@ struct UninstallerLayout: Sendable, Equatable {
     let items = userDataItems()
     let fm = FileManager.default
     if !items.isEmpty && Set(items.map(\.kind)).isSubset(of: kinds) {
-      for directory in [profileDirectory, cachesDirectory] where fm.fileExists(atPath: directory.path(percentEncoded: false)) {
+      for directory in [profileDirectory, cachesDirectory]
+      where fm.fileExists(atPath: directory.path(percentEncoded: false)) {
         try fm.removeItem(at: directory)
       }
       return
@@ -249,10 +251,11 @@ struct AuthorizationPrivilegedCommandRunner: PrivilegedCommandRunner {
     return Int32(output[range.upperBound...].trimmingCharacters(in: .whitespacesAndNewlines))
   }
 
-  private typealias ExecuteWithPrivileges = @convention(c) (
-    AuthorizationRef, UnsafePointer<CChar>, AuthorizationFlags, UnsafePointer<UnsafeMutablePointer<CChar>?>,
-    UnsafeMutablePointer<UnsafeMutablePointer<FILE>?>?
-  ) -> OSStatus
+  private typealias ExecuteWithPrivileges =
+    @convention(c) (
+      AuthorizationRef, UnsafePointer<CChar>, AuthorizationFlags, UnsafePointer<UnsafeMutablePointer<CChar>?>,
+      UnsafeMutablePointer<UnsafeMutablePointer<FILE>?>?
+    ) -> OSStatus
 
   func run(_ shellCommand: String) -> PrivilegedCommandResult {
     var authorization: AuthorizationRef?

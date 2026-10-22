@@ -1,6 +1,7 @@
 // Port of mozc/src/base/random_test.cc (3.35.6354).
 
 import Testing
+
 @testable import GenmaiBase
 
 private func containsSameValues<C: Collection>(_ buf: C) -> Bool where C.Element: Equatable {

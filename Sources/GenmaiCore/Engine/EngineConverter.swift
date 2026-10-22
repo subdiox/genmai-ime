@@ -95,8 +95,7 @@ private func getT13nAttributes(_ type: TransliterationType) -> CandidateList.Att
 //   "m": m (ASIS | LOWER) → M (UPPER | CAPACALIZED) → m (ASIS | LOWER) →
 //   "M": M (ASIS | UPPER | CAPACALIZED) → m (LOWER) →
 //        M (ASIS | UPPER | CAPACALIZED) →
-private func cycleAlphaCase(_ queryAttrIn: CandidateList.Attributes, _ candidateList: CandidateList)
-{
+private func cycleAlphaCase(_ queryAttrIn: CandidateList.Attributes, _ candidateList: CandidateList) {
   var queryAttr = queryAttrIn
   var currentAttr = candidateList.getDeepestFocusedCandidate().attributes
 
@@ -1807,8 +1806,7 @@ public final class EngineConverter: EngineConverterInterface {
   /// Usage stats are not recorded (the C++ only builds the stat name).
   func updateCandidateStats(_ baseName: String, _ index: Int32) {}
 
-  func commitSegmentsSize(_ commitState: EngineConverterStates, _ context: Genmai_Commands_Context)
-  {
+  func commitSegmentsSize(_ commitState: EngineConverterStates, _ context: Genmai_Commands_Context) {
     var commitSegmentSize = 0
     switch commitState {
     case State.composition:

@@ -136,7 +136,8 @@ public enum AIStrings {
     _ release: GenmaiModelRelease, variant: AIModelVariant, language: GUILanguage = .current
   ) -> String {
     String(
-      format: text(.downloadNote, language: language), bytes(release.downloadSize(for: variant)), release.info.repository)
+      format: text(.downloadNote, language: language), bytes(release.downloadSize(for: variant)),
+      release.info.repository)
   }
 
   static func bytes(_ count: Int64) -> String {
@@ -296,7 +297,9 @@ struct AIModelLatestRow: View {
         .foregroundStyle(.secondary)
       } else if model.aiModelStatus.needsInstall(release, variant: variant) {
         VStack(alignment: .leading, spacing: 6) {
-          Button(String(format: AIStrings.text(model.aiModelStatus.isFound ? .update : .download), release.info.version)) {
+          Button(
+            String(format: AIStrings.text(model.aiModelStatus.isFound ? .update : .download), release.info.version)
+          ) {
             model.installAIModel()
           }
           Text(verbatim: AIStrings.downloadNote(release, variant: variant))

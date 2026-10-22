@@ -102,7 +102,8 @@ public struct ConfigDialogView: View {
     }
     .frame(
       minWidth: 640, idealWidth: Self.idealSize.width, maxWidth: .infinity,
-      minHeight: 460, idealHeight: Self.idealSize.height, maxHeight: .infinity)
+      minHeight: 460, idealHeight: Self.idealSize.height, maxHeight: .infinity
+    )
     .genmaiMessageAlert($model.pendingMessage)
     .sheet(item: $model.activeEditor) { editor in
       ConfigDialogEditorSheet(editor: editor, model: model)

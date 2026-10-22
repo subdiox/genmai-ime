@@ -1,6 +1,7 @@
 // Port of mozc/src/storage/lru_cache_test.cc (3.35.6354).
 
 import Testing
+
 @testable import GenmaiStorage
 
 private func sizeOfFreeList<K, V>(_ cache: LruCache<K, V>) -> Int {

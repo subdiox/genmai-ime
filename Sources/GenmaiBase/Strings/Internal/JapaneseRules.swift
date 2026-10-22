@@ -5,7 +5,8 @@
 
 extension JapaneseInternal {
   public static let hiraganaToKatakana = JapaneseRule(
-    table: hiraganaToKatakanaTable, doubleArray: DoubleArray(base: hiraganaToKatakanaBase, check: hiraganaToKatakanaCheck))
+    table: hiraganaToKatakanaTable,
+    doubleArray: DoubleArray(base: hiraganaToKatakanaBase, check: hiraganaToKatakanaCheck))
 
   static let hiraganaToKatakanaTable: [UInt8] = [
     227, 131, 180, 0, 0, 227, 131, 180, 0, 0, 227, 130, 162, 0, 0, 227,
@@ -400,7 +401,8 @@ extension JapaneseInternal {
   ]
 
   public static let katakanaToHiragana = JapaneseRule(
-    table: katakanaToHiraganaTable, doubleArray: DoubleArray(base: katakanaToHiraganaBase, check: katakanaToHiraganaCheck))
+    table: katakanaToHiraganaTable,
+    doubleArray: DoubleArray(base: katakanaToHiraganaBase, check: katakanaToHiraganaCheck))
 
   static let katakanaToHiraganaTable: [UInt8] = [
     227, 130, 148, 0, 0, 227, 129, 130, 0, 0, 227, 129, 132, 0, 0, 227,
@@ -796,7 +798,9 @@ extension JapaneseInternal {
   ]
 
   public static let fullwidthkatakanaToHalfwidthkatakana = JapaneseRule(
-    table: fullwidthkatakanaToHalfwidthkatakanaTable, doubleArray: DoubleArray(base: fullwidthkatakanaToHalfwidthkatakanaBase, check: fullwidthkatakanaToHalfwidthkatakanaCheck))
+    table: fullwidthkatakanaToHalfwidthkatakanaTable,
+    doubleArray: DoubleArray(
+      base: fullwidthkatakanaToHalfwidthkatakanaBase, check: fullwidthkatakanaToHalfwidthkatakanaCheck))
 
   static let fullwidthkatakanaToHalfwidthkatakanaTable: [UInt8] = [
     239, 189, 161, 0, 0, 239, 189, 162, 0, 0, 239, 189, 163, 0, 0, 239,
@@ -952,7 +956,9 @@ extension JapaneseInternal {
   ]
 
   public static let halfwidthkatakanaToFullwidthkatakana = JapaneseRule(
-    table: halfwidthkatakanaToFullwidthkatakanaTable, doubleArray: DoubleArray(base: halfwidthkatakanaToFullwidthkatakanaBase, check: halfwidthkatakanaToFullwidthkatakanaCheck))
+    table: halfwidthkatakanaToFullwidthkatakanaTable,
+    doubleArray: DoubleArray(
+      base: halfwidthkatakanaToFullwidthkatakanaBase, check: halfwidthkatakanaToFullwidthkatakanaCheck))
 
   static let halfwidthkatakanaToFullwidthkatakanaTable: [UInt8] = [
     227, 128, 130, 0, 0, 227, 128, 140, 0, 0, 227, 128, 141, 0, 0, 227,
@@ -1109,7 +1115,8 @@ extension JapaneseInternal {
   ]
 
   public static let halfwidthasciiToFullwidthascii = JapaneseRule(
-    table: halfwidthasciiToFullwidthasciiTable, doubleArray: DoubleArray(base: halfwidthasciiToFullwidthasciiBase, check: halfwidthasciiToFullwidthasciiCheck))
+    table: halfwidthasciiToFullwidthasciiTable,
+    doubleArray: DoubleArray(base: halfwidthasciiToFullwidthasciiBase, check: halfwidthasciiToFullwidthasciiCheck))
 
   static let halfwidthasciiToFullwidthasciiTable: [UInt8] = [
     227, 128, 128, 0, 0, 239, 188, 129, 0, 0, 226, 128, 157, 0, 0, 239,
@@ -1211,7 +1218,8 @@ extension JapaneseInternal {
   ]
 
   public static let fullwidthasciiToHalfwidthascii = JapaneseRule(
-    table: fullwidthasciiToHalfwidthasciiTable, doubleArray: DoubleArray(base: fullwidthasciiToHalfwidthasciiBase, check: fullwidthasciiToHalfwidthasciiCheck))
+    table: fullwidthasciiToHalfwidthasciiTable,
+    doubleArray: DoubleArray(base: fullwidthasciiToHalfwidthasciiBase, check: fullwidthasciiToHalfwidthasciiCheck))
 
   static let fullwidthasciiToHalfwidthasciiTable: [UInt8] = [
     32, 0, 0, 33, 0, 0, 34, 0, 0, 35, 0, 0, 36, 0, 0, 37,
@@ -1325,7 +1333,8 @@ extension JapaneseInternal {
   ]
 
   public static let normalizeVoicedSound = JapaneseRule(
-    table: normalizeVoicedSoundTable, doubleArray: DoubleArray(base: normalizeVoicedSoundBase, check: normalizeVoicedSoundCheck))
+    table: normalizeVoicedSoundTable,
+    doubleArray: DoubleArray(base: normalizeVoicedSoundBase, check: normalizeVoicedSoundCheck))
 
   static let normalizeVoicedSoundTable: [UInt8] = [
     227, 130, 148, 0, 0,
@@ -1398,7 +1407,8 @@ extension JapaneseInternal {
   ]
 
   public static let kanjinumberToArabicnumber = JapaneseRule(
-    table: kanjinumberToArabicnumberTable, doubleArray: DoubleArray(base: kanjinumberToArabicnumberBase, check: kanjinumberToArabicnumberCheck))
+    table: kanjinumberToArabicnumberTable,
+    doubleArray: DoubleArray(base: kanjinumberToArabicnumberBase, check: kanjinumberToArabicnumberCheck))
 
   static let kanjinumberToArabicnumberTable: [UInt8] = [
     48, 0, 0, 49, 0, 0, 50, 0, 0, 51, 0, 0, 52, 0, 0, 53,

@@ -108,7 +108,8 @@ do {
     let (image, timings) = try await GenmaiDataSet.generate(sources)
     try FileUtil.setContents(output, image)
     if flags.contains("timings") { printTimings(timings) }
-    print(String(format: "wrote %@ (%d bytes) in %.1f s", output as NSString, image.count, Date().timeIntervalSince(start)))
+    print(
+      String(format: "wrote %@ (%d bytes) in %.1f s", output as NSString, image.count, Date().timeIntervalSince(start)))
     if let ref = options["compare"] {
       let expected = try FileUtil.getContentBytes(ref)
       if let report = DataSetDiff.report(actual: image, expected: expected) {

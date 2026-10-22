@@ -635,8 +635,7 @@ public enum NumberUtil {
 
   // *output = arg1 * arg2
   // return false when an integer overflow happens.
-  static func multiplyAndCheckOverflow(_ arg1: UInt64, _ arg2: UInt64, _ output: inout UInt64) -> Bool
-  {
+  static func multiplyAndCheckOverflow(_ arg1: UInt64, _ arg2: UInt64, _ output: inout UInt64) -> Bool {
     let (r, o) = arg1.multipliedReportingOverflow(by: arg2)
     output = r
     return !o

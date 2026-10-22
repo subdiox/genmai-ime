@@ -77,8 +77,7 @@ private func part5RebuildRequest(
 
       var result = PredictionResult()
 
-      func addSegment(_ key: String, _ value: String, _ contentKey: String, _ contentValue: String)
-      {
+      func addSegment(_ key: String, _ value: String, _ contentKey: String, _ contentValue: String) {
         #expect(key.hasBytePrefix(contentKey))
         #expect(value.hasBytePrefix(contentValue))
         result.key += key

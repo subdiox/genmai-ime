@@ -1,6 +1,7 @@
 // Port of mozc/src/converter/candidate_test.cc (3.35.6354).
 
 import Testing
+
 @testable import GenmaiCore
 
 @Suite struct CandidateTests {

@@ -1,6 +1,7 @@
 // Port of mozc/src/base/util_test.cc (3.35.6354).
 
 import Testing
+
 @testable import GenmaiBase
 
 @Suite struct UtilTest {
@@ -32,9 +33,10 @@ import Testing
     let kInputs = ["a", "あ", "亜", "\n", "a"]
     #expect(Util.splitStringToUtf8Chars(kInputs.joined()) == kInputs)
     // Code points, not graphemes.
-    #expect(Util.splitStringToUtf8Chars("あ\u{3099}").map { Array($0.utf8) } == [
-      Array("あ".utf8), Array("\u{3099}".utf8),
-    ])
+    #expect(
+      Util.splitStringToUtf8Chars("あ\u{3099}").map { Array($0.utf8) } == [
+        Array("あ".utf8), Array("\u{3099}".utf8),
+      ])
   }
 
   private func checkGraphemes(_ kInputs: [String]) {
@@ -700,7 +702,7 @@ import Testing
     checkSplitFirst(#"\xF8\x88\x80\x80\x80 "#, 0x200000, " ")
     checkSplitFirst(#"\xFB\xBF\xBF\xBF\xBF "#, 0x3FFFFFF, " ")
     checkSplitFirst(#"\xFC\x84\x80\x80\x80\x80 "#, 0x4000000, " ")
-    checkSplitFirst(#"\xFD\xBF\xBF\xBF\xBF\xBF "#, 0x7FFFFFFF, " ")
+    checkSplitFirst(#"\xFD\xBF\xBF\xBF\xBF\xBF "#, 0x7FFF_FFFF, " ")
 
     // If there is any invalid sequence, the entire text should be treated as
     // am empty string.
@@ -745,7 +747,7 @@ import Testing
     checkSplitLast(#" \xF8\x88\x80\x80\x80"#, 0x200000, " ")
     checkSplitLast(#" \xFB\xBF\xBF\xBF\xBF"#, 0x3FFFFFF, " ")
     checkSplitLast(#" \xFC\x84\x80\x80\x80\x80"#, 0x4000000, " ")
-    checkSplitLast(#" \xFD\xBF\xBF\xBF\xBF\xBF"#, 0x7FFFFFFF, " ")
+    checkSplitLast(#" \xFD\xBF\xBF\xBF\xBF\xBF"#, 0x7FFF_FFFF, " ")
 
     // If there is any invalid sequence, the entire text should be treated as
     // am empty string.
@@ -818,8 +820,8 @@ import Testing
       (#"\x00\x00\x00\x00\x00\x00\xFF\xFF"#, UInt64(UInt16.max)),
       (#"\x00\x00\x00\x00\xFF\xFF\xFF\xFF"#, UInt64(UInt32.max)),
       (#"\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF"#, UInt64.max),
-      (#"\x01\x23\x45\x67\x89\xAB\xCD\xEF"#, 0x0123456789ABCDEF),
-      (#"\xFE\xDC\xBA\x98\x76\x54\x32\x10"#, 0xFEDCBA9876543210),
+      (#"\x01\x23\x45\x67\x89\xAB\xCD\xEF"#, 0x0123_4567_89AB_CDEF),
+      (#"\xFE\xDC\xBA\x98\x76\x54\x32\x10"#, 0xFEDC_BA98_7654_3210),
     ]
 
     for (str, value) in kCorrectPairs {

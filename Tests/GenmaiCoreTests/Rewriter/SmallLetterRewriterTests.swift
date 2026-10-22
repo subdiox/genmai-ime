@@ -5,6 +5,7 @@
 
 import GenmaiProtocol
 import Testing
+
 @testable import GenmaiCore
 
 @Suite struct SmallLetterRewriterTests {

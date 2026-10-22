@@ -9,10 +9,11 @@
 //   not visible to an already built filter.
 // - absl::StatusOr is replaced by `throws`.
 
-#if canImport(Darwin)
-import Darwin
-#endif
 import GenmaiBase
+
+#if canImport(Darwin)
+  import Darwin
+#endif
 
 public enum ExistenceFilterInternal {
   public static let kBlockShift = 21  // 2^21 bits == 256KB block

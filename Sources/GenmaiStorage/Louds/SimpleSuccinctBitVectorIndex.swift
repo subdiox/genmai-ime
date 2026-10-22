@@ -94,7 +94,8 @@ public struct SimpleSuccinctBitVectorIndex: @unchecked Sendable {
     if n % 32 > 0 {
       let offset = 4 * (n / 32)
       let shift = UInt32(32 - n % 32)
-      result += (data.loadUnaligned(fromByteOffset: offset, as: UInt32.self) << shift)
+      result +=
+        (data.loadUnaligned(fromByteOffset: offset, as: UInt32.self) << shift)
         .nonzeroBitCount
     }
 

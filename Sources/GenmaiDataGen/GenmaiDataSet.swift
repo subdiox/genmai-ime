@@ -182,7 +182,8 @@ public enum GenmaiDataSet {
   /// Runs all generators (independent ones in parallel) and returns their
   /// outputs.
   public static func generateSections(
-    _ sources: DataGenSources, only: Set<DataGenerator>? = nil, userPosManagerData givenUserPosManagerData: [UInt8]? = nil
+    _ sources: DataGenSources, only: Set<DataGenerator>? = nil,
+    userPosManagerData givenUserPosManagerData: [UInt8]? = nil
   ) async throws -> (outputs: [DataGenerator: [String: [UInt8]]], timings: [Timing]) {
     let entries = entries(withUsage: sources.usageDict != nil)
     var wanted = Set(entries.map(\.generator))

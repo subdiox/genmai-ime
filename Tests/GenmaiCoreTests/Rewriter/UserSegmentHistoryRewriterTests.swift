@@ -16,8 +16,7 @@ import Testing
 
 private let kCandidatesSize = 20
 
-private func initSegments(_ segments: Segments, _ size: Int, _ candidateSize: Int = kCandidatesSize)
-{
+private func initSegments(_ segments: Segments, _ size: Int, _ candidateSize: Int = kCandidatesSize) {
   segments.clear()
   for i in 0..<size {
     let segment = segments.addSegment()

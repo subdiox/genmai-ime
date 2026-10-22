@@ -840,8 +840,7 @@ public final class Converter: ConverterInterface, @unchecked Sendable {
     // 1. Resize segments if needed.
     // Check if the segments need to be resized.
     if let resizeRequest = rewriter.checkResizeSegmentsRequest(request, segments) {
-      if resizeSegments(segments, request, resizeRequest.segmentIndex, resizeRequest.segmentSizes)
-      {
+      if resizeSegments(segments, request, resizeRequest.segmentIndex, resizeRequest.segmentSizes) {
         // If the segments are resized, ResizeSegments recursively executed
         // RewriteAndSuppressCandidates with resized segments. No need to
         // execute them again.

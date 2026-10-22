@@ -1,7 +1,7 @@
 // Port of mozc/src/base/file/recursive.{h,cc} (3.35.6354). macOS (fts) path.
 
 #if canImport(Darwin)
-import Darwin
+  import Darwin
 #endif
 
 public enum FileRecursive {

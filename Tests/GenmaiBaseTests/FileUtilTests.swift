@@ -2,6 +2,7 @@
 
 import Foundation
 import Testing
+
 @testable import GenmaiBase
 
 private func createTestFile(_ filename: String, _ data: String) throws {

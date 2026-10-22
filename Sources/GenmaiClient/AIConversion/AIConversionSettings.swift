@@ -74,7 +74,8 @@ public struct AIConversionSettings: Codable, Equatable, Sendable {
   public var sanitized: AIConversionSettings {
     var s = self
     s.timeoutMilliseconds = min(max(s.timeoutMilliseconds, Self.timeoutRange.lowerBound), Self.timeoutRange.upperBound)
-    s.candidateCount = min(max(s.candidateCount, Self.candidateCountRange.lowerBound), Self.candidateCountRange.upperBound)
+    s.candidateCount = min(
+      max(s.candidateCount, Self.candidateCountRange.lowerBound), Self.candidateCountRange.upperBound)
     return s
   }
 
@@ -139,7 +140,8 @@ public enum AIModelStatus: Equatable, Sendable {
     let missing = requiredFiles.filter {
       !FileManager.default.fileExists(atPath: directory.appending(path: $0).path)
     }
-    return missing.isEmpty ? .found(directory, info: GenmaiModelInfo.load(from: directory)) : .missing(directory, missingFiles: missing)
+    return missing.isEmpty
+      ? .found(directory, info: GenmaiModelInfo.load(from: directory)) : .missing(directory, missingFiles: missing)
   }
 
   public var isFound: Bool {
@@ -158,7 +160,9 @@ public enum AIModelStatus: Equatable, Sendable {
   /// Identifies the installed weights (size and modification date of model.safetensors): changes when the model
   /// is replaced, so that the IME reloads it.
   public static func identity(_ directory: URL) -> String? {
-    guard let attributes = try? FileManager.default.attributesOfItem(atPath: directory.appending(path: "model.safetensors").path),
+    guard
+      let attributes = try? FileManager.default.attributesOfItem(
+        atPath: directory.appending(path: "model.safetensors").path),
       let size = attributes[.size] as? Int, let date = attributes[.modificationDate] as? Date
     else {
       return nil

@@ -112,7 +112,8 @@ struct GenmaiAugmenterTests {
     // 26 speculations were started; the stale ones stopped before (or within one step of) their work
     let (s, at) = single.components
     let singleSeconds = Double(s) + Double(at) / 1e18
-    #expect(busy < singleSeconds * 4 + 0.2, "busy \(busy) s for \(u.count) keystrokes, one conversion \(singleSeconds) s")
+    #expect(
+      busy < singleSeconds * 4 + 0.2, "busy \(busy) s for \(u.count) keystrokes, one conversion \(singleSeconds) s")
   }
 
   /// The conversion key right after the last keystroke awaits the speculation already in flight for it.

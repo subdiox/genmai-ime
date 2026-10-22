@@ -59,8 +59,7 @@ public final class HistoryReconstructor: Sendable {
     self.posMatcher = posMatcher
   }
 
-  public func reconstructHistory(_ precedingText: some StringProtocol, _ segments: Segments) -> Bool
-  {
+  public func reconstructHistory(_ precedingText: some StringProtocol, _ segments: Segments) -> Bool {
     var key = ""
     var value = ""
     var id: UInt16 = 0

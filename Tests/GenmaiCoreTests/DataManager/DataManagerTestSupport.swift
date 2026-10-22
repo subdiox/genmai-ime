@@ -3,6 +3,7 @@
 
 import Foundation
 import GenmaiBase
+
 @testable import GenmaiCore
 
 enum DataManagerTestSupport {

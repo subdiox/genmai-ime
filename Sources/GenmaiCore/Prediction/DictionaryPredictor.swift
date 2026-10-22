@@ -204,8 +204,7 @@ open class DictionaryPredictor: PredictorInterface, @unchecked Sendable {
   }
 
   public func convert(_ request: ConversionRequest) -> [PredictionResult] { [] }
-  public func finish(_ request: ConversionRequest, _ results: [PredictionResult], _ revertId: UInt32)
-  {}
+  public func finish(_ request: ConversionRequest, _ results: [PredictionResult], _ revertId: UInt32) {}
   public func revert(_ revertId: UInt32) {}
   public func commitContext(_ request: ConversionRequest) {}
   @discardableResult public func clearAllHistory() -> Bool { true }
@@ -272,8 +271,7 @@ open class DictionaryPredictor: PredictorInterface, @unchecked Sendable {
       request.options().useActualConverterForRealtimeConversion, &results)
 
     // In partial suggestion or prediction, only realtime candidates are used.
-    if request.requestType() == .partialSuggestion || request.requestType() == .partialPrediction
-    {
+    if request.requestType() == .partialSuggestion || request.requestType() == .partialPrediction {
       return results
     }
 
@@ -338,8 +336,7 @@ open class DictionaryPredictor: PredictorInterface, @unchecked Sendable {
 
     // Desktop mode never sets PARTIAL mode, so we may use DCHECK after the
     // refactoring.
-    if request.requestType() == .partialSuggestion || request.requestType() == .partialPrediction
-    {
+    if request.requestType() == .partialSuggestion || request.requestType() == .partialPrediction {
       return results
     }
 
@@ -617,8 +614,7 @@ open class DictionaryPredictor: PredictorInterface, @unchecked Sendable {
     return finalResults
   }
 
-  func maybeApplyPostCorrection(_ request: ConversionRequest, _ results: inout [PredictionResult])
-  {
+  func maybeApplyPostCorrection(_ request: ConversionRequest, _ results: inout [PredictionResult]) {
     // b/363902660:
     // Stop applying post correction when handwriting mode.
     if RequestUtil.isHandwriting(request) {
@@ -651,7 +647,8 @@ open class DictionaryPredictor: PredictorInterface, @unchecked Sendable {
       }
       if (result.attributes
         & (Attribute.realtimeConversion | Attribute.unigram | Attribute.partiallyKeyConsumed
-          | Attribute.number)) == 0
+          | Attribute.number))
+        == 0
       {
         continue
       }

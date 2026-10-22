@@ -497,8 +497,8 @@ func runUserHistoryTestThreads(_ count: Int, _ body: @escaping @Sendable (Int) -
       e1.value = "A"
       e1.suggestionFreq = 1
       e1.lastAccessTime = 2
-      e1.nextEntryFps = [0x0102030405060708]
-      e1.innerSegmentBoundary = [0x01010101]
+      e1.nextEntryFps = [0x0102_0304_0506_0708]
+      e1.innerSegmentBoundary = [0x0101_0101]
       storage.insert(e1)
       var e2 = Entry()
       e2.key = "b"

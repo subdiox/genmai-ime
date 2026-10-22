@@ -12,13 +12,15 @@ import Testing
   }
 
   @Test func isInFullAsciiTypes() {
-    check(T13n.isInFullAsciiTypes,
-          trueFor: [.fullAscii, .fullAsciiUpper, .fullAsciiLower, .fullAsciiCapitalized])
+    check(
+      T13n.isInFullAsciiTypes,
+      trueFor: [.fullAscii, .fullAsciiUpper, .fullAsciiLower, .fullAsciiCapitalized])
   }
 
   @Test func isInHalfAsciiTypes() {
-    check(T13n.isInHalfAsciiTypes,
-          trueFor: [.halfAscii, .halfAsciiUpper, .halfAsciiLower, .halfAsciiCapitalized])
+    check(
+      T13n.isInHalfAsciiTypes,
+      trueFor: [.halfAscii, .halfAsciiUpper, .halfAsciiLower, .halfAsciiCapitalized])
   }
 
   @Test func isInHiraganaTypes() {

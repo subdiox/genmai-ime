@@ -2,6 +2,7 @@
 
 import GenmaiBase
 import Testing
+
 @testable import GenmaiStorage
 
 private func checkValues(_ filter: ExistenceFilter, _ m: Int, _ n: Int) {
@@ -67,7 +68,7 @@ private func runTest(_ m: Int, _ n: Int) throws {
     var builder = ExistenceFilterBuilder.createOptimal(numBytes, UInt32(kWords.count))
 
     // If we change the default FpType, we also need to update the data FP.
-    #expect(cityFingerprintOf(builder.serializeAsString()) == 0x1dcbe48117d0106c)
+    #expect(cityFingerprintOf(builder.serializeAsString()) == 0x1dcb_e481_17d0_106c)
 
     for word in kWords {
       builder.insert(word)
@@ -76,7 +77,7 @@ private func runTest(_ m: Int, _ n: Int) throws {
     let buf = builder.serializeAsString()
 
     // If we change the default FpType, we also need to update the data FP.
-    #expect(cityFingerprintOf(buf) == 0x877b326008d5246a)
+    #expect(cityFingerprintOf(buf) == 0x877b_3260_08d5_246a)
 
     let alignedBuf = ImageBuffer(buf)
     let filterRead = try ExistenceFilter.read(alignedBuf.raw)
@@ -102,7 +103,7 @@ private func runTest(_ m: Int, _ n: Int) throws {
     let filter = builder.build()
 
     // If we change the default FpType, we also need to update the data FP.
-    #expect(cityFingerprintOf(builder.serializeAsString()) == 0x549d89308d013f39)
+    #expect(cityFingerprintOf(builder.serializeAsString()) == 0x549d_8930_8d01_3f39)
 
     for word in kWords {
       #expect(filter.exists(word))

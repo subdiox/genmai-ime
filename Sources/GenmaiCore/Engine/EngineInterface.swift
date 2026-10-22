@@ -62,7 +62,8 @@ public protocol EngineInterface: AnyObject {
   @discardableResult func sendEngineReloadRequest(_ request: Genmai_EngineReloadRequest) -> Bool
 
   @discardableResult func sendSupplementalModelReloadRequest(
-    _ request: Genmai_EngineReloadRequest) -> Bool
+    _ request: Genmai_EngineReloadRequest
+  ) -> Bool
 }
 
 extension EngineInterface {

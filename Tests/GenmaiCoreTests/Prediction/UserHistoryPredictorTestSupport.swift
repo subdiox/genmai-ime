@@ -449,8 +449,7 @@ final class UserHistoryPredictorTestFixture {
 
   /// Helper function to create a test case for bigram history deletion.
   /// Returns (japaneseinput, japanese, input).
-  func initHistoryJapaneseInput(_ predictor: UserHistoryPredictor) -> (EntryRef, EntryRef, EntryRef)
-  {
+  func initHistoryJapaneseInput(_ predictor: UserHistoryPredictor) -> (EntryRef, EntryRef, EntryRef) {
     // Make the history for ("japaneseinput", "JapaneseInput"). It's assumed
     // that this sentence consists of two segments, "japanese" and "input". So,
     // the following history entries are constructed:
@@ -502,8 +501,7 @@ final class UserHistoryPredictorTestFixture {
     segmentsProxy.makeSegments(key)
   }
 
-  func setUpInputForSuggestion(_ key: String, _ segmentsProxy: SegmentsProxy) -> ConversionRequest
-  {
+  func setUpInputForSuggestion(_ key: String, _ segmentsProxy: SegmentsProxy) -> ConversionRequest {
     setUpInput(key, segmentsProxy)
     var options = ConversionRequest.Options()
     options.requestType = .suggestion
@@ -518,8 +516,7 @@ final class UserHistoryPredictorTestFixture {
     return convreq
   }
 
-  func setUpInputForPrediction(_ key: String, _ segmentsProxy: SegmentsProxy) -> ConversionRequest
-  {
+  func setUpInputForPrediction(_ key: String, _ segmentsProxy: SegmentsProxy) -> ConversionRequest {
     setUpInput(key, segmentsProxy)
     var options = ConversionRequest.Options()
     options.requestType = .prediction
@@ -534,8 +531,7 @@ final class UserHistoryPredictorTestFixture {
     return convreq
   }
 
-  func setUpInputForConversion(_ key: String, _ segmentsProxy: SegmentsProxy) -> ConversionRequest
-  {
+  func setUpInputForConversion(_ key: String, _ segmentsProxy: SegmentsProxy) -> ConversionRequest {
     setUpInput(key, segmentsProxy)
     var options = ConversionRequest.Options()
     options.requestType = .conversion

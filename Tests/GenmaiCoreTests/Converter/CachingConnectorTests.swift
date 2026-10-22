@@ -1,6 +1,7 @@
 // Port of mozc/src/converter/caching_connector_test.cc (3.35.6354).
 
 import Testing
+
 @testable import GenmaiCore
 
 @Suite(.enabled(if: ConverterCoreTestSupport.hasMockData, ConverterCoreTestSupport.mockDataMissing))

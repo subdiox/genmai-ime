@@ -2,6 +2,7 @@
 
 import Foundation
 import Testing
+
 @testable import GenmaiCore
 
 @Suite struct CalculatorTests {

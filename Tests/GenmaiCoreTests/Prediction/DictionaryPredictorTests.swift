@@ -583,8 +583,10 @@ struct DictionaryPredictorTest {
     RequestTestUtil.fillMobileRequest(&f.request)
 
     var aggregated: [PredictionResult] = []
-    func add(_ key: String, _ value: String, _ wcost: Int, _ types: PredictionTypes,
-      _ b: (Int, Int, Int, Int)) {
+    func add(
+      _ key: String, _ value: String, _ wcost: Int, _ types: PredictionTypes,
+      _ b: (Int, Int, Int, Int)
+    ) {
       var r = DPT.createResult5(key, value, wcost, types, NONE)
       DPT.pushBackInnerSegmentBoundary(b.0, b.1, b.2, b.3, &r)
       aggregated.append(r)
@@ -610,8 +612,10 @@ struct DictionaryPredictorTest {
     RequestTestUtil.fillMobileRequest(&f.request)
 
     var aggregated: [PredictionResult] = []
-    func add(_ key: String, _ value: String, _ wcost: Int, _ types: PredictionTypes,
-      _ b: (Int, Int, Int, Int)) {
+    func add(
+      _ key: String, _ value: String, _ wcost: Int, _ types: PredictionTypes,
+      _ b: (Int, Int, Int, Int)
+    ) {
       var r = DPT.createResult5(key, value, wcost, types, NONE)
       DPT.pushBackInnerSegmentBoundary(b.0, b.1, b.2, b.3, &r)
       aggregated.append(r)

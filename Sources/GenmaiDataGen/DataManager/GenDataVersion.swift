@@ -18,7 +18,8 @@ public enum GenDataVersion {
     [engineVersion, dataVersion, tag].joined(separator: ".")
   }
 
-  public static func generate(versionTemplate: String, tag: String, dataVersionOverride: String? = nil) throws -> String {
+  public static func generate(versionTemplate: String, tag: String, dataVersionOverride: String? = nil) throws -> String
+  {
     var data: [String: String] = [:]
     // re.match(r'(\w+) *= *(.*)', line.strip())
     let regex = try NSRegularExpression(pattern: #"^(\w+) *= *(.*)"#)

@@ -2,6 +2,7 @@
 
 import GenmaiBase
 import Testing
+
 @testable import GenmaiCore
 
 private func addCandidate(_ segment: Segment, _ value: String) {

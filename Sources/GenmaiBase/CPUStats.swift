@@ -1,7 +1,7 @@
 // Port of mozc/src/base/cpu_stats.{h,cc} (3.35.6354). macOS (mach) path.
 
 #if canImport(Darwin)
-import Darwin
+  import Darwin
 #endif
 
 public protocol CPUStatsInterface: AnyObject {
@@ -88,7 +88,8 @@ public final class CPUStats: CPUStatsInterface {
     var tv = timeval()
     gettimeofday(&tv, nil)
     let totalTimes = 1_000_000 &* UInt64(tv.tv_sec) &+ UInt64(tv.tv_usec)
-    let cpuTimes = CPUStats.timeValueToInt64(info.user_time)
+    let cpuTimes =
+      CPUStats.timeValueToInt64(info.user_time)
       &+ CPUStats.timeValueToInt64(info.system_time)
     return CPUStats.updateCPULoad(
       totalTimes, cpuTimes, &prevCurrentProcessTotalTimes, &prevCurrentProcessCPUTimes)

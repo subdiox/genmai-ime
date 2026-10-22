@@ -83,11 +83,14 @@ public struct AboutDialogView: View {
     .padding(.top, 28)
     .padding(.bottom, 20)
     .frame(width: 380)
-    .environment(\.openURL, OpenURLAction { url in
-      // we don't activate the link if about dialog is running as root
-      guard RunLevel.isValidClientRunLevel() else { return .discarded }
-      return .systemAction(url)
-    })
+    .environment(
+      \.openURL,
+      OpenURLAction { url in
+        // we don't activate the link if about dialog is running as root
+        guard RunLevel.isValidClientRunLevel() else { return .discarded }
+        return .systemAction(url)
+      }
+    )
     .navigationTitle(content.windowTitle)
   }
 }

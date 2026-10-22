@@ -220,7 +220,8 @@ public struct InnerSegments: Sequence {
   public var description: String {
     var s = ""
     for iter in self {
-      s += "<\(iter.key.utf8.count),\(iter.value.utf8.count),\(iter.contentKey.utf8.count),\(iter.contentValue.utf8.count)>"
+      s +=
+        "<\(iter.key.utf8.count),\(iter.value.utf8.count),\(iter.contentKey.utf8.count),\(iter.contentValue.utf8.count)>"
     }
     return s
   }

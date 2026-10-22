@@ -95,8 +95,9 @@ public struct PredictionResult: Sendable, Equatable {
       attributes |= Attribute.spellingCorrection
     }
     if tokenAttr & Token.Attribute.userDictionary != 0 {
-      attributes |= (Attribute.userDictionary | Attribute.noModification
-        | Attribute.noVariantsExpansion)
+      attributes |=
+        (Attribute.userDictionary | Attribute.noModification
+          | Attribute.noVariantsExpansion)
     }
   }
 

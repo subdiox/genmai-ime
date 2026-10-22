@@ -211,8 +211,7 @@ public final class SessionHandlerTool {
   }
 
   @discardableResult
-  public func setConfig(_ config: Genmai_Config_Config, _ output: inout Genmai_Commands_Output) -> Bool
-  {
+  public func setConfig(_ config: Genmai_Config_Config, _ output: inout Genmai_Commands_Output) -> Bool {
     var input = Genmai_Commands_Input()
     input.type = .setConfig
     input.config = config

@@ -9,12 +9,12 @@
 // isolation.
 
 import AppKit
-@preconcurrency import InputMethodKit
 import GenmaiBase
 import GenmaiClient
 import GenmaiCore
 import GenmaiProtocol
 import GenmaiRenderer
+@preconcurrency import InputMethodKit
 
 /// Wraps the IMKTextInput proxy object that IMK passes as `sender` / returns from `client()`.
 @MainActor

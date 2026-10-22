@@ -35,7 +35,9 @@ enum FileDownload {
     /// Set when the file arrived but could not be used (HTTP error, move failed).
     let error = Mutex<(any Error)?>(nil)
 
-    init(destination: URL, failure: @escaping @Sendable (Int) -> any Error, progress: @escaping @Sendable (Int64) -> Void) {
+    init(
+      destination: URL, failure: @escaping @Sendable (Int) -> any Error, progress: @escaping @Sendable (Int64) -> Void
+    ) {
       self.destination = destination
       self.failure = failure
       self.progress = progress
@@ -61,7 +63,12 @@ enum FileDownload {
 
     func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: (any Error)?) {
       let result = error ?? self.error.withLock { $0 }
-      guard let continuation = continuation.withLock({ c in defer { c = nil }; return c }) else { return }
+      guard
+        let continuation = continuation.withLock({ c in
+          defer { c = nil }
+          return c
+        })
+      else { return }
       if let result {
         continuation.resume(throwing: (result as? URLError)?.code == .cancelled ? CancellationError() : result)
       } else {

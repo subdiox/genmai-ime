@@ -1,6 +1,7 @@
 // Port of mozc/src/storage/louds/bit_stream_test.cc (3.35.6354).
 
 import Testing
+
 @testable import GenmaiStorage
 
 @Suite struct BitStreamTest {
@@ -49,11 +50,11 @@ import Testing
 
     expected += [UInt8](repeating: 0xff, count: 4)
 
-    GenmaiStorage.pushInt32(0xffffffff, &image)
+    GenmaiStorage.pushInt32(0xffff_ffff, &image)
     #expect(image == expected)
 
     expected += [0x78, 0x56, 0x34, 0x12]
-    GenmaiStorage.pushInt32(0x12345678, &image)
+    GenmaiStorage.pushInt32(0x1234_5678, &image)
     #expect(image == expected)
   }
 }

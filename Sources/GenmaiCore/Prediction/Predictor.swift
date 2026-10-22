@@ -106,8 +106,7 @@ public final class Predictor: PredictorInterface, @unchecked Sendable {
   public func getPredictorName() -> String { "Predictor" }
 
   // Hook(s) for all mutable operations.
-  public func finish(_ request: ConversionRequest, _ results: [PredictionResult], _ revertId: UInt32)
-  {
+  public func finish(_ request: ConversionRequest, _ results: [PredictionResult], _ revertId: UInt32) {
     userHistoryPredictor.finish(request, results, revertId)
   }
 

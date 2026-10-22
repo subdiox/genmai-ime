@@ -289,7 +289,8 @@ public final class ConfigDialogModel {
   }
   /// Downloads and installs a variant of a model release into a directory (replaced by tests).
   var aiModelInstaller:
-    @Sendable (GenmaiModelRelease, AIModelVariant, URL, @escaping @Sendable (AIModelInstaller.Phase) -> Void) async throws
+    @Sendable (GenmaiModelRelease, AIModelVariant, URL, @escaping @Sendable (AIModelInstaller.Phase) -> Void)
+      async throws
       -> Void = { release, variant, directory, progress in
         try await AIModelInstaller.install(release, variant: variant, to: directory, progress: progress)
       }
@@ -404,7 +405,12 @@ public final class ConfigDialogModel {
       case .verifying: key = 1001
       case .installing: key = 1002
       }
-      guard lastShown.withLock({ last in defer { last = key }; return last != key }) else { return }
+      guard
+        lastShown.withLock({ last in
+          defer { last = key }
+          return last != key
+        })
+      else { return }
       Task { @MainActor [weak self] in
         if case .running = self?.aiModelInstall { self?.aiModelInstall = .running(phase) }
       }

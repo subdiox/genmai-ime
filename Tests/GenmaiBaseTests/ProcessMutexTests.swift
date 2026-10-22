@@ -4,6 +4,7 @@
 // test runner is unsafe.
 
 import Testing
+
 @testable import GenmaiBase
 
 private let kName = "process_mutex_test"
@@ -15,8 +16,9 @@ private let kName = "process_mutex_test"
     SystemUtil.withTempUserProfile { _ in
       body()
       let mutex = ProcessMutex(kName)
-      #expect(!FileUtil.fileExistsOK(mutex.lockFilename),
-              "Lock file unexpectedly remains: \(mutex.lockFilename)")
+      #expect(
+        !FileUtil.fileExistsOK(mutex.lockFilename),
+        "Lock file unexpectedly remains: \(mutex.lockFilename)")
     }
   }
 

@@ -10,6 +10,7 @@
 import GenmaiBase
 import GenmaiProtocol
 import Testing
+
 @testable import GenmaiCore
 
 private func addSegment(_ key: String, _ segments: Segments) -> Segment {

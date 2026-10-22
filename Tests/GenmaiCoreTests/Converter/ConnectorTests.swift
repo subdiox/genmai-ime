@@ -7,6 +7,7 @@
 import Foundation
 import GenmaiBase
 import Testing
+
 @testable import GenmaiCore
 
 @Suite struct ConnectorTests {

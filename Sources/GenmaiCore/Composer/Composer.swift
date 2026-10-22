@@ -14,7 +14,6 @@ import Foundation
 import GenmaiBase
 import GenmaiProtocol
 
-
 private func getTransliterator(_ compMode: TransliterationType) -> Transliterators.Transliterator {
   switch compMode {
   case .halfAscii, .halfAsciiUpper, .halfAsciiLower, .halfAsciiCapitalized:

@@ -46,7 +46,7 @@ enum SessionTestPaths {
   /// testing::GetSourceFile({...}) under Vendor/mozc/src.
   static func upstreamSourceFile(_ components: [String]) -> String {
     let candidates = [
-      repoRoot.appendingPathComponent("Vendor/mozc/src").path,
+      repoRoot.appendingPathComponent("Vendor/mozc/src").path
     ]
     for root in candidates {
       let path = ([root] + components).joined(separator: "/")

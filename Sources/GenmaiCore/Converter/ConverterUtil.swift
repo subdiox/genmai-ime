@@ -174,8 +174,7 @@ public enum ConverterUtil {
   /// inner_segment_boundary, description, display_value). Pre-existing
   /// Candidate metadata (such as category, command, usage_id, prefix, suffix)
   /// is preserved.
-  public static func populateCandidateFromResult(_ result: PredictionResult, _ candidate: Candidate)
-  {
+  public static func populateCandidateFromResult(_ result: PredictionResult, _ candidate: Candidate) {
     // Note: Compute content_key and content_value from inner_segments before
     // moving result.key, result.value, and result.inner_segment_boundary.
     let (contentKey, contentValue) = result.innerSegments().getMergedContentKeyAndValue()

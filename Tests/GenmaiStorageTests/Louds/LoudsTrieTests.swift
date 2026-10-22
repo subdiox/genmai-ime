@@ -1,6 +1,7 @@
 // Port of mozc/src/storage/louds/louds_trie_test.cc (3.35.6354).
 
 import Testing
+
 @testable import GenmaiStorage
 
 private struct CallbackArgs {

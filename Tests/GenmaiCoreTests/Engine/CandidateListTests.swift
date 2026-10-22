@@ -1,6 +1,7 @@
 // Port of mozc/src/engine/candidate_list_test.cc (3.35.6354).
 
 import Testing
+
 @testable import GenmaiCore
 
 private typealias A = CandidateList.Attribute

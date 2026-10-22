@@ -51,7 +51,9 @@ import Testing
     await model.checkIfAutomatic()
     #expect(model.latest == .unknown)
     model.skip(Self.release)
-    #expect(GenmaiUpdateSettings.load(from: dir.settings) == GenmaiUpdateSettings(automaticCheck: false, skippedVersion: "0.2.0"))
+    #expect(
+      GenmaiUpdateSettings.load(from: dir.settings)
+        == GenmaiUpdateSettings(automaticCheck: false, skippedVersion: "0.2.0"))
   }
 
   @Test func downloadsAndOpensTheInstaller() async {

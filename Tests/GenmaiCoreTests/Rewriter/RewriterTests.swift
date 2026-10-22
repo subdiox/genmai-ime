@@ -8,6 +8,7 @@
 import GenmaiBase
 import GenmaiProtocol
 import Testing
+
 @testable import GenmaiCore
 
 /// engine::Modules for the rewriter tests.

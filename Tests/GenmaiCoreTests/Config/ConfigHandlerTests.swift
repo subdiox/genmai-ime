@@ -293,7 +293,11 @@ private typealias Config = Genmai_Config_Config
       #expect(characterFormRulesSet.contains(rules))
     }
 
-    let cancel = Mutex(false)
+    // A Sendable reference: Swift 6.2 does not let task closures capture a noncopyable Mutex local.
+    final class Flag: Sendable {
+      let value = Mutex(false)
+    }
+    let cancel = Flag()
     let sendableConfigs = configs
     let sendableSet = characterFormRulesSet
     // Child tasks inherit the task-local ConfigHandler.
@@ -301,7 +305,7 @@ private typealias Config = Genmai_Config_Config
       for _ in 0..<2 {
         group.addTask {
           var gen = SystemRandomNumberGenerator()
-          while !cancel.withLock { $0 } {
+          while !cancel.value.withLock({ $0 }) {
             let nextIndex = Int.random(in: 0..<sendableConfigs.count, using: &gen)
             ConfigHandler.setConfig(sendableConfigs[nextIndex])
             await Task.yield()
@@ -310,7 +314,7 @@ private typealias Config = Genmai_Config_Config
       }
       for _ in 0..<4 {
         group.addTask {
-          while !cancel.withLock { $0 } {
+          while !cancel.value.withLock({ $0 }) {
             let rules = Self.extractCharacterFormRules(ConfigHandler.getCopiedConfig())
             #expect(sendableSet.contains(rules))
             await Task.yield()
@@ -319,7 +323,7 @@ private typealias Config = Genmai_Config_Config
       }
       // Wait for a while to see if everything goes well.
       try? await Task.sleep(for: .milliseconds(250))
-      cancel.withLock { $0 = true }
+      cancel.value.withLock { $0 = true }
     }
   }
 

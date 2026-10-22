@@ -9,8 +9,8 @@
 
 import Foundation
 import GenmaiBase
-import Testing
 import Synchronization
+import Testing
 
 @testable import GenmaiSession
 

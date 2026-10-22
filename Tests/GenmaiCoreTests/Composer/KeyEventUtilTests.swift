@@ -27,12 +27,14 @@ private func expectEqKeyEvent(
   // Key code
   let expectedKeyCode: Int64 = expected.hasKeyCode ? Int64(expected.keyCode) : -1
   let actualKeyCode: Int64 = actual.hasKeyCode ? Int64(actual.keyCode) : -1
-  #expect(actualKeyCode == expectedKeyCode, "Key codes are not same \(comment ?? "")",
+  #expect(
+    actualKeyCode == expectedKeyCode, "Key codes are not same \(comment ?? "")",
     sourceLocation: sourceLocation)
   // Special key
   let expectedSpecialKey = expected.hasSpecialKey ? expected.specialKey.rawValue : -1
   let actualSpecialKey = actual.hasSpecialKey ? actual.specialKey.rawValue : -1
-  #expect(actualSpecialKey == expectedSpecialKey, "Special keys are not same \(comment ?? "")",
+  #expect(
+    actualSpecialKey == expectedSpecialKey, "Special keys are not same \(comment ?? "")",
     sourceLocation: sourceLocation)
   // Modifier keys
   #expect(

@@ -181,7 +181,7 @@ private func splitFirstChar32(_ s: UnsafeBufferPointer<UInt8>, _ i: Int) -> (UIn
   } else if lead & 0xfe == 0xfc {
     len = 6
     minValue = 0x4000000
-    maxValue = 0x7fffffff
+    maxValue = 0x7fff_ffff
     result = UInt32(lead & 0x01)
   } else {
     // Currently 0xFE and 0xFF are treated as invalid.

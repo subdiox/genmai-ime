@@ -109,13 +109,15 @@ private struct WordRegisterForm: View {
       Form {
         Section {
           TextField(
-            tr(kUIContext, "Word"), text: $model.word, prompt: Text(WordRegisterStrings.text(.wordPrompt)))
-            .focused($focusedField, equals: .word)
-            .onSubmit { model.completeReading() }
+            tr(kUIContext, "Word"), text: $model.word, prompt: Text(WordRegisterStrings.text(.wordPrompt))
+          )
+          .focused($focusedField, equals: .word)
+          .onSubmit { model.completeReading() }
           TextField(
             tr(kUIContext, "Reading"), text: $model.reading,
-            prompt: Text(WordRegisterStrings.text(.readingPrompt)))
-            .focused($focusedField, equals: .reading)
+            prompt: Text(WordRegisterStrings.text(.readingPrompt))
+          )
+          .focused($focusedField, equals: .reading)
         }
         Section {
           Picker(tr(kUIContext, "Part of Speech"), selection: $model.posIndex) {

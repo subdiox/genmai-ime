@@ -3,6 +3,7 @@
 import Foundation
 import GenmaiProtocol
 import Testing
+
 @testable import GenmaiCore
 
 @Suite(.enabled(if: MockDataManager.defaultDataPath != nil, "mock_genmai.data is missing; run Tools/build_oracle.sh"))

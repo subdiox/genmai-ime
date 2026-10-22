@@ -59,7 +59,9 @@ public struct DataGenSources: Sendable {
   }
 
   /// Files shared by both data sets.
-  private init(srcRoot: String, tag: String, magic: [UInt8], dictionaryDir: String, dictionaryFiles: [String], usageDict: String?) {
+  private init(
+    srcRoot: String, tag: String, magic: [UInt8], dictionaryDir: String, dictionaryFiles: [String], usageDict: String?
+  ) {
     func p(_ rel: String) -> String { DataGenSources.path(srcRoot, rel) }
     self.srcRoot = srcRoot
     self.tag = tag

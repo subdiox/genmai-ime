@@ -263,8 +263,7 @@ private var isCompositionModeXCommandSupported: Bool {
   @Test func loadStreamWithErrors() {
     withScopedSessionEnvironment {
       let manager = KeyMapManager()
-      for file in ["system://atok.tsv", "system://ms-ime.tsv", "system://kotoeri.tsv", "system://mobile.tsv"]
-      {
+      for file in ["system://atok.tsv", "system://ms-ime.tsv", "system://kotoeri.tsv", "system://mobile.tsv"] {
         var errors: [String] = []
         let stream = ConfigFileStream.openReadText(file)
         #expect(stream != nil)
@@ -288,8 +287,10 @@ private var isCompositionModeXCommandSupported: Bool {
           #expect(manager.getNameFromCommandDirect(.compositionModeHiragana) == "CompositionModeHiragana")
           #expect(manager.getNameFromCommandDirect(.compositionModeFullKatakana) == "CompositionModeFullKatakana")
           #expect(manager.getNameFromCommandDirect(.compositionModeHalfKatakana) == "CompositionModeHalfKatakana")
-          #expect(manager.getNameFromCommandDirect(.compositionModeFullAlphanumeric) == "CompositionModeFullAlphanumeric")
-          #expect(manager.getNameFromCommandDirect(.compositionModeHalfAlphanumeric) == "CompositionModeHalfAlphanumeric")
+          #expect(
+            manager.getNameFromCommandDirect(.compositionModeFullAlphanumeric) == "CompositionModeFullAlphanumeric")
+          #expect(
+            manager.getNameFromCommandDirect(.compositionModeHalfAlphanumeric) == "CompositionModeHalfAlphanumeric")
         }
       }
       do {
@@ -301,11 +302,18 @@ private var isCompositionModeXCommandSupported: Bool {
 
         if isCompositionModeXCommandSupported {
           #expect(manager.getNameFromCommandPrecomposition(.compositionModeHiragana) == "CompositionModeHiragana")
-          #expect(manager.getNameFromCommandPrecomposition(.compositionModeFullKatakana) == "CompositionModeFullKatakana")
-          #expect(manager.getNameFromCommandPrecomposition(.compositionModeHalfKatakana) == "CompositionModeHalfKatakana")
-          #expect(manager.getNameFromCommandPrecomposition(.compositionModeFullAlphanumeric) == "CompositionModeFullAlphanumeric")
-          #expect(manager.getNameFromCommandPrecomposition(.compositionModeHalfAlphanumeric) == "CompositionModeHalfAlphanumeric")
-          #expect(manager.getNameFromCommandPrecomposition(.compositionModeSwitchKanaType) == "CompositionModeSwitchKanaType")
+          #expect(
+            manager.getNameFromCommandPrecomposition(.compositionModeFullKatakana) == "CompositionModeFullKatakana")
+          #expect(
+            manager.getNameFromCommandPrecomposition(.compositionModeHalfKatakana) == "CompositionModeHalfKatakana")
+          #expect(
+            manager.getNameFromCommandPrecomposition(.compositionModeFullAlphanumeric)
+              == "CompositionModeFullAlphanumeric")
+          #expect(
+            manager.getNameFromCommandPrecomposition(.compositionModeHalfAlphanumeric)
+              == "CompositionModeHalfAlphanumeric")
+          #expect(
+            manager.getNameFromCommandPrecomposition(.compositionModeSwitchKanaType) == "CompositionModeSwitchKanaType")
         }
       }
       do {
@@ -318,8 +326,12 @@ private var isCompositionModeXCommandSupported: Bool {
           #expect(manager.getNameFromCommandComposition(.compositionModeHiragana) == "CompositionModeHiragana")
           #expect(manager.getNameFromCommandComposition(.compositionModeFullKatakana) == "CompositionModeFullKatakana")
           #expect(manager.getNameFromCommandComposition(.compositionModeHalfKatakana) == "CompositionModeHalfKatakana")
-          #expect(manager.getNameFromCommandComposition(.compositionModeFullAlphanumeric) == "CompositionModeFullAlphanumeric")
-          #expect(manager.getNameFromCommandComposition(.compositionModeHalfAlphanumeric) == "CompositionModeHalfAlphanumeric")
+          #expect(
+            manager.getNameFromCommandComposition(.compositionModeFullAlphanumeric) == "CompositionModeFullAlphanumeric"
+          )
+          #expect(
+            manager.getNameFromCommandComposition(.compositionModeHalfAlphanumeric) == "CompositionModeHalfAlphanumeric"
+          )
         }
       }
       do {
@@ -332,8 +344,10 @@ private var isCompositionModeXCommandSupported: Bool {
           #expect(manager.getNameFromCommandConversion(.compositionModeHiragana) == "CompositionModeHiragana")
           #expect(manager.getNameFromCommandConversion(.compositionModeFullKatakana) == "CompositionModeFullKatakana")
           #expect(manager.getNameFromCommandConversion(.compositionModeHalfKatakana) == "CompositionModeHalfKatakana")
-          #expect(manager.getNameFromCommandConversion(.compositionModeFullAlphanumeric) == "CompositionModeFullAlphanumeric")
-          #expect(manager.getNameFromCommandConversion(.compositionModeHalfAlphanumeric) == "CompositionModeHalfAlphanumeric")
+          #expect(
+            manager.getNameFromCommandConversion(.compositionModeFullAlphanumeric) == "CompositionModeFullAlphanumeric")
+          #expect(
+            manager.getNameFromCommandConversion(.compositionModeHalfAlphanumeric) == "CompositionModeHalfAlphanumeric")
         }
       }
     }

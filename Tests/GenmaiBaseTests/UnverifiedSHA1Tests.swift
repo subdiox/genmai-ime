@@ -1,6 +1,7 @@
 // Port of mozc/src/base/unverified_sha1_test.cc (3.35.6354).
 
 import Testing
+
 @testable import GenmaiBase
 
 @Suite struct UnverifiedSHA1Test {
@@ -20,8 +21,9 @@ import Testing
       0x84, 0x98, 0x3e, 0x44, 0x1c, 0x3b, 0xd2, 0x6e, 0xba, 0xae,
       0x4a, 0xa1, 0xf9, 0x51, 0x29, 0xe5, 0xe5, 0x46, 0x70, 0xf1,
     ]
-    #expect(UnverifiedSHA1.makeDigest(
-      "abcdbcdecdefdefgefghfghighijhijkijkljklmklmnlmnomnopnopq") == kExpected)
+    #expect(
+      UnverifiedSHA1.makeDigest(
+        "abcdbcdecdefdefgefghfghighijhijkijkljklmklmnlmnomnopnopq") == kExpected)
   }
 
   @Test func anotherTwoBlockMessage() {
@@ -29,8 +31,9 @@ import Testing
       0x47, 0xb1, 0x72, 0x81, 0x07, 0x95, 0x69, 0x9f, 0xe7, 0x39,
       0x19, 0x7d, 0x1a, 0x1f, 0x59, 0x60, 0x70, 0x02, 0x42, 0xf1,
     ]
-    #expect(UnverifiedSHA1.makeDigest(
-      "abcdbcdecdefdefgefghfghighijhijkijkljklmklmnlmnomnopnop") == kExpected)
+    #expect(
+      UnverifiedSHA1.makeDigest(
+        "abcdbcdecdefdefgefghfghighijhijkijkljklmklmnlmnomnopnop") == kExpected)
   }
 
   @Test func manyBlockMessage() {

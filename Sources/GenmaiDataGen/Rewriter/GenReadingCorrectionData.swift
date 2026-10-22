@@ -24,7 +24,8 @@ public enum GenReadingCorrectionData {
     // In order to lookup the entries via |error| with binary search,
     // sort outputs here (key = (error, value); stable).
     outputs = outputs.enumerated().sorted { a, b in
-      let x = a.element, y = b.element
+      let x = a.element
+      let y = b.element
       if !x.error.utf8.elementsEqual(y.error.utf8) { return Py.less(x.error, y.error) }
       if !x.value.utf8.elementsEqual(y.value.utf8) { return Py.less(x.value, y.value) }
       return a.offset < b.offset

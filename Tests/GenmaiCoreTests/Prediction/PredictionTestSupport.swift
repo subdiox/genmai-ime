@@ -302,8 +302,7 @@ final class PredictionMockSupplementalModel: PredictionSupplementalModel, @unche
     return correctCompositionHandler?(request) ?? nil
   }
 
-  func populateTypeCorrectedQuery(_ request: ConversionRequest, _ results: inout [PredictionResult])
-  {
+  func populateTypeCorrectedQuery(_ request: ConversionRequest, _ results: inout [PredictionResult]) {
     record("PopulateTypeCorrectedQuery")
     populateTypeCorrectedQueryHandler?(request, &results)
   }

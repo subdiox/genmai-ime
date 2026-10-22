@@ -93,7 +93,8 @@ public enum DataSetDiff {
   /// intermediate under bazel-bin/data_manager/oss/).
   public static func compareBytes(_ actual: [UInt8], _ expected: [UInt8]) -> String? {
     if actual == expected { return nil }
-    let firstDiff = zip(actual, expected).enumerated().first { $0.element.0 != $0.element.1 }?.offset
+    let firstDiff =
+      zip(actual, expected).enumerated().first { $0.element.0 != $0.element.1 }?.offset
       ?? min(actual.count, expected.count)
     return "size \(actual.count) vs \(expected.count), first difference at \(firstDiff)"
       + hexContext(actual, expected, firstDiff)

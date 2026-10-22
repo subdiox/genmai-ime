@@ -2,9 +2,13 @@
 
 import GenmaiBase
 import Testing
+
 @testable import GenmaiCore
 
-@Suite(.enabled(if: DataManagerTestSupport.hasMockData, "mock_genmai.data is missing; build //data_manager/testing:mozc_dataset_for_testing"))
+@Suite(
+  .enabled(
+    if: DataManagerTestSupport.hasMockData,
+    "mock_genmai.data is missing; build //data_manager/testing:mozc_dataset_for_testing"))
 struct MockDataManagerTest {
   @Test func allTests() throws {
     // kLSize / kRSize / IsBoundaryInternal of the generated segmenter_inl.inc.

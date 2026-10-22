@@ -1019,8 +1019,12 @@ struct DictionaryPredictorTestPart2 {
       result.value = "2日"
       result.attributes = R
       result.innerSegmentBoundary = buildInnerSegmentBoundary(
-        [(result.key.utf8.count, result.value.utf8.count, result.key.utf8.count,
-          result.value.utf8.count)],
+        [
+          (
+            result.key.utf8.count, result.value.utf8.count, result.key.utf8.count,
+            result.value.utf8.count
+          )
+        ],
         result.key, result.value)
       return [result]
     }

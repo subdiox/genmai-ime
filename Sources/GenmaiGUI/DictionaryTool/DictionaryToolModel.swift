@@ -137,7 +137,8 @@ public final class DictionaryToolModel {
     self.client = client
     self.storage = storage
     posList = posListProvider.getPosList()
-    defaultPos = posList.indices.contains(posListProvider.getPosListDefaultIndex())
+    defaultPos =
+      posList.indices.contains(posListProvider.getPosListDefaultIndex())
       ? posList[posListProvider.getPosListDefaultIndex()] : "名詞"
 
     do {

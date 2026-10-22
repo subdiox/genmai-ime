@@ -3,6 +3,7 @@
 import GenmaiBase
 import GenmaiProtocol
 import Testing
+
 @testable import GenmaiCore
 
 // Creates a segment that contains a single candidate whose key and value are

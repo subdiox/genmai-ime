@@ -4,6 +4,7 @@
 // not ported: the Swift Segments has no object pool.
 
 import Testing
+
 @testable import GenmaiCore
 
 @Suite struct SegmentsTests {

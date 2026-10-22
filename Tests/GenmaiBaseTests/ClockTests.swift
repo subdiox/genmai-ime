@@ -2,6 +2,7 @@
 
 import Foundation
 import Testing
+
 @testable import GenmaiBase
 
 // Serialized because timeTestWithMock installs the *global* mock, which is

@@ -4,6 +4,7 @@
 // Testing cannot test fatalError in-process.
 
 import Testing
+
 @testable import GenmaiBase
 
 @Suite struct FlatSetTest {

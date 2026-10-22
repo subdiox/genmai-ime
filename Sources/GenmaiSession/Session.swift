@@ -27,8 +27,7 @@ private func switchInputMode(_ mode: TransliterationType, _ composer: inout Comp
 
 // Set input mode to the |composer| if the input mode of |composer| is not
 // the given |mode|.
-private func applyCompositionMode(_ mode: Genmai_Commands_CompositionMode, _ composer: inout Composer)
-{
+private func applyCompositionMode(_ mode: Genmai_Commands_CompositionMode, _ composer: inout Composer) {
   switch mode {
   case .hiragana:
     switchInputMode(.hiragana, &composer)

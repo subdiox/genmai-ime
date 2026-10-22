@@ -43,7 +43,8 @@ import Testing
   static func release(_ version: String) -> GenmaiAppRelease {
     GenmaiAppRelease(
       version: version, tag: "v\(version)", pageURL: URL(string: "https://example.com")!, notes: "",
-      package: .init(name: "Genmai-\(version).pkg", url: URL(string: "https://example.com/p.pkg")!, size: 1, sha256: nil))
+      package: .init(
+        name: "Genmai-\(version).pkg", url: URL(string: "https://example.com/p.pkg")!, size: 1, sha256: nil))
   }
 
   @Test func settings() throws {

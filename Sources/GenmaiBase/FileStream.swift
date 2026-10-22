@@ -7,7 +7,7 @@
 // On macOS there is no difference between text and binary mode.
 
 #if canImport(Darwin)
-import Darwin
+  import Darwin
 #endif
 
 public final class InputFileStream {

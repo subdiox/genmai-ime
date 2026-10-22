@@ -110,7 +110,8 @@ public enum RewriterDictionaryGenerator {
         }
 
         // Output in mozc dictionary format
-        let line = "\(token.key)\t\(id)\t\(id)\t\(cost)\t\(token.value)\t\(token.description)\t\(token.additionalDescription)\n"
+        let line =
+          "\(token.key)\t\(id)\t\(id)\t\(cost)\t\(token.value)\t\(token.description)\t\(token.additionalDescription)\n"
         os.append(contentsOf: line.utf8)
       }
       return os

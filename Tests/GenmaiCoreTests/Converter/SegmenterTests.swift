@@ -4,6 +4,7 @@
 // SegmenterTest_SameAsInternal, run in DataManager/DataManagerTestBase.swift.
 
 import Testing
+
 @testable import GenmaiCore
 
 @Suite(.enabled(if: ConverterCoreTestSupport.hasMockData, ConverterCoreTestSupport.mockDataMissing))

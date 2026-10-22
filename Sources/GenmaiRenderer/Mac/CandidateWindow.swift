@@ -2,8 +2,8 @@
 // draws its own rounded glass background and the window server shadow follows it.
 
 import AppKit
-import GenmaiProtocol
 import GenmaiClient
+import GenmaiProtocol
 import SwiftUI
 
 @MainActor

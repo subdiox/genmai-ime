@@ -3,6 +3,7 @@
 import GenmaiBase
 import GenmaiProtocol
 import Testing
+
 @testable import GenmaiCore
 
 private let kEmoji = "えもじ"

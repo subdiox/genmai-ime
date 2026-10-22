@@ -6,6 +6,7 @@ import GenmaiBase
 import GenmaiStorage
 import Synchronization
 import Testing
+
 @testable import GenmaiCore
 
 enum ConverterCoreTestSupport {

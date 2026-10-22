@@ -12,13 +12,13 @@
 
 import AppKit
 import Carbon
-@preconcurrency import InputMethodKit
 import GenmaiAIClient
 import GenmaiBase
 import GenmaiClient
 import GenmaiCore
 import GenmaiMac
 import GenmaiProtocol
+@preconcurrency import InputMethodKit
 
 /// Registers the input source bundle with the Text Input Services (TIS)
 /// and enables the bundle, which automatically enables all default input modes
@@ -141,7 +141,8 @@ func runSamples(_ backend: SessionHandlerBackend, label: String, expect: Bool) a
     let commitTime = ContinuousClock.now - commitStart
     let total = keyTimes.reduce(Duration.zero, +)
     print(
-      "\(romaji): preedit \(lastPreedit) -> \(top) (\(candidates) candidates) committed \(committed?.result.value ?? "-")")
+      "\(romaji): preedit \(lastPreedit) -> \(top) (\(candidates) candidates) committed \(committed?.result.value ?? "-")"
+    )
     var ai = ""
     if let record = backend.aiHook?.lastConversion, backend.aiHook?.isEnabled == true {
       ai =

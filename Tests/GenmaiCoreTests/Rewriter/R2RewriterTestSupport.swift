@@ -6,6 +6,7 @@ import Foundation
 import GenmaiBase
 import Synchronization
 import Testing
+
 @testable import GenmaiCore
 
 enum R2RewriterTestSupport {

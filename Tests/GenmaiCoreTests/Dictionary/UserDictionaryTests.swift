@@ -19,26 +19,26 @@ private let kUserDictionary0: [UInt8] =
     (
       // This is also a valid entry. Key can contain any valid characters.
       "水雲\tvalue\tnoun\n"
-        // Empty key
-        + "\tvalue\tnoun\n"
-        // Empty value
-        + "start\t\tnoun\n"
-        // Invalid POS
-        + "star\tvalue\tpos\n"
-        // Empty POS
-        + "star\tvalue\t\n"
-        // Duplicate entry
-        + "start\tstart\tverb\n"
-        // The following are for tests for LookupComment
-        // No comment
-        + "comment_key1\tcomment_value1\tnoun\n"
-        // Has comment
-        + "comment_key2\tcomment_value2\tnoun\tcomment\n"
-        // Different POS
-        + "comment_key3\tcomment_value3\tnoun\tcomment1\n"
-        + "comment_key3\tcomment_value3\tverb\tcomment2\n"
-        // White spaces comment
-        + "comment_key4\tcomment_value4\tverb\t     \n").utf8)
+      // Empty key
+      + "\tvalue\tnoun\n"
+      // Empty value
+      + "start\t\tnoun\n"
+      // Invalid POS
+      + "star\tvalue\tpos\n"
+      // Empty POS
+      + "star\tvalue\t\n"
+      // Duplicate entry
+      + "start\tstart\tverb\n"
+      // The following are for tests for LookupComment
+      // No comment
+      + "comment_key1\tcomment_value1\tnoun\n"
+      // Has comment
+      + "comment_key2\tcomment_value2\tnoun\tcomment\n"
+      // Different POS
+      + "comment_key3\tcomment_value3\tnoun\tcomment1\n"
+      + "comment_key3\tcomment_value3\tverb\tcomment2\n"
+      // White spaces comment
+      + "comment_key4\tcomment_value4\tverb\t     \n").utf8)
 
 private let kUserDictionary1: [UInt8] = Array("end\tend\tverb\n".utf8)
 

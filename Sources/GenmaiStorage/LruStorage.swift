@@ -14,10 +14,11 @@
 //   value_size bytes (shorter inputs are zero padded instead of reading past
 //   the end as the C++ code would).
 
-#if canImport(Darwin)
-import Darwin
-#endif
 import GenmaiBase
+
+#if canImport(Darwin)
+  import Darwin
+#endif
 
 public final class LruStorage {
   /// The byte length used to store fingerprint and timestamp for each item.

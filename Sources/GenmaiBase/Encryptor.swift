@@ -4,7 +4,7 @@
 // Binary strings (std::string) are represented as [UInt8].
 
 #if canImport(Darwin)
-import Darwin
+  import Darwin
 #endif
 
 public enum Encryptor {

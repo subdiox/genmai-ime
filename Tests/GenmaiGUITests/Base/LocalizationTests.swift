@@ -1,8 +1,8 @@
 // Tests of the Qt translation replacement (tr / GuiUtil::ReplaceString) and the rich-text label parser.
 
 import Foundation
-import Testing
 import GenmaiBase
+import Testing
 
 @testable import GenmaiGUI
 

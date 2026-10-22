@@ -1,6 +1,7 @@
 // Port of mozc/src/base/strings/unicode_test.cc (3.35.6354).
 
 import Testing
+
 @testable import GenmaiBase
 
 @Suite struct UnicodeTest {
