@@ -37,6 +37,10 @@ let kGenmaiJapaneseTranslations: [String: [String: String]] = [
     "Reset": "リセット",
     "Reset All Settings…": "すべての設定を初期値に戻す…",
     "Personalization data and input history are kept.": "学習データと入力履歴は残ります。",
+    "Uninstall": "アンインストール",
+    "Uninstall [ProductName]…": "[ProductName] をアンインストール…",
+    "Removes [ProductName]. You choose whether your dictionary, learning data and settings go too.":
+      "[ProductName] を削除します。辞書・学習データ・設定も削除するかは選べます。",
     "Do you want to reset all settings to their defaults? Personalization data and input history are kept.":
       "すべての設定を初期値に戻しますか？学習データと入力履歴は残ります。",
     // Input

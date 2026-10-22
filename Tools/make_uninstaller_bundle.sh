@@ -10,7 +10,8 @@
 # Usage: Tools/make_uninstaller_bundle.sh [--debug]
 #   UPSTREAM_SRC=<path to mozc/src>  defaults to Vendor/mozc/src (the git submodule).
 #   BUILD_PATH=<dir>             the SwiftPM build directory, defaults to .build-bundle.
-# Nothing is installed or run; Tools/make_installer_pkg.sh puts the bundle in /Applications/Genmai.
+# Nothing is installed or run; Tools/make_ime_bundle.sh puts the bundle into Genmai.app/Contents/Resources (the
+# settings open it from there).
 set -euo pipefail
 
 ROOT=${0:A:h:h}

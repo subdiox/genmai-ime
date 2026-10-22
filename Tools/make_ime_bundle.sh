@@ -20,7 +20,10 @@
 #   Genmai.app/Contents/Resources/Genmai.app       <- GenmaiTool (config dialog, dictionary tool, word register,
 #                                                   about, error, update), named after the product so that the
 #                                                   Dock, the app switcher and Activity Monitor show "Genmai"
-# Both bundles are ad-hoc code signed.
+#   Genmai.app/Contents/Resources/UninstallGenmai.app <- Tools/make_uninstaller_bundle.sh, opened from the
+#                                                   settings (General › Uninstall Genmai…); nothing is put in
+#                                                   /Applications
+# All bundles are ad-hoc code signed.
 #
 # Usage: Tools/make_ime_bundle.sh [--debug] [--build-data]
 #   --build-data                 first (re)builds Data/genmai.data with Tools/build_data.sh --oss (Swift
@@ -181,6 +184,10 @@ cat >| "$TOOL/Contents/Info.plist" <<PLIST
 </plist>
 PLIST
 plutil -lint "$TOOL/Contents/Info.plist" >/dev/null
+
+echo "==> UninstallGenmai.app (Tools/make_uninstaller_bundle.sh)"
+BUILD_PATH=$BUILD_PATH "$ROOT/Tools/make_uninstaller_bundle.sh" ${${CONFIGURATION:#release}:+--debug}
+ditto "$ROOT/build/UninstallGenmai.app" "$OUT/Contents/Resources/UninstallGenmai.app"
 
 echo "==> codesign (ad hoc)"
 codesign --force --sign - --timestamp=none "$TOOL"

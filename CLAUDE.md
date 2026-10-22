@@ -264,6 +264,11 @@ table; use "…" and "ユーザー".
   facing copyright is "Copyright © 2026 subdiox"; Mozc's license notices stay in `credits_en.html` (linked from the
   About dialog; required by Mozc's BSD license). Google-only features (usage statistics upload, uninstall survey)
   were removed.
+- Uninstaller (GenmaiUninstaller, `UninstallGenmai.app`) lives in `Genmai.app/Contents/Resources` (built by
+  Tools/make_ime_bundle.sh) and is opened from the settings (General › Uninstall Genmai…); nothing is installed into
+  /Applications (0.1.0 did; preinstall and the uninstaller remove that folder). It removes the input method with
+  administrator rights and, as the user, the data kinds the user checks (AI model + caches checked by default; user
+  dictionary, learning data, settings kept by default).
 - Releases: GitHub releases of subdiox/genmai-ime, tag vX.Y.Z (= `kProductVersion`), asset `Genmai-X.Y.Z.pkg`.
   Normally made by the GitHub Actions workflow `.github/workflows/release.yml`: bump `kProductVersion`, commit, push
   the tag `vX.Y.Z`; the workflow (macos-26 runner, newest Xcode ≥ 26 + Metal toolchain) builds the data set and the

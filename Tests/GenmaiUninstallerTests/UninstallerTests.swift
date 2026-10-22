@@ -261,7 +261,8 @@ struct ControllerFixture {
   @Test func cancelTerminatesWithoutUninstalling() throws {
     let fixture = try ControllerFixture(.success)
     #expect(fixture.controller.phase == .confirm)
-    #expect(fixture.controller.items.map(\.kind) == [.inputMethod, .applicationsFolder])
+    // No /Applications/Genmai (only 0.1.0 installed one): just the input method, which holds the uninstaller.
+    #expect(fixture.controller.items.map(\.kind) == [.inputMethod])
     fixture.controller.close()
     #expect(fixture.terminated.count == 1)
     #expect(fixture.runner.commands.isEmpty)

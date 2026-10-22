@@ -57,7 +57,8 @@ struct UninstallerLayout: Sendable, Equatable {
     systemRoot.appending(path: "Library/Input Methods/\(Self.kProductName).app", directoryHint: .isDirectory)
   }
 
-  /// /Applications/Genmai (the uninstaller and the folder's .localized names, installed by the .pkg).
+  /// /Applications/Genmai, where the 0.1.0 package put the uninstaller (later versions keep it inside the input
+  /// method bundle).
   var applicationsFolder: URL {
     systemRoot.appending(path: "Applications/\(Self.kProductName)", directoryHint: .isDirectory)
   }
@@ -68,12 +69,13 @@ struct UninstallerLayout: Sendable, Equatable {
     [homeDirectory.appending(path: "Library/Input Methods/\(Self.kProductName).app", directoryHint: .isDirectory)]
   }
 
-  /// kRemovePaths: the fixed install locations, then any manually installed bundle of this port.
+  /// kRemovePaths: the input method (with this uninstaller inside), the applications folder of an old version if
+  /// it is there, then any manually installed bundle of this port.
   func removeItems() -> [RemoveItem] {
-    var items = [
-      RemoveItem(kind: .inputMethod, path: inputMethodBundle.path(percentEncoded: false)),
-      RemoveItem(kind: .applicationsFolder, path: applicationsFolder.path(percentEncoded: false)),
-    ]
+    var items = [RemoveItem(kind: .inputMethod, path: inputMethodBundle.path(percentEncoded: false))]
+    if FileManager.default.fileExists(atPath: applicationsFolder.path(percentEncoded: false)) {
+      items.append(RemoveItem(kind: .applicationsFolder, path: applicationsFolder.path(percentEncoded: false)))
+    }
     for candidate in manualInstallCandidates
     where Self.bundleIdentifier(at: candidate) == Self.kBundleIdentifier {
       items.append(RemoveItem(kind: .manualInputMethod, path: candidate.path(percentEncoded: false)))
@@ -187,7 +189,7 @@ struct RemoveItem: Sendable, Equatable, Hashable {
   enum Kind: Sendable, Equatable, Hashable {
     /// /Library/Input Methods/Genmai.app.
     case inputMethod
-    /// /Applications/Genmai (holds this uninstaller).
+    /// /Applications/Genmai of an old version.
     case applicationsFolder
     /// ~/Library/Input Methods/Genmai.app.
     case manualInputMethod

@@ -3,6 +3,7 @@
 // right away (no OK / Cancel / Apply). Panes: General, Input, Conversion, Suggestions, AI (not in Mozc), Privacy,
 // Updates (not in Mozc).
 
+import AppKit
 import GenmaiClient
 import GenmaiProtocol
 import SwiftUI
@@ -249,6 +250,15 @@ struct GeneralPane: View {
           Text(verbatim: settingsText("Reset"))
           Text(verbatim: settingsText("Personalization data and input history are kept."))
         }
+        LabeledContent {
+          Button(settingsText("Uninstall [ProductName]…")) { UninstallerLauncher.open() }
+            .disabled(UninstallerLauncher.url == nil)
+        } label: {
+          Text(verbatim: settingsText("Uninstall"))
+          Text(
+            verbatim: settingsText(
+              "Removes [ProductName]. You choose whether your dictionary, learning data and settings go too."))
+        }
       }
     }
     .formStyle(.grouped)
@@ -481,5 +491,26 @@ struct UpdatesPane: View {
       #endif
     }
     .formStyle(.grouped)
+  }
+}
+
+/// Opens the uninstaller, which lives next to the tool app in Genmai.app/Contents/Resources.
+@MainActor
+enum UninstallerLauncher {
+  static let appName = "UninstallGenmai.app"
+
+  /// nil when the tool does not run from the input method bundle (development builds).
+  static var url: URL? {
+    let url = Bundle.main.bundleURL.deletingLastPathComponent().appending(path: appName)
+    return FileManager.default.fileExists(atPath: url.path(percentEncoded: false)) ? url : nil
+  }
+
+  static func open() {
+    guard let url else { return }
+    NSWorkspace.shared.openApplication(at: url, configuration: NSWorkspace.OpenConfiguration()) { _, error in
+      if let error {
+        NSLog("Genmai: cannot open the uninstaller: %@", error.localizedDescription)
+      }
+    }
   }
 }

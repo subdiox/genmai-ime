@@ -44,7 +44,8 @@ Download `Genmai-X.Y.Z.pkg` from the [latest release](https://github.com/subdiox
 open it. The package is not signed with a Developer ID yet: if macOS refuses to open it, allow it in System
 Settings › Privacy & Security (**Open Anyway**). It installs into `/Library/Input Methods` and selects the input
 source; you can also add **Genmai** in System Settings › Keyboard › Input Sources. Settings and learning data live
-in `~/Library/Application Support/Genmai`. To uninstall, run `/Applications/Genmai/UninstallGenmai.app`.
+in `~/Library/Application Support/Genmai`. To uninstall, use **Uninstall Genmai…** in the settings (General); it asks which of your data (AI model,
+user dictionary, learning data, settings) to remove as well.
 
 ### Updates
 

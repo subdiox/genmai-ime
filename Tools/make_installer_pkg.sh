@@ -5,11 +5,10 @@
 # Payload (the C++ layout, with the Swift product name so that the C++ Mozc can stay installed):
 #   /Library/Input Methods/Genmai.app                     <- build/Genmai.app (Tools/make_ime_bundle.sh)
 #                                                              (C++: /Library/Input Methods/Mozc.app)
-#   /Applications/Genmai/UninstallGenmai.app           <- Tools/make_uninstaller_bundle.sh
-#                                                              (C++: /Applications/Mozc/UninstallGenmai.app)
-#   /Applications/Genmai/.localized/{en,ja}.strings       <- Tools/installer/Resources/*.lproj/Localizable.strings
+# The uninstaller is inside Genmai.app (Contents/Resources/UninstallGenmai.app, opened from the settings); unlike
+# the C++ (/Applications/Mozc/UninstallMozc.app) nothing is installed into /Applications.
 # Scripts (Tools/installer/*_template.sh with @@@...@@@ substituted, like build_tools/tweak_macinstaller_script.py):
-#   preinstall   removes the previous /Applications/Genmai
+#   preinstall   removes /Applications/Genmai, where 0.1.0 put the uninstaller
 #   postinstall  removes a development copy in the console user's ~/Library/Input Methods (same bundle id), kills
 #                the running input method (GenmaiIME, which hosts the converter in-process; the C++ kills
 #                GenmaiConverter) and runs `GenmaiIME --register_input_source` as the console user. No logout is
@@ -50,23 +49,19 @@ OUT=$BUILD_DIR/Genmai.pkg
 PRODUCT_NAME=Genmai
 IDENTIFIER=io.github.subdiox.genmai.pkg
 PKG_NAME=$PRODUCT_NAME.pkg  # configured in distribution.xml
-APPLICATIONS_DIR=/Applications/$PRODUCT_NAME
+APPLICATIONS_DIR=/Applications/$PRODUCT_NAME  # the uninstaller's folder of 0.1.0, removed by preinstall
 APP_PATH="/Library/Input Methods/$PRODUCT_NAME.app"
 VERSION=$(sed -n 's/.*kProductVersion = "\(.*\)"/\1/p' "$ROOT/Sources/GenmaiBase/VersionDef.swift")
 
 if [[ ${1:-} != --skip-build ]]; then
   "$ROOT/Tools/make_ime_bundle.sh"
-  "$ROOT/Tools/make_uninstaller_bundle.sh"
 fi
 IME_BUNDLE=$BUILD_DIR/Genmai.app
-UNINSTALLER_BUNDLE=$BUILD_DIR/Uninstall$PRODUCT_NAME.app
-for bundle in "$IME_BUNDLE" "$UNINSTALLER_BUNDLE"; do
-  if [[ ! -d $bundle ]]; then
-    echo "error: $bundle not found (run without --skip-build)" >&2
-    exit 1
-  fi
-  codesign --verify --strict --deep "$bundle"
-done
+if [[ ! -d $IME_BUNDLE/Contents/Resources/Uninstall$PRODUCT_NAME.app ]]; then
+  echo "error: $IME_BUNDLE (with the uninstaller) not found (run without --skip-build)" >&2
+  exit 1
+fi
+codesign --verify --strict --deep "$IME_BUNDLE"
 IME_ID=$(/usr/libexec/PlistBuddy -c "Print :CFBundleIdentifier" "$IME_BUNDLE/Contents/Info.plist")
 if [[ $IME_ID != io.github.subdiox.genmai.inputmethod.Japanese ]]; then
   echo "error: unexpected bundle identifier $IME_ID in $IME_BUNDLE" >&2
@@ -75,12 +70,8 @@ fi
 
 echo "==> staging $WORK"
 rm -rf "$WORK" "$OUT"
-mkdir -p "$WORK/root/Library/Input Methods" "$WORK/root$APPLICATIONS_DIR/.localized" "$WORK/scripts"
+mkdir -p "$WORK/root/Library/Input Methods" "$WORK/scripts"
 ditto "$IME_BUNDLE" "$WORK/root$APP_PATH"
-ditto "$UNINSTALLER_BUNDLE" "$WORK/root$APPLICATIONS_DIR/${UNINSTALLER_BUNDLE:t}"
-for lang in en ja; do
-  cp "$INSTALLER_SRC/Resources/$lang.lproj/Localizable.strings" "$WORK/root$APPLICATIONS_DIR/.localized/$lang.strings"
-done
 # The bundles keep their ad-hoc signatures (renaming Genmai.app does not invalidate them).
 codesign --verify --strict --deep "$WORK/root$APP_PATH"
 
