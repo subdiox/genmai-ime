@@ -21,8 +21,10 @@ import Testing
       default: .success
       }
     let icon = NSImage(contentsOf: Self.repositoryRoot.appending(path: "Tools/assets/genmai.icns")) ?? NSImage()
+    let install = try FakeInstall()
+    try UninstallerUserDataTests.makeProfile(install)
     let controller = UninstallerController(
-      uninstaller: Uninstaller(layout: try FakeInstall().layout, runner: FixedCommandRunner(result)),
+      uninstaller: Uninstaller(layout: install.layout, runner: FixedCommandRunner(result)),
       language: language, icon: icon, terminate: {})
     switch phase {
     case .confirm:
@@ -65,7 +67,7 @@ import Testing
       let host = NSHostingView(rootView: UninstallerView(controller: controller))
       let size = host.fittingSize
       #expect(size.width == 480)
-      #expect(size.height > 150 && size.height < 420, "\(phase) \(language): \(size)")
+      #expect(size.height > 150 && size.height < 640, "\(phase) \(language): \(size)")
       guard let directory else {
         continue
       }

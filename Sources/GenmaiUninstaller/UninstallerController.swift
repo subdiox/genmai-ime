@@ -29,6 +29,11 @@ final class UninstallerController {
   let strings: UninstallerStrings
   /// What will be removed, for the confirmation (the deletion re-reads the layout).
   let items: [RemoveItem]
+  /// The user's data that can be removed as well; the user picks the kinds.
+  let userData: [UserDataItem]
+  /// By default only the AI model (large, downloaded again in seconds) goes; the user dictionary, learning data and
+  /// settings cannot be recreated and are kept unless chosen.
+  var selectedUserData: Set<UserDataKind> = UserDataKind.removedByDefault
   @ObservationIgnored let icon: NSImage
   private let uninstaller: Uninstaller
   private let terminate: @MainActor () -> Void
@@ -41,6 +46,7 @@ final class UninstallerController {
     self.uninstaller = uninstaller
     self.strings = UninstallerStrings(language)
     self.items = uninstaller.layout.removeItems()
+    self.userData = uninstaller.layout.userDataItems()
     self.icon = icon
     self.terminate = terminate
   }
@@ -65,7 +71,13 @@ final class UninstallerController {
     try? await Task.sleep(for: .milliseconds(100))
     switch uninstaller.deleteFiles() {
     case .success:
-      phase = .succeeded
+      do {
+        try uninstaller.layout.removeUserData(selectedUserData)
+        phase = .succeeded
+      } catch {
+        NSLog("Failed to remove user data: %@", "\(error)")
+        phase = .failed(.removal)
+      }
     case .authorizationFailed:
       phase = .failed(.authorization)
     case .failed:

@@ -14,12 +14,9 @@ struct UninstallerView: View {
       if controller.phase != .succeeded {
         RemoveItemList(items: controller.items, strings: controller.strings)
           .padding(.top, 16)
-        if controller.phase == .confirm || controller.phase == .removing {
-          Label(controller.strings.keptNote, systemImage: "info.circle")
-            .font(.callout)
-            .foregroundStyle(.secondary)
-            .fixedSize(horizontal: false, vertical: true)
-            .padding(.top, 10)
+        if (controller.phase == .confirm || controller.phase == .removing) && !controller.userData.isEmpty {
+          UserDataSection(controller: controller)
+            .padding(.top, 16)
         }
       }
       UninstallerFooter(controller: controller)
@@ -120,6 +117,68 @@ private struct RemoveItemList: View {
     }
     .background(.quaternary.opacity(0.5), in: .rect(cornerRadius: 10))
     .overlay(.separator, in: .rect(cornerRadius: 10).stroke(lineWidth: 0.5))
+  }
+}
+
+/// The user's data, each kind with a check box: removed too when checked.
+private struct UserDataSection: View {
+  @Bindable var controller: UninstallerController
+
+  var body: some View {
+    let strings = controller.strings
+    VStack(alignment: .leading, spacing: 8) {
+      Text(strings.alsoRemove)
+        .font(.headline)
+      VStack(alignment: .leading, spacing: 0) {
+        ForEach(Array(controller.userData.enumerated()), id: \.element) { index, item in
+          if index > 0 {
+            Divider().padding(.leading, 36)
+          }
+          UserDataRow(item: item, strings: strings, isOn: binding(item.kind))
+        }
+      }
+      .background(.quaternary.opacity(0.5), in: .rect(cornerRadius: 10))
+      .overlay(.separator, in: .rect(cornerRadius: 10).stroke(lineWidth: 0.5))
+      .disabled(controller.isBusy)
+      Label(strings.keptNote, systemImage: "info.circle")
+        .font(.callout)
+        .foregroundStyle(.secondary)
+        .fixedSize(horizontal: false, vertical: true)
+    }
+  }
+
+  private func binding(_ kind: UserDataKind) -> Binding<Bool> {
+    Binding {
+      controller.selectedUserData.contains(kind)
+    } set: { isOn in
+      if isOn {
+        controller.selectedUserData.insert(kind)
+      } else {
+        controller.selectedUserData.remove(kind)
+      }
+    }
+  }
+}
+
+private struct UserDataRow: View {
+  let item: UserDataItem
+  let strings: UninstallerStrings
+  @Binding var isOn: Bool
+
+  var body: some View {
+    Toggle(isOn: $isOn) {
+      VStack(alignment: .leading, spacing: 1) {
+        Text(strings.userDataName(item.kind))
+        Text(verbatim: strings.userDataDetail(item.kind) + " · " + item.size.formatted(.byteCount(style: .file)))
+          .font(.caption)
+          .foregroundStyle(.secondary)
+      }
+      .padding(.leading, 4)
+    }
+    .toggleStyle(.checkbox)
+    .padding(.horizontal, 12)
+    .padding(.vertical, 7)
+    .frame(maxWidth: .infinity, alignment: .leading)
   }
 }
 

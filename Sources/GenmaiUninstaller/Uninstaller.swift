@@ -83,6 +83,70 @@ struct UninstallerLayout: Sendable, Equatable {
 
   func removePaths() -> [String] { removeItems().map(\.path) }
 
+  /// The user profile (settings, learning data, user dictionary; the AI model in `model/`).
+  var profileDirectory: URL {
+    homeDirectory.appending(path: "Library/Application Support/\(Self.kProductName)", directoryHint: .isDirectory)
+  }
+
+  /// Downloads of the model and app installers.
+  var cachesDirectory: URL {
+    homeDirectory.appending(path: "Library/Caches/\(Self.kProductName)", directoryHint: .isDirectory)
+  }
+
+  /// The user's data by kind, for the kinds that have files (the user chooses which ones to remove too). Files of
+  /// the profile that belong to no other kind count as settings.
+  func userDataItems() -> [UserDataItem] {
+    let fm = FileManager.default
+    let profileFiles = (try? fm.contentsOfDirectory(atPath: profileDirectory.path(percentEncoded: false))) ?? []
+    func inProfile(_ names: [String]) -> [URL] { names.map { profileDirectory.appending(path: $0) } }
+    var paths: [UserDataKind: [URL]] = [:]
+    paths[.aiModel] = inProfile(profileFiles.filter { $0 == "model" }) + [cachesDirectory]
+    paths[.userDictionary] = inProfile(profileFiles.filter { $0.hasPrefix("user_dictionary") })
+    paths[.learning] = inProfile(profileFiles.filter { UserDataKind.learningFiles.contains($0) || $0.hasPrefix("ai_debug.log") })
+    let classified = Set(paths.values.joined().map(\.lastPathComponent))
+    paths[.settings] = inProfile(profileFiles.filter { !classified.contains($0) })
+    return UserDataKind.allCases.compactMap { kind in
+      let existing = (paths[kind] ?? []).filter { fm.fileExists(atPath: $0.path(percentEncoded: false)) }
+      guard !existing.isEmpty else { return nil }
+      return UserDataItem(
+        kind: kind, paths: existing.map { $0.path(percentEncoded: false) },
+        size: existing.reduce(0) { $0 + Self.allocatedSize(of: $1) })
+    }
+  }
+
+  /// Removes the user data of `kinds` (as the user; no administrator rights needed). With every kind the profile
+  /// and caches folders go entirely.
+  func removeUserData(_ kinds: Set<UserDataKind>) throws {
+    let items = userDataItems()
+    let fm = FileManager.default
+    if !items.isEmpty && Set(items.map(\.kind)).isSubset(of: kinds) {
+      for directory in [profileDirectory, cachesDirectory] where fm.fileExists(atPath: directory.path(percentEncoded: false)) {
+        try fm.removeItem(at: directory)
+      }
+      return
+    }
+    for item in items where kinds.contains(item.kind) {
+      for path in item.paths where fm.fileExists(atPath: path) {
+        try fm.removeItem(atPath: path)
+      }
+    }
+  }
+
+  /// Bytes of the file, or of everything in the folder.
+  static func allocatedSize(of url: URL) -> Int64 {
+    let fm = FileManager.default
+    var isDirectory: ObjCBool = false
+    guard fm.fileExists(atPath: url.path(percentEncoded: false), isDirectory: &isDirectory) else { return 0 }
+    guard isDirectory.boolValue else {
+      return (try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize).map { Int64($0 ?? 0) } ?? 0
+    }
+    var total: Int64 = 0
+    for case let file as URL in fm.enumerator(at: url, includingPropertiesForKeys: [.fileSizeKey]) ?? .init() {
+      total += Int64((try? file.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0)
+    }
+    return total
+  }
+
   /// Reads CFBundleIdentifier from <bundle>/Contents/Info.plist (not through Bundle, which caches).
   static func bundleIdentifier(at bundle: URL) -> String? {
     let plist = bundle.appending(path: "Contents/Info.plist")
@@ -93,6 +157,29 @@ struct UninstallerLayout: Sendable, Equatable {
     }
     return dictionary["CFBundleIdentifier"] as? String
   }
+}
+
+/// The kinds of user data the uninstaller can remove as well (each one optional).
+enum UserDataKind: CaseIterable, Sendable, Hashable {
+  /// `model/` in the profile and the download caches.
+  case aiModel
+  case userDictionary
+  /// Conversion learning (user history, segment and boundary learning) and the AI debug log.
+  case learning
+  /// Everything else in the profile (config, AI and update settings).
+  case settings
+
+  static let removedByDefault: Set<UserDataKind> = [.aiModel]
+
+  /// The learning files of the profile (Mozc's storage names).
+  static let learningFiles: Set<String> = [".history.db", "segment.db", "boundary.db", ".encrypt_key.db"]
+}
+
+/// The user data of one kind: the existing paths and their size.
+struct UserDataItem: Sendable, Equatable, Hashable {
+  var kind: UserDataKind
+  var paths: [String]
+  var size: Int64
 }
 
 /// One path the uninstaller removes, with what it is (shown in the confirmation).

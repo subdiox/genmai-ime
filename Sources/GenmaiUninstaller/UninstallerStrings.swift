@@ -35,10 +35,27 @@ struct UninstallerStrings: Sendable, Equatable {
       "Genmai will be removed from this Mac. You’ll be asked for an administrator password.",
       "このMacからGenmaiを削除します。管理者のパスワードの入力を求められます。")
   }
+  var alsoRemove: String { pick("Also remove", "次のデータも削除する") }
   var keptNote: String {
-    pick(
-      "Your settings, user dictionaries and the downloaded AI model are kept.",
-      "設定、ユーザー辞書、ダウンロード済みのAIモデルは残ります。")
+    pick("Data you don’t select is kept for a later installation.", "選んでいないデータは残り、再インストールすると使えます。")
+  }
+
+  func userDataName(_ kind: UserDataKind) -> String {
+    switch kind {
+    case .aiModel: pick("AI model", "AIモデル")
+    case .userDictionary: pick("User dictionary", "ユーザー辞書")
+    case .learning: pick("Learning data and input history", "学習データと入力履歴")
+    case .settings: pick("Settings", "設定")
+    }
+  }
+
+  func userDataDetail(_ kind: UserDataKind) -> String {
+    switch kind {
+    case .aiModel: pick("The downloaded language model", "ダウンロードした言語モデル")
+    case .userDictionary: pick("Words you registered", "登録した単語")
+    case .learning: pick("What conversion learned from your typing", "入力から学習した変換の結果と履歴")
+    case .settings: pick("Genmai’s preferences", "Genmaiの各種設定")
+    }
   }
   var cancel: String { pick("Cancel", "キャンセル") }
   var uninstall: String { pick("Uninstall…", "アンインストール…") }

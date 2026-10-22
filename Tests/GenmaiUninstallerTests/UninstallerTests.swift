@@ -224,7 +224,7 @@ final class Counter {
     #expect(japanese.uninstall == "アンインストール…")
     #expect(english.restartNow == "Restart Now")
     #expect(japanese.later == "後で")
-    #expect(japanese.keptNote.contains("ユーザー辞書"))
+    #expect(japanese.keptNote.contains("再インストール"))
     for strings in [english, japanese] {
       for text in [strings.confirmMessage, strings.succeededMessage, strings.removalFailedMessage] {
         #expect(!text.contains("Mozc") && !text.contains("Google") && !text.contains("..."))
@@ -322,5 +322,108 @@ struct ControllerFixture {
     await fixture.controller.uninstall()
     await fixture.controller.uninstall()
     #expect(fixture.runner.commands.count == 1)
+  }
+}
+
+// MARK: - User data
+
+@MainActor
+@Suite struct UninstallerUserDataTests {
+  /// A profile like the IME writes: settings, learning, user dictionary, the AI model and a download cache.
+  static func makeProfile(_ install: FakeInstall) throws {
+    let profile = "Library/Application Support/Genmai/"
+    for name in [
+      "config1.db", "ai_conversion.json", "update.json", ".config_dialog..lock", "user_dictionary.db", ".history.db",
+      "segment.db", "boundary.db", ".encrypt_key.db", "ai_debug.log", "model/model.safetensors", "model/config.json",
+    ] {
+      try install.makeFile(profile + name, home: true)
+    }
+    try install.makeFile("Library/Caches/Genmai/download/v0.1.0/model-8bit.safetensors", home: true)
+  }
+
+  @Test func classifiesTheProfile() throws {
+    let install = try FakeInstall()
+    defer { install.remove() }
+    #expect(install.layout.userDataItems().isEmpty)
+    try Self.makeProfile(install)
+    let items = install.layout.userDataItems()
+    #expect(items.map(\.kind) == [.aiModel, .userDictionary, .learning, .settings])
+    func names(_ kind: UserDataKind) -> Set<String> {
+      Set(items.first { $0.kind == kind }!.paths.map { URL(filePath: $0).lastPathComponent })
+    }
+    #expect(names(.aiModel) == ["model", "Genmai"])  // the profile's model folder and ~/Library/Caches/Genmai
+    #expect(names(.userDictionary) == ["user_dictionary.db"])
+    #expect(names(.learning) == [".history.db", "segment.db", "boundary.db", ".encrypt_key.db", "ai_debug.log"])
+    #expect(names(.settings) == ["config1.db", "ai_conversion.json", "update.json", ".config_dialog..lock"])
+    #expect(items.allSatisfy { $0.size > 0 })
+  }
+
+  @Test func byDefaultOnlyTheAIModelIsRemoved() async throws {
+    let install = try FakeInstall()
+    defer { install.remove() }
+    try install.populate()
+    try Self.makeProfile(install)
+    let controller = UninstallerController(
+      uninstaller: Uninstaller(layout: install.layout, runner: ShellCommandRunner()), language: .english,
+      icon: NSImage(), terminate: {})
+    #expect(controller.selectedUserData == [.aiModel])
+    await controller.uninstall()
+    #expect(controller.phase == .succeeded)
+    #expect(!install.exists("Library/Application Support/Genmai/model", home: true))
+    #expect(!install.exists("Library/Caches/Genmai", home: true))
+    #expect(install.exists("Library/Application Support/Genmai/user_dictionary.db", home: true))
+    #expect(install.exists("Library/Application Support/Genmai/segment.db", home: true))
+    #expect(install.exists("Library/Application Support/Genmai/config1.db", home: true))
+  }
+
+  @Test func chosenKindsAreRemoved() async throws {
+    let install = try FakeInstall()
+    defer { install.remove() }
+    try install.populate()
+    try Self.makeProfile(install)
+    let controller = UninstallerController(
+      uninstaller: Uninstaller(layout: install.layout, runner: ShellCommandRunner()), language: .english,
+      icon: NSImage(), terminate: {})
+    controller.selectedUserData = [.learning]
+    await controller.uninstall()
+    #expect(!install.exists("Library/Application Support/Genmai/.history.db", home: true))
+    #expect(!install.exists("Library/Application Support/Genmai/ai_debug.log", home: true))
+    #expect(install.exists("Library/Application Support/Genmai/model/model.safetensors", home: true))
+    #expect(install.exists("Library/Application Support/Genmai/user_dictionary.db", home: true))
+  }
+
+  @Test func everythingChosenRemovesTheFolders() throws {
+    let install = try FakeInstall()
+    defer { install.remove() }
+    try Self.makeProfile(install)
+    try install.layout.removeUserData(Set(UserDataKind.allCases))
+    #expect(!install.exists("Library/Application Support/Genmai", home: true))
+    #expect(!install.exists("Library/Caches/Genmai", home: true))
+    #expect(install.layout.userDataItems().isEmpty)
+  }
+
+  @Test func nothingIsRemovedWithoutAuthorization() async throws {
+    let install = try FakeInstall()
+    defer { install.remove() }
+    try Self.makeProfile(install)
+    let controller = UninstallerController(
+      uninstaller: Uninstaller(layout: install.layout, runner: FixedCommandRunner(.authorizationFailed)),
+      language: .english, icon: NSImage(), terminate: {})
+    controller.selectedUserData = Set(UserDataKind.allCases)
+    await controller.uninstall()
+    #expect(controller.phase == .failed(.authorization))
+    #expect(install.exists("Library/Application Support/Genmai/model/model.safetensors", home: true))
+    #expect(install.exists("Library/Application Support/Genmai/config1.db", home: true))
+  }
+
+  @Test func strings() {
+    for language in [UninstallerLanguage.english, .japanese] {
+      let strings = UninstallerStrings(language)
+      for kind in UserDataKind.allCases {
+        #expect(!strings.userDataName(kind).isEmpty)
+        #expect(!strings.userDataDetail(kind).isEmpty)
+      }
+    }
+    #expect(UninstallerStrings(.japanese).userDataName(.userDictionary) == "ユーザー辞書")
   }
 }
