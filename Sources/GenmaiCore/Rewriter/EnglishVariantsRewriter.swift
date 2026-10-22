@@ -160,7 +160,7 @@ public final class EnglishVariantsRewriter: RewriterInterface {
             }
             modified = true
 
-            let newCandidate = seg.insertCandidate(i + 1)!
+            guard let newCandidate = seg.insertCandidate(i + 1) else { continue }
             newCandidate.value = newValue
             newCandidate.key = originalCandidate.key
             newCandidate.contentValue = variant

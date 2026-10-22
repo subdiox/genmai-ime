@@ -40,7 +40,7 @@ public final class SingleKanjiRewriter: RewriterInterface {
       // `(cost + (attributes & CONTEXT_SENSITIVE)) ? 1 : 0`.
       let sum = Int(entry.cost) + Int(segment.candidate(0).attributes & Attribute.contextSensitive)
       let insertPos = RewriterUtil.calculateInsertPosition(segment, sum != 0 ? 1 : 0)
-      let c = segment.insertCandidate(insertPos)!
+      guard let c = segment.insertCandidate(insertPos) else { continue }
       c.lid = posMatcher.getNounPrefixId()
       c.rid = posMatcher.getNounPrefixId()
       c.cost = 5000

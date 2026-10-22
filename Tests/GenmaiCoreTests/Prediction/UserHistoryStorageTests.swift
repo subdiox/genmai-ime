@@ -115,17 +115,20 @@ func runUserHistoryTestThreads(_ count: Int, _ body: @escaping @Sendable (Int) -
     // ForEach.
     do {
       var it = entries.reversed().makeIterator()
-      storage.forEach { fp, entry in
+      storage.forEachEntry { fp, entry in
         #expect(storage.contains(fp))
         let snapshot = storage.mutableLookup(fp)
-        let expected = it.next()!
+        guard let expected = it.next() else {
+          Issue.record("more entries than inserted")
+          return false
+        }
         #expect(snapshot.entry.key == expected.key)
         #expect(snapshot.entry.value == expected.value)
         return true
       }
 
       var numIterations = 0
-      storage.forEach { fp, entry in
+      storage.forEachEntry { fp, entry in
         #expect(storage.contains(fp))
         numIterations += 1
         return numIterations < 10
@@ -223,7 +226,7 @@ func runUserHistoryTestThreads(_ count: Int, _ body: @escaping @Sendable (Int) -
         }
       }
 
-      storage.forEach { fp, entry in
+      storage.forEachEntry { fp, entry in
         #expect(storage.contains(fp))
         return true
       }
@@ -396,7 +399,7 @@ func runUserHistoryTestThreads(_ count: Int, _ body: @escaping @Sendable (Int) -
     await storage.wait()
 
     var validNum = 0
-    storage.forEach { fp, entry in
+    storage.forEachEntry { fp, entry in
       validNum += 1
       return true
     }

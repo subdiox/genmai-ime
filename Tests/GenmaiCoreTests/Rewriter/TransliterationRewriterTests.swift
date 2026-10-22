@@ -60,8 +60,8 @@ struct TransliterationRewriterTests {
     return config
   }()
 
-  func createTransliterationRewriter() -> TransliterationRewriter {
-    TransliterationRewriter(PosMatcher(transliterationMockData!.getPosMatcherData()))
+  func createTransliterationRewriter() throws -> TransliterationRewriter {
+    TransliterationRewriter(PosMatcher(try #require(transliterationMockData).getPosMatcherData()))
   }
 
   func makeTable(_ request: Genmai_Commands_Request) -> Table {
@@ -70,8 +70,8 @@ struct TransliterationRewriterTests {
     return table
   }
 
-  @Test func t13nFromKeyTest() {
-    let t13nRewriter = createTransliterationRewriter()
+  @Test func t13nFromKeyTest() throws {
+    let t13nRewriter = try createTransliterationRewriter()
     let segments = Segments()
     let segment = segments.addSegment()
     segment.setKey("あかん")
@@ -95,8 +95,8 @@ struct TransliterationRewriterTests {
     }
   }
 
-  @Test func t13nFromComposerTest() {
-    let t13nRewriter = createTransliterationRewriter()
+  @Test func t13nFromComposerTest() throws {
+    let t13nRewriter = try createTransliterationRewriter()
 
     let table = makeTable(defaultRequest)
     var composer = Composer(table, defaultRequest, defaultConfig)
@@ -127,8 +127,8 @@ struct TransliterationRewriterTests {
     }
   }
 
-  @Test func keyOfT13nFromComposerTest() {
-    let t13nRewriter = createTransliterationRewriter()
+  @Test func keyOfT13nFromComposerTest() throws {
+    let t13nRewriter = try createTransliterationRewriter()
 
     let table = makeTable(defaultRequest)
     var composer = Composer(table, defaultRequest, defaultConfig)
@@ -162,8 +162,8 @@ struct TransliterationRewriterTests {
     }
   }
 
-  @Test func t13nWithMultiSegmentsTest() {
-    let t13nRewriter = createTransliterationRewriter()
+  @Test func t13nWithMultiSegmentsTest() throws {
+    let t13nRewriter = try createTransliterationRewriter()
 
     let table = makeTable(defaultRequest)
     var composer = Composer(table, defaultRequest, defaultConfig)
@@ -197,8 +197,8 @@ struct TransliterationRewriterTests {
     }
   }
 
-  @Test func composerValidationTest() {
-    let t13nRewriter = createTransliterationRewriter()
+  @Test func composerValidationTest() throws {
+    let t13nRewriter = try createTransliterationRewriter()
 
     let table = makeTable(defaultRequest)
     var composer = Composer(table, defaultRequest, defaultConfig)
@@ -230,8 +230,8 @@ struct TransliterationRewriterTests {
     }
   }
 
-  @Test func rewriteWithSameComposerTest() {
-    let t13nRewriter = createTransliterationRewriter()
+  @Test func rewriteWithSameComposerTest() throws {
+    let t13nRewriter = try createTransliterationRewriter()
 
     let table = makeTable(defaultRequest)
 
@@ -290,8 +290,8 @@ struct TransliterationRewriterTests {
     }
   }
 
-  @Test func noKeyTest() {
-    let t13nRewriter = createTransliterationRewriter()
+  @Test func noKeyTest() throws {
+    let t13nRewriter = try createTransliterationRewriter()
 
     let segments = Segments()
     var segment = segments.addSegment()
@@ -306,8 +306,8 @@ struct TransliterationRewriterTests {
     #expect(segments.conversionSegment(1).metaCandidatesSize == 0)
   }
 
-  @Test func noKeyWithComposerTest() {
-    let t13nRewriter = createTransliterationRewriter()
+  @Test func noKeyWithComposerTest() throws {
+    let t13nRewriter = try createTransliterationRewriter()
 
     let table = makeTable(defaultRequest)
     var composer = Composer(table, defaultRequest, defaultConfig)
@@ -328,8 +328,8 @@ struct TransliterationRewriterTests {
     #expect(segments.conversionSegment(1).metaCandidatesSize == 0)
   }
 
-  @Test func noRewriteTest() {
-    let t13nRewriter = createTransliterationRewriter()
+  @Test func noRewriteTest() throws {
+    let t13nRewriter = try createTransliterationRewriter()
 
     _ = makeTable(defaultRequest)
 
@@ -341,9 +341,9 @@ struct TransliterationRewriterTests {
     #expect(segments.conversionSegment(0).metaCandidatesSize == 0)
   }
 
-  @Test func mobileEnvironmentTest() {
+  @Test func mobileEnvironmentTest() throws {
     var request = Genmai_Commands_Request()
-    let rewriter = createTransliterationRewriter()
+    let rewriter = try createTransliterationRewriter()
     do {
       request.mixedConversion = true
       let convreq = ConversionRequestBuilder().setRequest(request).build()
@@ -357,8 +357,8 @@ struct TransliterationRewriterTests {
     }
   }
 
-  @Test func mobileT13nTestWith12KeysHiragana() {
-    let t13nRewriter = createTransliterationRewriter()
+  @Test func mobileT13nTestWith12KeysHiragana() throws {
+    let t13nRewriter = try createTransliterationRewriter()
 
     var request = Genmai_Commands_Request()
     RequestTestUtil.fillMobileRequest(&request)
@@ -388,8 +388,8 @@ struct TransliterationRewriterTests {
     }
   }
 
-  @Test func mobileT13nTestWith12KeysToNumber() {
-    let t13nRewriter = createTransliterationRewriter()
+  @Test func mobileT13nTestWith12KeysToNumber() throws {
+    let t13nRewriter = try createTransliterationRewriter()
 
     var request = Genmai_Commands_Request()
     RequestTestUtil.fillMobileRequest(&request)
@@ -419,8 +419,8 @@ struct TransliterationRewriterTests {
     }
   }
 
-  @Test func mobileT13nTestWith12KeysFlick() {
-    let t13nRewriter = createTransliterationRewriter()
+  @Test func mobileT13nTestWith12KeysFlick() throws {
+    let t13nRewriter = try createTransliterationRewriter()
 
     var request = Genmai_Commands_Request()
     request.zeroQuerySuggestion = true
@@ -451,8 +451,8 @@ struct TransliterationRewriterTests {
     }
   }
 
-  @Test func mobileT13nTestWithQwertyHiragana() {
-    let t13nRewriter = createTransliterationRewriter()
+  @Test func mobileT13nTestWithQwertyHiragana() throws {
+    let t13nRewriter = try createTransliterationRewriter()
 
     var clientRequest = Genmai_Commands_Request()
     clientRequest.zeroQuerySuggestion = true
@@ -501,8 +501,8 @@ struct TransliterationRewriterTests {
     }
   }
 
-  @Test func mobileT13nTestWithGodan() {
-    let t13nRewriter = createTransliterationRewriter()
+  @Test func mobileT13nTestWithGodan() throws {
+    let t13nRewriter = try createTransliterationRewriter()
 
     var request = Genmai_Commands_Request()
     request.zeroQuerySuggestion = true
@@ -538,8 +538,8 @@ struct TransliterationRewriterTests {
     }
   }
 
-  @Test func mobileT13nTestValidateGodanT13nTable() {
-    let t13nRewriter = createTransliterationRewriter()
+  @Test func mobileT13nTestValidateGodanT13nTable() throws {
+    let t13nRewriter = try createTransliterationRewriter()
 
     var request = Genmai_Commands_Request()
     request.zeroQuerySuggestion = true
@@ -550,7 +550,7 @@ struct TransliterationRewriterTests {
 
     // Expected t13n of Godan keyboard.
     var keycodeToT13nMap = [String?](repeating: nil, count: 128)
-    func set(_ c: Character, _ v: String) { keycodeToT13nMap[Int(c.asciiValue!)] = v }
+    func set(_ c: Unicode.Scalar, _ v: String) { keycodeToT13nMap[Int(c.value)] = v }
     set("\"", "")
     set("'", "")
     set("`", "")
@@ -609,8 +609,8 @@ struct TransliterationRewriterTests {
     }
   }
 
-  @Test func t13nOnSuggestion() {
-    let t13nRewriter = createTransliterationRewriter()
+  @Test func t13nOnSuggestion() throws {
+    let t13nRewriter = try createTransliterationRewriter()
 
     var clientRequest = Genmai_Commands_Request()
     clientRequest.mixedConversion = true
@@ -639,8 +639,8 @@ struct TransliterationRewriterTests {
     }
   }
 
-  @Test func t13nOnPartialSuggestion() {
-    let t13nRewriter = createTransliterationRewriter()
+  @Test func t13nOnPartialSuggestion() throws {
+    let t13nRewriter = try createTransliterationRewriter()
 
     var clientRequest = Genmai_Commands_Request()
     clientRequest.mixedConversion = true

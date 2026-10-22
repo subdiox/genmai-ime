@@ -118,7 +118,7 @@ struct LanguageAwareRewriterTests {
       try #require(segment.candidatesSize == 5)
       #expect(
         rewriteWithLanguageAwareInput(
-          rewriter, "python", true /* is_mobile */, &composition, segments))
+          rewriter, "python", true, &composition, segments))  // is_mobile
       #expect(composition == "ｐｙてょｎ")
       try #require(segments.conversionSegmentsSize == 1)
       #expect(segments.conversionSegment(0).candidate(4).value == "python")
@@ -131,7 +131,7 @@ struct LanguageAwareRewriterTests {
       let segments = Segments()
       #expect(
         !rewriteWithLanguageAwareInput(
-          rewriter, "mozuk", false /* is_mobile */, &composition, segments))
+          rewriter, "mozuk", false, &composition, segments))  // is_mobile
 
       #expect(composition == "もずｋ")
       try #require(segments.conversionSegmentsSize == 1)
@@ -169,7 +169,7 @@ struct LanguageAwareRewriterTests {
       // => ["cand0", "cand1", "house", "cand2"]
       #expect(
         rewriteWithLanguageAwareInput(
-          rewriter, "house", false /* is_mobile */, &composition, segments))
+          rewriter, "house", false, &composition, segments))  // is_mobile
       #expect(composition == "ほうせ")
       #expect(
         candidatesAreArray(
@@ -202,7 +202,7 @@ struct LanguageAwareRewriterTests {
       let segments = Segments()
       #expect(
         rewriteWithLanguageAwareInput(
-          rewriter, "query", false /* is_mobile */, &composition, segments))
+          rewriter, "query", false, &composition, segments))  // is_mobile
 
       #expect(composition == "くえｒｙ")
       try #require(segments.conversionSegmentsSize == 1)
@@ -219,7 +219,7 @@ struct LanguageAwareRewriterTests {
       let segments = Segments()
       #expect(
         !rewriteWithLanguageAwareInput(
-          rewriter, "google", false /* is_mobile */, &composition, segments))
+          rewriter, "google", false, &composition, segments))  // is_mobile
       #expect(composition == "google")
     }
     do {
@@ -233,7 +233,7 @@ struct LanguageAwareRewriterTests {
       let segments = Segments()
       #expect(
         !rewriteWithLanguageAwareInput(
-          rewriter, "naru", false /* is_mobile */, &composition, segments))
+          rewriter, "naru", false, &composition, segments))  // is_mobile
 
       #expect(composition == "なる")
       try #require(segments.conversionSegmentsSize == 1)
@@ -254,7 +254,7 @@ struct LanguageAwareRewriterTests {
       let segments = Segments()
       #expect(
         !rewriteWithLanguageAwareInput(
-          rewriter, "1d*=", false /* is_mobile */, &composition, segments))
+          rewriter, "1d*=", false, &composition, segments))  // is_mobile
       #expect(composition == "１ｄ＊＝")
     }
     do {
@@ -263,7 +263,7 @@ struct LanguageAwareRewriterTests {
       let segments = Segments()
       #expect(
         !rewriteWithLanguageAwareInput(
-          rewriter, "xyzw", false /* is_mobile */, &composition, segments))
+          rewriter, "xyzw", false, &composition, segments))  // is_mobile
       #expect(composition == "ｘｙｚｗ")
     }
   }

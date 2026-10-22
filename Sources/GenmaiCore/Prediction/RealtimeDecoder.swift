@@ -11,7 +11,7 @@
 
 import GenmaiBase
 
-open class RealtimeDecoder: @unchecked Sendable {
+open class RealtimeDecoder {
   private static let kSuffixCacheSize = 256
 
   private struct SuffixCacheKey: Hashable {

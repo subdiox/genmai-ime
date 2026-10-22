@@ -338,7 +338,7 @@ import Testing
       predictor.finish(convreq, segmentsProxy.makeLearningResults(), kRevertId)
 
       // All added items must be suggestion entries.
-      predictor.storage.forEach { fp, entry in
+      predictor.storage.forEachEntry { fp, entry in
         #expect(entry.suggestionFreq == 1)
         return true
       }

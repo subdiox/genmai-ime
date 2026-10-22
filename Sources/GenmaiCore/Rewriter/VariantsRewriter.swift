@@ -384,7 +384,8 @@ public final class VariantsRewriter: RewriterInterface, Sendable {
     // Otherwise, insert a new candidate at index 0.
     var target = topCandidate
     if topCandidate.attributes & Attribute.noExtraDescription == 0 {
-      target = seg.insertCandidate(0)!
+      target = Candidate()
+      seg.insertCandidate(0, target)
       target.assign(from: seg.candidate(1))
       let fallback = seg.mutableCandidate(1)
       Self.setDescriptionForCandidate(posMatcher, fallback)

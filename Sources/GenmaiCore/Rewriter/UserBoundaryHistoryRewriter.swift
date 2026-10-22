@@ -34,7 +34,8 @@ private struct LengthArray {
   }
 
   /// Reads the 4 stored bytes.
-  init(raw: UnsafeRawBufferPointer) {
+  init(raw: some Collection<UInt8>) {
+    let raw = Array(raw.prefix(4))
     bytes = (raw[0], raw[1], raw[2], raw[3])
   }
 

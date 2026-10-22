@@ -9,16 +9,16 @@ import Testing
 
 @testable import GenmaiCore
 
-private let U = Attribute.unigram
-private let B = Attribute.bigram
-private let R = Attribute.realtimeConversion
-private let RT = Attribute.realtimeTop
-private let P = Attribute.partiallyKeyConsumed
-private let S = Attribute.suffixDictionary
-private let E = Attribute.english
-private let TC = Attribute.typingCorrection
-private let SK = Attribute.singleKanji
-private let NONE = Token.Attribute.none
+private let kUnigram = Attribute.unigram
+private let kBigram = Attribute.bigram
+private let kRealtime = Attribute.realtimeConversion
+private let kRealtimeTop = Attribute.realtimeTop
+private let kPartial = Attribute.partiallyKeyConsumed
+private let kSuffix = Attribute.suffixDictionary
+private let kEnglish = Attribute.english
+private let kTypingCorrection = Attribute.typingCorrection
+private let kSingleKanji = Attribute.singleKanji
+private let kNoAttribute = Token.Attribute.none
 
 private struct SimpleSuffixToken {
   let key: String
@@ -27,7 +27,7 @@ private struct SimpleSuffixToken {
 
 private let kSuffixTokens = [SimpleSuffixToken(key: "いか", value: "以下")]
 
-private final class TestSuffixDictionary: DictionaryInterface, @unchecked Sendable {
+private final class TestSuffixDictionary: DictionaryInterface {
   func hasKey(_ key: String) -> Bool { false }
   func hasValue(_ value: String) -> Bool { false }
 
@@ -165,16 +165,16 @@ struct DictionaryPredictorTestPart2 {
 
     let convreq = f.createConversionRequest(
       DPFixture.options(.partialSuggestion, useActualConverterForRealtimeConversion: true),
-      "ぐーぐる", false /* init composer */)
+      "ぐーぐる", false)  // init composer
 
     var result = PredictionResult()
     result.key = "ぐーぐる"
     result.value = "グーグル"
-    result.attributes = R
+    result.attributes = kRealtime
     dp.mockDecoder.decodeHandler = { _ in [result] }
 
     let results = dp.aggregateResultsForTesting(convreq)
-    #expect((DPT.getMergedTypes(results) & R) != 0)
+    #expect((DPT.getMergedTypes(results) & kRealtime) != 0)
   }
 
   @Test mutating func bigramTest() throws {
@@ -188,7 +188,7 @@ struct DictionaryPredictorTestPart2 {
     // "グーグルアドセンス" will be returned.
     let convreq = f.createSuggestionConversionRequest("あ")
     let results = dp.aggregateResultsForTesting(convreq)
-    #expect((B | DPT.getMergedTypes(results)) != 0)
+    #expect((kBigram | DPT.getMergedTypes(results)) != 0)
   }
 
   @Test mutating func bigramTestWithZeroQuery() throws {
@@ -202,7 +202,7 @@ struct DictionaryPredictorTestPart2 {
 
     let convreq = f.createSuggestionConversionRequest("")
     let results = dp.aggregateResultsForTesting(convreq)
-    #expect((B | DPT.getMergedTypes(results)) != 0)
+    #expect((kBigram | DPT.getMergedTypes(results)) != 0)
   }
 
   @Test mutating func bigramTestWithZeroQueryFilterMode() throws {
@@ -216,7 +216,7 @@ struct DictionaryPredictorTestPart2 {
 
     let convreq = f.createSuggestionConversionRequest("")
     let results = dp.aggregateResultsForTesting(convreq)
-    #expect((B & DPT.getMergedTypes(results)) == 0)
+    #expect((kBigram & DPT.getMergedTypes(results)) == 0)
   }
 
   // Check that previous candidate never be shown at the current candidate.
@@ -230,7 +230,7 @@ struct DictionaryPredictorTestPart2 {
 
     let convreq = f.createSuggestionConversionRequest("だい")
     let results = dp.aggregateResultsForTesting(convreq)
-    #expect((R | DPT.getMergedTypes(results)) != 0)
+    #expect((kRealtime | DPT.getMergedTypes(results)) != 0)
     for r in results {
       #expect(!r.value.hasBytePrefix("京都"))
       #expect(r.key.hasBytePrefix("だい"))
@@ -254,7 +254,7 @@ struct DictionaryPredictorTestPart2 {
       var result = PredictionResult()
       result.key = "test"
       result.value = "test"
-      result.attributes = R
+      result.attributes = kRealtime
       dp.mockDecoder.decodeHandler = { _ in [result] }
     }
 
@@ -265,7 +265,7 @@ struct DictionaryPredictorTestPart2 {
       f.composer.setInputMode(.hiragana)
       let convreq = f.createSuggestionConversionRequest("ぐーぐる")
       let results = dp.aggregateResultsForTesting(convreq)
-      #expect(DPT.getMergedTypes(results) == DPT.addDefaultPredictionTypes(U, isMobile))
+      #expect(DPT.getMergedTypes(results) == DPT.addDefaultPredictionTypes(kUnigram, isMobile))
     }
 
     // Short keys.
@@ -275,11 +275,11 @@ struct DictionaryPredictorTestPart2 {
         f.composer.setInputMode(.hiragana)
         let suggestionConvreq = f.createSuggestionConversionRequest("てす")
         let results1 = dp.aggregateResultsForTesting(suggestionConvreq)
-        #expect(DPT.getMergedTypes(results1) == (U | R | P))
+        #expect(DPT.getMergedTypes(results1) == (kUnigram | kRealtime | kPartial))
 
         let predictionConvreq = f.createPredictionConversionRequest("てす")
         let results2 = dp.aggregateResultsForTesting(predictionConvreq)
-        #expect(DPT.getMergedTypes(results2) == (U | R | P))
+        #expect(DPT.getMergedTypes(results2) == (kUnigram | kRealtime | kPartial))
       } else {
         // Unigram is not triggered for SUGGESTION if key length is short.
         f.composer.setInputMode(.hiragana)
@@ -287,7 +287,7 @@ struct DictionaryPredictorTestPart2 {
         #expect(dp.aggregateResultsForTesting(suggestionConvreq).isEmpty)
         let predictionConvreq = f.createPredictionConversionRequest("てす")
         let results = dp.aggregateResultsForTesting(predictionConvreq)
-        #expect(DPT.getMergedTypes(results) == U)
+        #expect(DPT.getMergedTypes(results) == kUnigram)
       }
     }
 
@@ -304,7 +304,7 @@ struct DictionaryPredictorTestPart2 {
       f.composer.setInputMode(.hiragana)
       let convreq = f.createSuggestionConversionRequest("てすとだ")
       let results = dp.aggregateResultsForTesting(convreq)
-      #expect(DPT.getMergedTypes(results) == DPT.addDefaultPredictionTypes(U, isMobile))
+      #expect(DPT.getMergedTypes(results) == DPT.addDefaultPredictionTypes(kUnigram, isMobile))
     }
 
     // Both history and current segment are long => UNIGRAM or BIGRAM
@@ -313,7 +313,7 @@ struct DictionaryPredictorTestPart2 {
       f.composer.setInputMode(.hiragana)
       let convreq = f.createSuggestionConversionRequest("てすとだ")
       let results = dp.aggregateResultsForTesting(convreq)
-      #expect(DPT.getMergedTypes(results) == DPT.addDefaultPredictionTypes(U | B, isMobile))
+      #expect(DPT.getMergedTypes(results) == DPT.addDefaultPredictionTypes(kUnigram | kBigram, isMobile))
     }
 
     // Current segment is short
@@ -324,14 +324,14 @@ struct DictionaryPredictorTestPart2 {
         f.composer.setInputMode(.hiragana)
         let convreq = f.createSuggestionConversionRequest("てす")
         let results = dp.aggregateResultsForTesting(convreq)
-        #expect(DPT.getMergedTypes(results) == (U | B | R | P))
+        #expect(DPT.getMergedTypes(results) == (kUnigram | kBigram | kRealtime | kPartial))
       } else {
         // No UNIGRAM.
         f.initHistory("てすとだよ", "テストだよ")
         f.composer.setInputMode(.hiragana)
         let convreq = f.createSuggestionConversionRequest("てす")
         let results = dp.aggregateResultsForTesting(convreq)
-        #expect(DPT.getMergedTypes(results) == B)
+        #expect(DPT.getMergedTypes(results) == kBigram)
       }
     }
 
@@ -340,7 +340,7 @@ struct DictionaryPredictorTestPart2 {
       f.composer.setInputMode(.hiragana)
       let convreq = f.createSuggestionConversionRequest("ｐはよう")
       let results = dp.aggregateResultsForTesting(convreq)
-      #expect((TC & DPT.getMergedTypes(results)) == 0)
+      #expect((kTypingCorrection & DPT.getMergedTypes(results)) == 0)
     }
 
     // When romaji table is qwerty mobile => ENGLISH is included depending on
@@ -378,20 +378,20 @@ struct DictionaryPredictorTestPart2 {
         f.request.languageAwareInput = .defaultLanguageAwareBehavior
         let convreq1 = f.createSuggestionConversionRequest("てすとだよ")
         var results = dp.aggregateResultsForTesting(convreq1)
-        #expect((DPT.getMergedTypes(results) & E) == 0)
+        #expect((DPT.getMergedTypes(results) & kEnglish) == 0)
 
         // Language aware input is off: No English prediction.
         f.request.languageAwareInput = .noLanguageAwareInput
         let convreq2 = f.createSuggestionConversionRequest("てすとだよ")
         results = dp.aggregateResultsForTesting(convreq2)
-        #expect((DPT.getMergedTypes(results) & E) == 0)
+        #expect((DPT.getMergedTypes(results) & kEnglish) == 0)
 
         // Language aware input is on: English prediction is included (only
         // for raw inputs in the dictionary; "てすとだよ" has none).
         f.request.languageAwareInput = .languageAwareSuggestion
         let convreq3 = f.createSuggestionConversionRequest("てすとだよ")
         results = dp.aggregateResultsForTesting(convreq3)
-        #expect((DPT.getMergedTypes(results) & E) == 0)
+        #expect((DPT.getMergedTypes(results) & kEnglish) == 0)
       }
     }
   }
@@ -425,12 +425,12 @@ struct DictionaryPredictorTestPart2 {
       f.config.useRealtimeConversion = false
       let convreq1 = f.createSuggestionConversionRequest("hel")
       var results = dp.aggregateResultsForTesting(convreq1)
-      #expect(DPT.getMergedTypes(results) == DPT.addDefaultPredictionTypes(E, isMobile))
+      #expect(DPT.getMergedTypes(results) == DPT.addDefaultPredictionTypes(kEnglish, isMobile))
 
       f.config.useRealtimeConversion = true
       let convreq2 = f.createSuggestionConversionRequest("hel")
       results = dp.aggregateResultsForTesting(convreq2)
-      #expect(DPT.getMergedTypes(results) == DPT.addDefaultPredictionTypes(E | R, isMobile))
+      #expect(DPT.getMergedTypes(results) == DPT.addDefaultPredictionTypes(kEnglish | kRealtime, isMobile))
 
       // When dictionary suggest is turned off, English prediction should be
       // disabled.
@@ -443,7 +443,7 @@ struct DictionaryPredictorTestPart2 {
       let partialSuggestionConvreq = f.createConversionRequest(
         DPFixture.options(.partialSuggestion), "hel")
       results = dp.aggregateResultsForTesting(partialSuggestionConvreq)
-      #expect(DPT.getMergedTypes(results) == R)
+      #expect(DPT.getMergedTypes(results) == kRealtime)
     }
   }
 
@@ -458,7 +458,7 @@ struct DictionaryPredictorTestPart2 {
     #expect(!results.isEmpty)
 
     for result in results {
-      #expect(result.getPredictionTypesForTesting() == U)
+      #expect(result.getPredictionTypesForTesting() == kUnigram)
       #expect(result.key.hasBytePrefix(kKey))
     }
   }
@@ -474,12 +474,12 @@ struct DictionaryPredictorTestPart2 {
 
     var aTokens = [
       // A system dictionary entry "a".
-      PT.makeToken(kHiraganaA, "a", kCost, kPosId, kPosId, NONE)
+      PT.makeToken(kHiraganaA, "a", kCost, kPosId, kPosId, kNoAttribute)
     ]
     // System dictionary entries "a0", ..., "a9", which are detected as
     // redundant by MaybeRedundant(); see dictionary_predictor.cc.
     for i in 0..<10 {
-      aTokens.append(PT.makeToken(kHiraganaA, "a\(i)", kCost, kPosId, kPosId, NONE))
+      aTokens.append(PT.makeToken(kHiraganaA, "a\(i)", kCost, kPosId, kPosId, kNoAttribute))
     }
     // A user dictionary entry "aaa".  MaybeRedundant() detects this entry as
     // redundant but it should not be filtered in prediction.
@@ -507,7 +507,7 @@ struct DictionaryPredictorTestPart2 {
       PT.insertInputSequence(kHiraganaA, &f.composer)
 
       var results: [PredictionResult] = []
-      let convreq = f.createPredictionConversionRequest(kHiraganaA, false /* init_composer */)
+      let convreq = f.createPredictionConversionRequest(kHiraganaA, false)  // init_composer
       dp.predictor.aggregateUnigram(convreq, &results)
 
       // Check if "aaa" is not filtered.
@@ -530,7 +530,7 @@ struct DictionaryPredictorTestPart2 {
       PT.insertInputSequence(kHiraganaAA, &f.composer)
 
       var results: [PredictionResult] = []
-      let convreq = f.createPredictionConversionRequest(kHiraganaAA, false /* init_composer */)
+      let convreq = f.createPredictionConversionRequest(kHiraganaAA, false)  // init_composer
       dp.predictor.aggregateUnigram(convreq, &results)
 
       // Check if "aaa" is not found as its key is あ.
@@ -600,7 +600,7 @@ struct DictionaryPredictorTestPart2 {
         } else {
           #expect(result.removed)
         }
-        #expect(result.getPredictionTypesForTesting() == B)
+        #expect(result.getPredictionTypesForTesting() == kBigram)
         #expect(!result.key.hasBytePrefix(kHistoryKey))
         #expect(!result.value.hasBytePrefix(kHistoryValue))
         #expect(result.key.hasBytePrefix("あ"))
@@ -823,7 +823,7 @@ struct DictionaryPredictorTestPart2 {
           var results = PT.results(1)
           results[0].key = kKey
           results[0].value = "私の名前は中野です"
-          results[0].attributes = R | RT | Attribute.noVariantsExpansion
+          results[0].attributes = kRealtime | kRealtimeTop | Attribute.noVariantsExpansion
           let expected = results
           dp.mockDecoder.decodeHandler = { request in
             if request.options().maxConversionCandidatesSize == candidatesSize
@@ -839,7 +839,7 @@ struct DictionaryPredictorTestPart2 {
         var results: [PredictionResult] = []
         dp.predictor.aggregateRealtime(convreq, candidatesSize, useActualConverter, &results)
         try #require(results.count == 1)
-        #expect(results[0].getPredictionTypesForTesting() == R | RT)
+        #expect(results[0].getPredictionTypesForTesting() == kRealtime | kRealtimeTop)
         #expect(results[0].key == kKey)
         #expect((results[0].attributes & Attribute.noVariantsExpansion) != 0)
       }
@@ -872,9 +872,9 @@ struct DictionaryPredictorTestPart2 {
     let convreq2 = f.createSuggestionConversionRequest("い")
     dp.aggregateZeroQuery(convreq2, &results)
     #expect(!results.isEmpty)
-    #expect((DPT.getMergedTypes(results) & S) != 0)
+    #expect((DPT.getMergedTypes(results) & kSuffix) != 0)
     for result in results {
-      #expect(result.getPredictionTypesForTesting() == S)
+      #expect(result.getPredictionTypesForTesting() == kSuffix)
     }
   }
 
@@ -892,11 +892,11 @@ struct DictionaryPredictorTestPart2 {
 
       // Candidates generated by AggregateZeroQuerySuffixPrediction should
       // have SUFFIX type.
-      let convreq = f.createSuggestionConversionRequest("", false /* init_composer */)
+      let convreq = f.createSuggestionConversionRequest("", false)  // init_composer
       dp.aggregateZeroQuery(convreq, &results)
       #expect(!results.isEmpty)
       for result in results {
-        #expect(result.getPredictionTypesForTesting() == S)
+        #expect(result.getPredictionTypesForTesting() == kSuffix)
       }
     }
     do {
@@ -929,12 +929,12 @@ struct DictionaryPredictorTestPart2 {
 
     var results: [PredictionResult] = []
 
-    let convreq = f.createPredictionConversionRequest(entry.key, false /* init_composer */)
+    let convreq = f.createPredictionConversionRequest(entry.key, false)  // init_composer
     dp.aggregateEnglish(convreq, &results)
 
     var values = Set<String>()
     for result in results {
-      #expect(result.getPredictionTypesForTesting() == E)
+      #expect(result.getPredictionTypesForTesting() == kEnglish)
       #expect(
         result.value.hasBytePrefix(entry.expectedPrefix),
         "\(result.value) doesn't start with \(entry.expectedPrefix)")
@@ -976,9 +976,9 @@ struct DictionaryPredictorTestPart2 {
       #expect(results[i].key == expected[i].correction)
       if i == 2 {
         // "よろさくです" is COMPLETION only.
-        #expect((results[i].attributes & TC) == 0)
+        #expect((results[i].attributes & kTypingCorrection) == 0)
       } else {
-        #expect((results[i].attributes & TC) != 0)
+        #expect((results[i].attributes & kTypingCorrection) != 0)
       }
     }
   }
@@ -1017,7 +1017,7 @@ struct DictionaryPredictorTestPart2 {
       var result = PredictionResult()
       result.key = req.key()
       result.value = "2日"
-      result.attributes = R
+      result.attributes = kRealtime
       result.innerSegmentBoundary = buildInnerSegmentBoundary(
         [
           (
@@ -1074,7 +1074,7 @@ struct DictionaryPredictorTestPart2 {
 
       var target: PredictionResult?
       for result in results {
-        #expect(result.getPredictionTypesForTesting() == S)
+        #expect(result.getPredictionTypesForTesting() == kSuffix)
         if result.value == kExpectedValue {
           target = result
           break
@@ -1096,7 +1096,7 @@ struct DictionaryPredictorTestPart2 {
 
       var found = false
       for result in results {
-        #expect(result.getPredictionTypesForTesting() == S)
+        #expect(result.getPredictionTypesForTesting() == kSuffix)
         if result.value == kExpectedValue {
           found = true
           break
@@ -1124,13 +1124,13 @@ struct DictionaryPredictorTestPart2 {
       f.initHistory(historyKey, historyValue)
       var results: [PredictionResult] = []
       f.request.zeroQuerySuggestion = true
-      let convreq = f.createSuggestionConversionRequest("", false /* init composer */)
+      let convreq = f.createSuggestionConversionRequest("", false)  // init composer
       dp.aggregateZeroQuery(convreq, &results)
       #expect(!results.isEmpty)
 
       var found = false
       for result in results {
-        #expect(result.getPredictionTypesForTesting() == S)
+        #expect(result.getPredictionTypesForTesting() == kSuffix)
         if result.value == findSuffixValue && result.lid == posMatcher.getCounterSuffixWordId() {
           found = true
           break
@@ -1171,7 +1171,7 @@ struct DictionaryPredictorTestPart2 {
     #expect(!results.isEmpty)
 
     let found = results.contains {
-      ($0.attributes & S) != 0 && $0.value == "月" && $0.lid == posMatcher.getCounterSuffixWordId()
+      ($0.attributes & kSuffix) != 0 && $0.value == "月" && $0.lid == posMatcher.getCounterSuffixWordId()
     }
     #expect(found)
   }
@@ -1191,15 +1191,15 @@ struct DictionaryPredictorTestPart2 {
       f.initHistory(historyKey, historyValue)
       var results: [PredictionResult] = []
       f.request.zeroQuerySuggestion = true
-      let convreq = f.createSuggestionConversionRequest("", false /* init_composer */)
+      let convreq = f.createSuggestionConversionRequest("", false)  // init_composer
       dp.aggregateZeroQuery(convreq, &results)
       #expect(!results.isEmpty)
 
       var rank = -1
       for i in 0..<results.count {
         let result = results[i]
-        #expect(result.getPredictionTypesForTesting() == S)
-        if result.value == findValue && result.lid == 0 /* EOS */ {
+        #expect(result.getPredictionTypesForTesting() == kSuffix)
+        if result.value == findValue && result.lid == 0 {  // EOS
           rank = i
           break
         }
@@ -1243,8 +1243,8 @@ struct DictionaryPredictorTestPart2 {
     let posMatcher = dp.posMatcher
     let mock = dp.mockDictionary
     let token = PT.makeToken(
-      "101-0001", "東京都千代田", 100 /* cost */, Int(posMatcher.getZipcodeId()),
-      Int(posMatcher.getZipcodeId()), NONE)
+      "101-0001", "東京都千代田", 100, Int(posMatcher.getZipcodeId()),  // cost = 100
+      Int(posMatcher.getZipcodeId()), kNoAttribute)
     // InvokeCallbackWithOneToken
     mock.predictive.on("101-000") { _ = $0.onToken("101-0001", "101-0001", token) }
     mock.predictive.on("101-0001") { _ = $0.onToken("101-0001", "101-0001", token) }
@@ -1275,10 +1275,10 @@ struct DictionaryPredictorTestPart2 {
       var results = PT.results(2)
       results[0].key = kKey
       results[0].value = "PCテスト"
-      results[0].attributes = R
+      results[0].attributes = kRealtime
       results[1].key = kKey
       results[1].value = "PCてすと"
-      results[1].attributes = R
+      results[1].attributes = kRealtime
       let expected = results
       dp.mockDecoder.decodeHandler = { request in
         #expect(request.key() == kKey)
@@ -1291,8 +1291,8 @@ struct DictionaryPredictorTestPart2 {
     dp.predictor.aggregateRealtime(convreq, 10, false, &results)
     try #require(results.count == 2)
 
-    #expect(results[0].getPredictionTypesForTesting() == R)
-    #expect(results[1].getPredictionTypesForTesting() == R)
+    #expect(results[0].getPredictionTypesForTesting() == kRealtime)
+    #expect(results[1].getPredictionTypesForTesting() == kRealtime)
     #expect(results[0].value == kExpectedSuggestionValues[0])
     #expect(results[1].value == kExpectedSuggestionValues[1])
   }
@@ -1324,7 +1324,7 @@ struct DictionaryPredictorTestPart2 {
       var result = PredictionResult()
       result.key = kKeyWithDe
       result.value = kExpectedSuggestionValueWithDe
-      result.attributes = R | Attribute.spellingCorrection
+      result.attributes = kRealtime | Attribute.spellingCorrection
       dp.mockDecoder.decodeHandler = { request in
         request.key() == kKeyWithDe ? [result] : []
       }
@@ -1333,7 +1333,7 @@ struct DictionaryPredictorTestPart2 {
     let convreq2 = f.createSuggestionConversionRequest(kKeyWithDe)
     dp.predictor.aggregateRealtime(convreq2, 1, false, &results)
     try #require(results.count == 1)
-    #expect(results[0].getPredictionTypesForTesting() == R)
+    #expect(results[0].getPredictionTypesForTesting() == kRealtime)
     #expect((results[0].attributes & Attribute.spellingCorrection) != 0)
     #expect(results[0].value == kExpectedSuggestionValueWithDe)
   }
@@ -1380,7 +1380,7 @@ struct DictionaryPredictorTestPart2 {
 
     let convreq = f.createPredictionConversionRequest("ぐーぐる")
     let results = dp.aggregateResultsForTesting(convreq)
-    #expect((DPT.getMergedTypes(results) & P) != 0)
+    #expect((DPT.getMergedTypes(results) & kPartial) != 0)
   }
 
   @Test mutating func prefixCandidates() throws {
@@ -1389,8 +1389,8 @@ struct DictionaryPredictorTestPart2 {
 
     let convreq = f.createPredictionConversionRequest("ぐーぐるあ")
     let results = dp.aggregateResultsForTesting(convreq)
-    #expect((DPT.getMergedTypes(results) & P) != 0)
-    for r in results where (r.attributes & P) != 0 {
+    #expect((DPT.getMergedTypes(results) & kPartial) != 0)
+    for r in results where (r.attributes & kPartial) != 0 {
       #expect((r.attributes & Attribute.partiallyKeyConsumed) != 0)
       #expect(r.consumedKeySize != 0)
     }
@@ -1422,14 +1422,14 @@ struct DictionaryPredictorTestPart2 {
     do {
       let convreq = f.createPredictionConversionRequest("しょーとか")
       let results = dp.aggregateResultsForTesting(convreq)
-      #expect((DPT.getMergedTypes(results) & U) != 0)
+      #expect((DPT.getMergedTypes(results) & kUnigram) != 0)
       #expect(DPT.findCandidateByValue(results, "しょうとかっと"))
       #expect(!DPT.findCandidateByValue(results, "ショートカット"))
     }
     do {
       let convreq = f.createPredictionConversionRequest("しょーとかっと")
       let results = dp.aggregateResultsForTesting(convreq)
-      #expect((DPT.getMergedTypes(results) & U) != 0)
+      #expect((DPT.getMergedTypes(results) & kUnigram) != 0)
       #expect(DPT.findCandidateByValue(results, "しょうとかっと"))
       #expect(DPT.findCandidateByValue(results, "ショートカット"))
     }
@@ -1480,12 +1480,12 @@ struct DictionaryPredictorTestPart2 {
     let dp = try DPT.createPredictorWithMockData()
     RequestTestUtil.fillMobileRequest(&f.request)
 
-    dp.singleKanjiDictionary!.lookupKanjiEntriesHandler = { _, _ in ["手"] }
+    try #require(dp.singleKanjiDictionary).lookupKanjiEntriesHandler = { _, _ in ["手"] }
 
     let convreq = f.createPredictionConversionRequest("てすと")
     let results = dp.aggregateResultsForTesting(convreq)
-    #expect((DPT.getMergedTypes(results) & SK) != 0)
-    for result in results where (result.attributes & SK) == 0 {
+    #expect((DPT.getMergedTypes(results) & kSingleKanji) != 0)
+    for result in results where (result.attributes & kSingleKanji) == 0 {
       #expect(Util.charsLen(result.value) > 1)
     }
   }
@@ -1495,14 +1495,14 @@ struct DictionaryPredictorTestPart2 {
     RequestTestUtil.fillMobileRequestWithHardwareKeyboard(&f.request)
 
     var called = 0
-    dp.singleKanjiDictionary!.lookupKanjiEntriesHandler = { _, _ in
+    try #require(dp.singleKanjiDictionary).lookupKanjiEntriesHandler = { _, _ in
       called += 1
       return []
     }
 
     let convreq = f.createPredictionConversionRequest("てすと")
     let results = dp.aggregateResultsForTesting(convreq)
-    #expect((DPT.getMergedTypes(results) & SK) == 0)
+    #expect((DPT.getMergedTypes(results) & kSingleKanji) == 0)
     #expect(called == 0)
   }
 
@@ -1545,9 +1545,9 @@ struct DictionaryPredictorTestPart2 {
         ("かんじじてん", "換字じてん"),
       ])
 
-    let convreq = f.createPredictionConversionRequest("かん字じ典", false /* init_composer */)
+    let convreq = f.createPredictionConversionRequest("かん字じ典", false)  // init_composer
     let results = dp.aggregateResultsForTesting(convreq)
-    #expect((DPT.getMergedTypes(results) & U) != 0)
+    #expect((DPT.getMergedTypes(results) & kUnigram) != 0)
 
     #expect(results.count >= 5)
     // composition from handwriting output
@@ -1591,9 +1591,9 @@ struct DictionaryPredictorTestPart2 {
 
     mockDict.exact.on("きた", kv: [("きた", "きた"), ("きた", "北")])
 
-    let convreq = f.createPredictionConversionRequest("キタ", false /* init composer */)
+    let convreq = f.createPredictionConversionRequest("キタ", false)  // init composer
     let results = dp.aggregateResultsForTesting(convreq)
-    #expect((DPT.getMergedTypes(results) & U) != 0)
+    #expect((DPT.getMergedTypes(results) & kUnigram) != 0)
 
     #expect(results.count >= 2)
     // composition from handwriting output
@@ -1612,7 +1612,7 @@ struct DictionaryPredictorTestPart2 {
     f.composer.reset()
     f.composer.setCompositionsForHandwriting(DPFixture.compositionEvents([("南", 0.9)]))
 
-    let convreq = f.createPredictionConversionRequest("南", false /* init_composer */)
+    let convreq = f.createPredictionConversionRequest("南", false)  // init_composer
     let predictiveBefore = mockDict.mock.calls["LookupPredictive", default: 0]
     let exactBefore = mockDict.mock.calls["LookupExact", default: 0]
     let results = dp.aggregateResultsForTesting(convreq)
@@ -1620,7 +1620,7 @@ struct DictionaryPredictorTestPart2 {
     #expect(dp.mockDecoder.reverseDecodeCount == 0)
     #expect(mockDict.mock.calls["LookupPredictive", default: 0] == predictiveBefore)
     #expect(mockDict.mock.calls["LookupExact", default: 0] == exactBefore)
-    #expect((DPT.getMergedTypes(results) & U) != 0)
+    #expect((DPT.getMergedTypes(results) & kUnigram) != 0)
     #expect(results.count >= 1)
     // composition from handwriting output
     #expect(DPT.findCandidateByKeyValue(results, "南", "南"))
@@ -1650,9 +1650,9 @@ struct DictionaryPredictorTestPart2 {
       }
     }
 
-    let convreq = f.createPredictionConversionRequest("ばらが", false /* init_composer */)
+    let convreq = f.createPredictionConversionRequest("ばらが", false)  // init_composer
     let results = dp.aggregateResultsForTesting(convreq)
-    #expect((DPT.getMergedTypes(results) & U) != 0)
+    #expect((DPT.getMergedTypes(results) & kUnigram) != 0)
 
     #expect(results.count >= 2)
     // composition from handwriting output

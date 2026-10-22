@@ -22,7 +22,7 @@ import Testing
 
 /// engine::Modules for the full stack (OSS data).
 private final class FullStackModules: PredictionModules, UserHistoryPredictorModules,
-  RewriterModules, @unchecked Sendable
+  RewriterModules
 {
   let base: PredictionTestModules
   let posGroup: PosGroup
@@ -97,7 +97,7 @@ private func parseOracle(_ text: String) -> [[OracleCandidate]] {
     guard current != nil else { continue }
     if line.hasPrefix("       ") {
       let field = line.drop { $0 == " " }
-      guard var c = current!.popLast() else { continue }
+      guard var c = current?.popLast() else { continue }
       if field.hasPrefix("key: ") {
         c.key = String(field.dropFirst(5))
       } else if field.hasPrefix("cost: ") {
@@ -112,7 +112,7 @@ private func parseOracle(_ text: String) -> [[OracleCandidate]] {
       } else if field.hasPrefix("rid: ") {
         c.rid = lastNumber(field)
       }
-      current!.append(c)
+      current?.append(c)
       continue
     }
     // "  i/N value"
@@ -126,7 +126,7 @@ private func parseOracle(_ text: String) -> [[OracleCandidate]] {
     var c = OracleCandidate()
     c.value = String(body[body.index(after: space)...])
     c.key = segmentKey
-    current!.append(c)
+    current?.append(c)
   }
   if let current { blocks.append(current) }
   return blocks

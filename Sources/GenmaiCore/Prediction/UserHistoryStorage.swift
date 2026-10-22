@@ -92,16 +92,22 @@ public final class UserHistoryStorage: Sendable {
     /// `!snapshot`.
     public var isNull: Bool { fp == nil }
 
+    /// The fingerprint of a non-null snapshot (dereferencing a null snapshot crashes in C++ too).
+    private var nonNullFingerprint: UInt64 {
+      guard let fp else { preconditionFailure("UserHistoryStorage: dereferencing a null EntrySnapshot") }
+      return fp
+    }
+
     /// `*snapshot`. Traps when the snapshot is null.
     public var entry: Entry {
-      get { storage.readEntry(fp!) }
-      set { storage.writeEntry(fp!) { $0 = newValue } }
+      get { storage.readEntry(nonNullFingerprint) }
+      set { storage.writeEntry(nonNullFingerprint) { $0 = newValue } }
     }
 
     /// Reads and writes the entry in one critical section.
     @discardableResult
     public func modify<R: Sendable>(_ body: (inout Entry) -> R) -> R {
-      storage.writeEntry(fp!, body)
+      storage.writeEntry(nonNullFingerprint, body)
     }
 
     /// `snapshot.get() == other.get()`.
@@ -129,7 +135,12 @@ public final class UserHistoryStorage: Sendable {
     public var isNull: Bool { fingerprint == nil }
 
     /// `*snapshot`. Traps when the snapshot is null.
-    public var entry: Entry { storage.readEntry(fingerprint!) }
+    public var entry: Entry {
+      guard let fingerprint else {
+        preconditionFailure("UserHistoryStorage: dereferencing a null ConstEntrySnapshot")
+      }
+      return storage.readEntry(fingerprint)
+    }
 
     /// `snapshot.get() == other.get()`.
     public func refersToSameEntry(as other: ConstEntrySnapshot) -> Bool {
@@ -411,7 +422,7 @@ public final class UserHistoryStorage: Sendable {
   /// Iterates the all entries in LRU order.
   /// `func` is the callback. When `func` returns false, stops the iteration.
   /// The entries are copied first; `fn` may use the storage.
-  public func forEach(_ fn: (UInt64, Entry) -> Bool) {
+  public func forEachEntry(_ fn: (UInt64, Entry) -> Bool) {
     for (fp, entry) in copyEntries() {
       if !fn(fp, entry) {
         break

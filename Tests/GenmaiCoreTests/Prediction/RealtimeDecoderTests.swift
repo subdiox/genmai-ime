@@ -7,6 +7,10 @@ import Testing
 @testable import GenmaiCore
 
 /// Simple immutable converter mock for the realtime conversion test.
+///
+/// `@unchecked Sendable` (ImmutableConverterInterface is `Sendable`): the
+/// handler captures non-`Sendable` `Segments`; it is set and called on the
+/// test's own task only.
 private final class PredictionMockImmutableConverter: ImmutableConverterInterface,
   @unchecked Sendable
 {
@@ -31,7 +35,7 @@ private final class PredictionMockImmutableConverter: ImmutableConverterInterfac
 
 /// `MockRealtimeDecoder` with `using RealtimeDecoder::RealtimeDecoder` and only
 /// Decode mocked.
-private final class DecodeOnlyMockRealtimeDecoder: RealtimeDecoder, @unchecked Sendable {
+private final class DecodeOnlyMockRealtimeDecoder: RealtimeDecoder {
   var decodeHandler: ((ConversionRequest) -> [PredictionResult])?
   override func decode(_ request: ConversionRequest) -> [PredictionResult] {
     decodeHandler?(request) ?? []

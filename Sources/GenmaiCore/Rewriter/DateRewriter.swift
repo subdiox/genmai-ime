@@ -398,7 +398,7 @@ public final class DateRewriter: RewriterInterface, Sendable {
     }
 
     var results: [String] = []
-    if !adToEra(Int(year), 0, /* unknown month */ &results) {
+    if !adToEra(Int(year), 0, &results) {  // month 0: unknown month
       return false
     }
 
@@ -1017,12 +1017,11 @@ private struct CivilMinute {
   init(_ time: Date, _ timeZone: TimeZone) {
     var calendar = Calendar(identifier: .gregorian)
     calendar.timeZone = timeZone
-    let c = calendar.dateComponents([.year, .month, .day, .hour, .minute], from: time)
-    year = c.year!
-    month = c.month!
-    day = c.day!
-    hour = c.hour!
-    minute = c.minute!
+    year = calendar.component(.year, from: time)
+    month = calendar.component(.month, from: time)
+    day = calendar.component(.day, from: time)
+    hour = calendar.component(.hour, from: time)
+    minute = calendar.component(.minute, from: time)
   }
 
   var weekday: Weekday { CivilDay(year, month, day).weekday }
@@ -1119,7 +1118,7 @@ private func getConversions(
     results.append("\(cm.year)年")
 
     var era: [String] = []
-    if DateRewriter.adToEra(cm.year, 0, /* unknown month */ &era) && !era.isEmpty {
+    if DateRewriter.adToEra(cm.year, 0, &era) && !era.isEmpty {  // month 0: unknown month
       for e in era.reversed() {
         results.append("\(e)年")
       }
@@ -1317,7 +1316,7 @@ private func validateNDigits(_ value: some StringProtocol, _ n: Int) -> String? 
     }
     return nil
   }
-  return String(String.UnicodeScalarView(u32value.map { UnicodeScalar($0)! }))
+  return String(String.UnicodeScalarView(u32value.compactMap { UnicodeScalar($0) }))
 }
 
 /// Gets n digits if possible.

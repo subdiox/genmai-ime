@@ -4,7 +4,7 @@ import Foundation
 import GenmaiBase
 import GenmaiProtocol
 
-public final class HandwritingDecoder: @unchecked Sendable {
+public final class HandwritingDecoder {
   public struct HandwritingQueryInfo: Sendable, Equatable {
     public var query = ""
     public var constraints: [String] = []

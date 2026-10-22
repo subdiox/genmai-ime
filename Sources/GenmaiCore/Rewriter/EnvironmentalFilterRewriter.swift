@@ -182,7 +182,7 @@ private func extractTargetEmojis(
       continue
     }
     let utf8Emoji = stringArray[Int(token.emojiIndex)]
-    results[version]!.append(Util.utf8ToUtf32(utf8Emoji))
+    results[version]?.append(Util.utf8ToUtf32(utf8Emoji))
   }
   return results
 }
@@ -385,15 +385,15 @@ public final class EnvironmentalFilterRewriter: RewriterInterface {
   private var flag: TextNormalizer.Flag = .kDefault
 
   // Filters for filtering target Emoji versions.
-  private var finderE12_1 = CharacterGroupFinder()
-  private var finderE13_0 = CharacterGroupFinder()
-  private var finderE13_1 = CharacterGroupFinder()
-  private var finderE14_0 = CharacterGroupFinder()
-  private var finderE15_0 = CharacterGroupFinder()
-  private var finderE15_1 = CharacterGroupFinder()
-  private var finderE16_0 = CharacterGroupFinder()
-  private var finderE17_0 = CharacterGroupFinder()
-  private var finderE18_0 = CharacterGroupFinder()
+  private var finderE12Dot1 = CharacterGroupFinder()
+  private var finderE13Dot0 = CharacterGroupFinder()
+  private var finderE13Dot1 = CharacterGroupFinder()
+  private var finderE14Dot0 = CharacterGroupFinder()
+  private var finderE15Dot0 = CharacterGroupFinder()
+  private var finderE15Dot1 = CharacterGroupFinder()
+  private var finderE16Dot0 = CharacterGroupFinder()
+  private var finderE17Dot0 = CharacterGroupFinder()
+  private var finderE18Dot0 = CharacterGroupFinder()
 
   /// This class does not take an ownership of the data (the views keep the
   /// mapped data alive).
@@ -407,15 +407,15 @@ public final class EnvironmentalFilterRewriter: RewriterInterface {
     let versionToTargets = extractTargetEmojis(
       [.e12_1, .e13_0, .e13_1, .e14_0, .e15_0, .e15_1, .e16_0, .e17_0, .e18_0],
       tokenArrayData, stringArrayData)
-    finderE12_1.initialize(versionToTargets[.e12_1]!)
-    finderE13_0.initialize(versionToTargets[.e13_0]!)
-    finderE13_1.initialize(versionToTargets[.e13_1]!)
-    finderE14_0.initialize(versionToTargets[.e14_0]!)
-    finderE15_0.initialize(versionToTargets[.e15_0]!)
-    finderE15_1.initialize(versionToTargets[.e15_1]!)
-    finderE16_0.initialize(versionToTargets[.e16_0]!)
-    finderE17_0.initialize(versionToTargets[.e17_0]!)
-    finderE18_0.initialize(versionToTargets[.e18_0]!)
+    finderE12Dot1.initialize(versionToTargets[.e12_1] ?? [])
+    finderE13Dot0.initialize(versionToTargets[.e13_0] ?? [])
+    finderE13Dot1.initialize(versionToTargets[.e13_1] ?? [])
+    finderE14Dot0.initialize(versionToTargets[.e14_0] ?? [])
+    finderE15Dot0.initialize(versionToTargets[.e15_0] ?? [])
+    finderE15Dot1.initialize(versionToTargets[.e15_1] ?? [])
+    finderE16Dot0.initialize(versionToTargets[.e16_0] ?? [])
+    finderE17Dot0.initialize(versionToTargets[.e17_0] ?? [])
+    finderE18Dot0.initialize(versionToTargets[.e18_0] ?? [])
   }
 
   /// `make_unique_from_tuples<EnvironmentalFilterRewriter>(
@@ -493,23 +493,23 @@ public final class EnvironmentalFilterRewriter: RewriterInterface {
           case .kanaExtendedA140:
             foundNonrenderable = findCodepointsInClosedRange(codepoints, 0x1B11F, 0x1B122)
           case .emoji121:
-            foundNonrenderable = finderE12_1.findMatch(codepoints)
+            foundNonrenderable = finderE12Dot1.findMatch(codepoints)
           case .emoji130:
-            foundNonrenderable = finderE13_0.findMatch(codepoints)
+            foundNonrenderable = finderE13Dot0.findMatch(codepoints)
           case .emoji131:
-            foundNonrenderable = finderE13_1.findMatch(codepoints)
+            foundNonrenderable = finderE13Dot1.findMatch(codepoints)
           case .emoji140:
-            foundNonrenderable = finderE14_0.findMatch(codepoints)
+            foundNonrenderable = finderE14Dot0.findMatch(codepoints)
           case .emoji150:
-            foundNonrenderable = finderE15_0.findMatch(codepoints)
+            foundNonrenderable = finderE15Dot0.findMatch(codepoints)
           case .emoji151:
-            foundNonrenderable = finderE15_1.findMatch(codepoints)
+            foundNonrenderable = finderE15Dot1.findMatch(codepoints)
           case .emoji160:
-            foundNonrenderable = finderE16_0.findMatch(codepoints)
+            foundNonrenderable = finderE16Dot0.findMatch(codepoints)
           case .emoji170:
-            foundNonrenderable = finderE17_0.findMatch(codepoints)
+            foundNonrenderable = finderE17Dot0.findMatch(codepoints)
           case .emoji180:
-            foundNonrenderable = finderE18_0.findMatch(codepoints)
+            foundNonrenderable = finderE18Dot0.findMatch(codepoints)
           case .egyptianHieroglyph52:
             foundNonrenderable = findCodepointsInClosedRange(codepoints, 0x13000, 0x1342E)
           case .ivsCharacter:

@@ -166,17 +166,17 @@ import Testing
     table.addRuleWithAttributes("c", "", "", [.newChunk, .noTransliteration])
 
     var chunkA = CharChunk(.conversionString, table)
-    var resultA = chunkA.addInputInternal("a")
+    let resultA = chunkA.addInputInternal("a")
     #expect(resultA.1.isEmpty)
     #expect(chunkA.raw == "a")
 
     var chunkB = CharChunk(.conversionString, table)
-    var resultB = chunkB.addInputInternal("b")
+    let resultB = chunkB.addInputInternal("b")
     #expect(resultB.1.isEmpty)
     #expect(chunkB.raw.isEmpty)
 
     var chunkC = CharChunk(.conversionString, table)
-    var resultC = chunkC.addInputInternal("c")
+    let resultC = chunkC.addInputInternal("c")
     #expect(resultC.1.isEmpty)
     #expect(chunkC.raw.isEmpty)
   }
@@ -682,7 +682,7 @@ import Testing
 
     var usedLength = 0
     var fixed = false
-    table.lookUpPrefix(table.parseSpecialKey("{r}j"), &usedLength, &fixed)
+    _ = table.lookUpPrefix(table.parseSpecialKey("{r}j"), &usedLength, &fixed)
     #expect(usedLength == 4)
     #expect(fixed)
 
@@ -1249,7 +1249,7 @@ import Testing
       chunk.addInput(&input)
     }
 
-    var leftNewChunk = chunk.splitChunk(.hiragana, 1)
+    _ = chunk.splitChunk(.hiragana, 1)
     do {
       var result = ""
       chunk.appendFixedResult(.hiragana, &result)
@@ -1946,7 +1946,7 @@ import Testing
       if t12r1 == .local {
         continue
       }
-      var chunk = CharChunk(t12r1, table)
+      let chunk = CharChunk(t12r1, table)
       for t12r2 in Transliterators.Transliterator.allCases {
         if t12r2 == .local {
           continue
@@ -1961,7 +1961,7 @@ import Testing
       if t12r == .local {
         continue
       }
-      var chunk = CharChunk(t12r, table)
+      let chunk = CharChunk(t12r, table)
       #expect(chunk.getTransliterator(.local) == t12r)
     }
 

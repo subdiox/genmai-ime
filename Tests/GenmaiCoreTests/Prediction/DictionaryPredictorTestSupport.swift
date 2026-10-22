@@ -10,7 +10,7 @@ import Testing
 @testable import GenmaiCore
 
 /// `MockAggregator`: DictionaryPredictor whose aggregation is mocked.
-final class DPMockAggregator: DictionaryPredictor, @unchecked Sendable {
+final class DPMockAggregator: DictionaryPredictor {
   var aggregateResultsForDesktopHandler: ((ConversionRequest) -> [PredictionResult])?
   var aggregateResultsForMixedConversionHandler: ((ConversionRequest) -> [PredictionResult])?
 
@@ -27,18 +27,20 @@ final class DPMockAggregator: DictionaryPredictor, @unchecked Sendable {
 
 /// Helper class to hold dictionary data and predictor objects.
 final class MockDataAndPredictor {
-  private(set) var mockAggregator: DPMockAggregator?
+  /// The mock aggregator of `init` (`initialize` replaces the predictor with
+  /// the real aggregation pipeline).
+  private(set) var aggregator: DPMockAggregator
   private(set) var mockDecoder: PredictionMockRealtimeDecoder
   private(set) var modules: PredictionTestModules
-  private(set) var dictionary: KeyedMockDictionary?
+  /// The dictionary used after `initialize`.
+  private(set) var mockDictionary = KeyedMockDictionary()
   private(set) var singleKanjiDictionary: PredictionMockSingleKanjiDictionary?
   private(set) var predictor: DictionaryPredictor
 
   init(_ supplementalModel: (any PredictionSupplementalModel)? = nil) throws {
     mockDecoder = PredictionMockRealtimeDecoder()
     modules = try PredictionTestModules.mock(supplementalModel: supplementalModel)
-    let aggregator = DPMockAggregator(modules, mockDecoder)
-    mockAggregator = aggregator
+    aggregator = DPMockAggregator(modules, mockDecoder)
     predictor = aggregator
   }
 
@@ -49,19 +51,16 @@ final class MockDataAndPredictor {
     _ supplementalModel: (any PredictionSupplementalModel)? = nil
   ) throws {
     let dictionary = KeyedMockDictionary()
-    self.dictionary = dictionary
+    mockDictionary = dictionary
     let singleKanjiDictionary = PredictionMockSingleKanjiDictionary()
     self.singleKanjiDictionary = singleKanjiDictionary
     mockDecoder = PredictionMockRealtimeDecoder()
     modules = try PredictionTestModules.mock(
       dictionary: dictionary.mock, suffixDictionary: suffixDictionary,
       singleKanjiDictionary: singleKanjiDictionary, supplementalModel: supplementalModel)
-    mockAggregator = nil
     predictor = DictionaryPredictor(modules, mockDecoder)
   }
 
-  var aggregator: DPMockAggregator { mockAggregator! }
-  var mockDictionary: KeyedMockDictionary { dictionary! }
   var connector: Connector { modules.getConnector() }
   var posMatcher: PosMatcher { modules.getPosMatcher() }
 
@@ -120,7 +119,7 @@ enum DPT {
     _ result: inout PredictionResult
   ) {
     result.innerSegmentBoundary.append(
-      encodeLengths(keyLen, valueLen, contentKeyLen, contentValueLen)!)
+      encodedLengths(keyLen, valueLen, contentKeyLen, contentValueLen))
   }
 
   static func findCandidateByKeyValue(

@@ -12,10 +12,23 @@ import Testing
 
 @testable import GenmaiCore
 
+/// `*EncodeLengths(...)`: records an issue (and returns 0) when the lengths
+/// cannot be encoded.
+func encodedLengths(
+  _ keyLen: Int, _ valueLen: Int, _ contentKeyLen: Int, _ contentValueLen: Int,
+  sourceLocation: SourceLocation = #_sourceLocation
+) -> UInt32 {
+  guard let encoded = encodeLengths(keyLen, valueLen, contentKeyLen, contentValueLen) else {
+    Issue.record(
+      "encodeLengths(\(keyLen), \(valueLen), \(contentKeyLen), \(contentValueLen)) failed",
+      sourceLocation: sourceLocation)
+    return 0
+  }
+  return encoded
+}
+
 /// engine::Modules built by ModulesPresetBuilder().Preset*(...).Build(data).
-final class PredictionTestModules: PredictionModules, UserHistoryPredictorModules,
-  @unchecked Sendable
-{
+final class PredictionTestModules: PredictionModules, UserHistoryPredictorModules {
   let dataManager: DataManager
   let posMatcher: PosMatcher
   let userDictionary: any UserDictionaryInterface
@@ -178,7 +191,7 @@ enum PT {
 /// Per-key behavior of a MockDictionary method (gmock
 /// `EXPECT_CALL(mock, Lookup*(StrEq(key), _, _)).WillRepeatedly(...)`).
 /// Later registrations take precedence, as in gmock.
-final class KeyedLookup: @unchecked Sendable {
+final class KeyedLookup {
   private var entries: [([UInt8], (any DictionaryCallback) -> Void)] = []
   private(set) var calledKeys: [String] = []
   /// Action for keys without a keyed entry (`Lookup*(_, _, _)`).
@@ -236,7 +249,7 @@ final class KeyedMockDictionary {
 
 /// `MockRealtimeDecoder`: decode / reverseDecode / decodeSuffix can be
 /// replaced by closures; the call counts are recorded.
-final class PredictionMockRealtimeDecoder: RealtimeDecoder, @unchecked Sendable {
+final class PredictionMockRealtimeDecoder: RealtimeDecoder {
   var decodeHandler: ((ConversionRequest) -> [PredictionResult])?
   var reverseDecodeHandler: ((ConversionRequest) -> [PredictionResult])?
   private(set) var decodeCount = 0
@@ -271,6 +284,9 @@ final class PredictionMockRealtimeDecoder: RealtimeDecoder, @unchecked Sendable 
 }
 
 /// `MockSingleKanjiDictionary`.
+///
+/// `@unchecked Sendable` is inherited from `SingleKanjiDictionary` and must be
+/// restated; the handler is set and called on the test's own task only.
 final class PredictionMockSingleKanjiDictionary: SingleKanjiDictionary, @unchecked Sendable {
   var lookupKanjiEntriesHandler: ((String, Bool) -> [String])?
 
@@ -280,7 +296,7 @@ final class PredictionMockSingleKanjiDictionary: SingleKanjiDictionary, @uncheck
 }
 
 /// `engine::MockSupplementalModel`.
-final class PredictionMockSupplementalModel: PredictionSupplementalModel, @unchecked Sendable {
+final class PredictionMockSupplementalModel: PredictionSupplementalModel {
   var isAvailableHandler: (() -> Bool)?
   var correctCompositionHandler: ((ConversionRequest) -> [TypeCorrectedQuery]?)?
   var populateTypeCorrectedQueryHandler: ((ConversionRequest, inout [PredictionResult]) -> Void)?

@@ -40,8 +40,9 @@ private func useInnerSegments(_ request: ConversionRequest) -> Bool {
 private enum FeatureValue {
   static let bytes: [UInt8] = [0x01, 0x00, 0x00, 0x00]
 
-  static func isValid(_ v: UnsafeRawBufferPointer) -> Bool {
-    (v[0] & 0x01) == 1
+  static func isValid(_ v: some Collection<UInt8>) -> Bool {
+    guard let first = v.first else { return false }
+    return (first & 0x01) == 1
   }
 }
 
@@ -58,8 +59,13 @@ private struct KeyTriggerValue {
 
   init() {}
 
-  init(_ v: UnsafeRawBufferPointer) {
-    raw = v.loadUnaligned(as: UInt32.self).littleEndian
+  /// Reads the little-endian value from the first 4 stored bytes.
+  init(_ v: some Collection<UInt8>) {
+    var value: UInt32 = 0
+    for (i, b) in v.prefix(4).enumerated() {
+      value |= UInt32(b) << (8 * UInt32(i))
+    }
+    raw = value
   }
 
   var isValid: Bool { (raw & 0x1) == 0 }
@@ -71,7 +77,9 @@ private struct KeyTriggerValue {
   }
 
   var bytes: [UInt8] {
-    withUnsafeBytes(of: raw.littleEndian) { Array($0) }
+    var bytes: [UInt8] = []
+    bytes.appendLittleEndian(raw)
+    return bytes
   }
 }
 
@@ -625,8 +633,8 @@ public final class UserSegmentHistoryRewriter: RewriterInterface {
       v2 = storage.lookup(segment.candidate(0).contentKey).map { KeyTriggerValue($0) }
     }
 
-    let v1Size = (v1 == nil || !v1!.isValid) ? 0 : Int(v1!.candidatesSize)
-    let v2Size = (v2 == nil || !v2!.isValid) ? 0 : Int(v2!.candidatesSize)
+    let v1Size = v1.map { $0.isValid ? Int($0.candidatesSize) : 0 } ?? 0
+    let v2Size = v2.map { $0.isValid ? Int($0.candidatesSize) : 0 } ?? 0
 
     let maxCandidatesSize = max(v1Size, v2Size)
     return maxCandidatesSize > 0 ? maxCandidatesSize : nil

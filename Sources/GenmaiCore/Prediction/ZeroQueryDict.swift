@@ -44,8 +44,8 @@ public struct ZeroQueryEntry: Sendable, Equatable {
   }
 }
 
-/// `@unchecked Sendable`: an immutable view of the data set.
-public struct ZeroQueryDict: @unchecked Sendable {
+/// An immutable view of the data set.
+public struct ZeroQueryDict: Sendable {
   private var tokenArray = DataView()
   private var stringArray = SerializedStringArray()
 

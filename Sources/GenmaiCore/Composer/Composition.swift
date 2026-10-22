@@ -40,6 +40,13 @@ public struct Composition: Sendable, Equatable, CustomStringConvertible {
 
   public var tableForTesting: Table? { table }
 
+  /// The table, which must be set before input is inserted (the C++ code
+  /// dereferences `table_` unconditionally).
+  private var requiredTable: Table {
+    guard let table else { preconditionFailure("Composition: the table is not set") }
+    return table
+  }
+
   public func getCharChunkList() -> CharChunkList { chunks }
 
   /// Mutable access to the chunks (C++ tests mutate chunks through the
@@ -370,7 +377,7 @@ public struct Composition: Sendable, Equatable, CustomStringConvertible {
     if it == chunks.count {
       return false
     }
-    return chunks[it].pending.hasBytePrefix(table!.parseSpecialKey("{?}"))
+    return chunks[it].pending.hasBytePrefix(requiredTable.parseSpecialKey("{?}"))
   }
 
   // Following methods are declared as public for unit test.
@@ -421,7 +428,7 @@ public struct Composition: Sendable, Equatable, CustomStringConvertible {
     }
 
     let leftIt = it - 1
-    if chunks[leftIt].isAppendable(inputT12r, table!) {
+    if chunks[leftIt].isAppendable(inputT12r, requiredTable) {
       return leftIt
     }
     return insertChunk(it)
@@ -429,7 +436,7 @@ public struct Composition: Sendable, Equatable, CustomStringConvertible {
 
   /// Insert a chunk to the prev of it.
   public mutating func insertChunk(_ it: Int) -> Int {
-    chunks.insert(CharChunk(inputT12r, table!), at: it)
+    chunks.insert(CharChunk(inputT12r, requiredTable), at: it)
     return it
   }
 
@@ -490,7 +497,7 @@ public struct Composition: Sendable, Equatable, CustomStringConvertible {
 
     while it != 0 {
       let leftIt = it - 1
-      if !chunks[leftIt].isConvertible(inputT12r, table!, chunks[it].pending + nextInput) {
+      if !chunks[leftIt].isConvertible(inputT12r, requiredTable, chunks[it].pending + nextInput) {
         return removed
       }
 

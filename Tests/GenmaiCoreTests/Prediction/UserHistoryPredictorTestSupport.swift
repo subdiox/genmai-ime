@@ -21,6 +21,7 @@ import Foundation
 import GenmaiBase
 import GenmaiProtocol
 import GenmaiStorage
+import Synchronization
 import Testing
 
 @testable import GenmaiCore
@@ -28,7 +29,7 @@ import Testing
 let kRevertId: UInt32 = 1234
 
 /// engine::MockSupplementalModel (only the methods UserHistoryPredictor uses).
-final class MockSupplementalModel: UserHistorySupplementalModel, @unchecked Sendable {
+final class MockSupplementalModel: UserHistorySupplementalModel {
   var correctCompositionHandler: ((ConversionRequest) -> [TypeCorrectedQuery]?)?
   var getReadingAlignmentHandler: ((String, String) -> [(String, String)])?
   private(set) var correctCompositionCalls = 0
@@ -44,7 +45,7 @@ final class MockSupplementalModel: UserHistorySupplementalModel, @unchecked Send
 }
 
 /// MockRealtimeDecoder.
-final class MockRealtimeDecoder: UserHistoryRealtimeDecoder, @unchecked Sendable {
+final class MockRealtimeDecoder: UserHistoryRealtimeDecoder {
   var decodeSuffixHandler: ((ConversionRequest, UInt16, String) -> PredictionResult?)?
   private(set) var decodeSuffixCalls = 0
 
@@ -57,7 +58,7 @@ final class MockRealtimeDecoder: UserHistoryRealtimeDecoder, @unchecked Sendable
 }
 
 /// The parts of engine::Modules used by UserHistoryPredictor.
-final class UserHistoryTestModules: UserHistoryPredictorModules, @unchecked Sendable {
+final class UserHistoryTestModules: UserHistoryPredictorModules {
   let dataManager: DataManager
   let posMatcher: PosMatcher
   let userDictionary: any UserDictionaryInterface
@@ -109,18 +110,14 @@ final class EntryRef {
 }
 
 /// A view of SegmentsProxy::history_result() (C++ SetHistoryResultView).
-final class HistoryResultView: ConversionRequestHistoryResult, PredictionHistoryResultConvertible,
-  @unchecked Sendable
-{
-  private weak var proxy: SegmentsProxy?
-  private let fallback: PredictionResult
+final class HistoryResultView: ConversionRequestHistoryResult, PredictionHistoryResultConvertible {
+  private let box: HistoryResultBox
 
-  init(_ proxy: SegmentsProxy) {
-    self.proxy = proxy
-    self.fallback = proxy.historyResult
+  init(_ box: HistoryResultBox) {
+    self.box = box
   }
 
-  var historyPredictionResult: PredictionResult { proxy?.historyResult ?? fallback }
+  var historyPredictionResult: PredictionResult { box.result }
 
   func historySuffixKeyAndValue(_ size: Int) -> (key: String, value: String) {
     historyPredictionResult.historySuffixKeyAndValue(size)
@@ -128,6 +125,16 @@ final class HistoryResultView: ConversionRequestHistoryResult, PredictionHistory
   var historyInnerSegmentsSize: Int { historyPredictionResult.historyInnerSegmentsSize }
   var historyRid: Int { historyPredictionResult.historyRid }
   var historyCost: Int { historyPredictionResult.historyCost }
+}
+
+/// The history result of a `SegmentsProxy`, shared with its views.
+final class HistoryResultBox: Sendable {
+  private let value = Mutex(PredictionResult())
+
+  var result: PredictionResult {
+    get { value.withLock { $0 } }
+    set { value.withLock { $0 = newValue } }
+  }
 }
 
 /// Needs to call UpdateHistoryResult() to update history_result_.
@@ -140,12 +147,13 @@ final class SegmentsProxy {
   }
 
   private var segments: [Segment] = []
-  private(set) var historyResult = PredictionResult()
+  private let historyBox = HistoryResultBox()
+  var historyResult: PredictionResult { historyBox.result }
 
   init() {}
 
   /// The view passed to ConversionRequest (SetHistoryResultView).
-  var historyResultView: HistoryResultView { HistoryResultView(self) }
+  var historyResultView: HistoryResultView { HistoryResultView(historyBox) }
 
   func addSegment(_ key: String) {
     var segment = Segment()
@@ -190,7 +198,7 @@ final class SegmentsProxy {
     _ contentKeyLen: Int, _ contentValueLen: Int
   ) {
     segments[segmentIndex].results[candidateIndex].innerSegmentBoundary.append(
-      encodeLengths(keyLen, valueLen, contentKeyLen, contentValueLen)!)
+      encodedLengths(keyLen, valueLen, contentKeyLen, contentValueLen))
     updateHistoryResult()
   }
 
@@ -248,7 +256,7 @@ final class SegmentsProxy {
   }
 
   func makeLearningResults() -> [PredictionResult] {
-    makeResults(false /* is_history */)
+    makeResults(false)  // is_history
   }
 
   func clear() { segments.removeAll() }
@@ -275,9 +283,9 @@ final class SegmentsProxy {
         result.description += topResult.description
         if topResult.innerSegmentBoundary.isEmpty {
           result.innerSegmentBoundary.append(
-            encodeLengths(
+            encodedLengths(
               topResult.key.utf8.count, topResult.value.utf8.count, topResult.key.utf8.count,
-              topResult.value.utf8.count)!)
+              topResult.value.utf8.count))
         } else {
           result.innerSegmentBoundary.append(contentsOf: topResult.innerSegmentBoundary)
         }
@@ -290,7 +298,7 @@ final class SegmentsProxy {
 
   private func updateHistoryResult() {
     // C++ takes front() of a possibly empty vector (UB); use the default.
-    historyResult = makeResults(true /* is_history */).first ?? PredictionResult()
+    historyBox.result = makeResults(true).first ?? PredictionResult()  // is_history
   }
 }
 

@@ -559,7 +559,7 @@ private struct SplitTestCase {
     #expect(composition.convertPosition(6, .rawString, .conversionString) == 3)
 
     var innerPosition = 0
-    var chunkIt = composition.getChunkAt(5, .rawString, &innerPosition)
+    let chunkIt = composition.getChunkAt(5, .rawString, &innerPosition)
 
     #expect(composition.chunks[chunkIt].raw == "tto")
     #expect(innerPosition == 3)
@@ -595,7 +595,7 @@ private struct SplitTestCase {
     // This makes the above rule ambiguous.
     table.addRule("na", "な", "")
 
-    var outputEmpty = composition.getStringWithTrimMode(.trim)
+    let outputEmpty = composition.getStringWithTrimMode(.trim)
     #expect(outputEmpty.isEmpty)
 
     var pos = 0
@@ -818,7 +818,7 @@ private struct SplitTestCase {
 
     do {  // "s|s"
       var innerPosition = 0
-      var chunkIt = composition.getChunkAt(1, .local, &innerPosition)
+      let chunkIt = composition.getChunkAt(1, .local, &innerPosition)
       #expect(innerPosition == 1)
       #expect(composition.chunks[chunkIt].getLength(.local) == 2)
 
@@ -828,7 +828,7 @@ private struct SplitTestCase {
 
     do {  // "ss|"
       var innerPosition = 0
-      var chunkIt = composition.getChunkAt(2, .local, &innerPosition)
+      let chunkIt = composition.getChunkAt(2, .local, &innerPosition)
       #expect(innerPosition == 2)
       #expect(composition.chunks[chunkIt].getLength(.local) == 2)
 
@@ -999,7 +999,7 @@ private struct SplitTestCase {
       var comp = Composition(table)
       comp.setInputMode(.hiragana)
 
-      var pos = 0
+      let pos = 0
 
       let it = comp.maybeSplitChunkAt(pos)
       var chunkIt = comp.getInsertionChunk(it)
@@ -1407,7 +1407,7 @@ private struct SplitTestCase {
     pos = composition.insertAt(pos, "h")
     #expect(pos == 3)
 
-    var output = composition.getStringWithTrimMode(.fix)
+    let output = composition.getStringWithTrimMode(.fix)
     #expect(output == "っｓｈ")
   }
 

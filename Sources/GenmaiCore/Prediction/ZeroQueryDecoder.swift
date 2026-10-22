@@ -5,7 +5,7 @@
 
 import GenmaiBase
 
-public final class ZeroQueryDecoder: @unchecked Sendable {
+public final class ZeroQueryDecoder {
   private let modules: any PredictionModules
   private let zeroQueryDict: ZeroQueryDict
   private let zeroQueryNumberDict: ZeroQueryDict

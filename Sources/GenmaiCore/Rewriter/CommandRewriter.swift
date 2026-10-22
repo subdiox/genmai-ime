@@ -35,7 +35,8 @@ private func findString(_ query: String, _ values: [String]) -> Bool {
 private func insertCommandCandidate(_ segment: Segment, _ referencePos: Int, _ insertPos: Int)
   -> Candidate
 {
-  let candidate = segment.insertCandidate(min(segment.candidatesSize, insertPos))!
+  let candidate = Candidate()
+  segment.insertCandidate(min(segment.candidatesSize, insertPos), candidate)
   candidate.assign(from: segment.candidate(referencePos))
   candidate.attributes |= Attribute.commandCandidate
   candidate.attributes |= Attribute.noLearning

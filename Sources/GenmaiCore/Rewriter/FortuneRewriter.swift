@@ -93,8 +93,9 @@ public final class FortuneRewriter: RewriterInterface {
       let at = Clock.getAbslTime()
       var calendar = Calendar(identifier: .gregorian)
       calendar.timeZone = Clock.getTimeZone()
-      let comps = calendar.dateComponents([.year, .month, .day, .weekday], from: at)
-      let today = CivilDay(year: comps.year!, month: comps.month!, day: comps.day!)
+      let today = CivilDay(
+        year: calendar.component(.year, from: at), month: calendar.component(.month, from: at),
+        day: calendar.component(.day, from: at))
 
       // Modify once per one day
       if today == lastUpdatedDay {
@@ -108,14 +109,14 @@ public final class FortuneRewriter: RewriterInterface {
       } else if today.month == 3 && today.day == 3 {
         // It's my birthday :)
         levels = kMyBirthdayLevels
-      } else if today.day == 13 && comps.weekday == 6 {  // Friday (Sunday = 1)
+      } else if today.day == 13 && calendar.component(.weekday, from: at) == 6 {  // Friday (Sunday = 1)
         // Friday the 13th
         levels = kFriday13Levels
       }
 
       let level = levelGenerator()
       for i in 0..<kNormalLevels.count where level <= levels[i] {
-        fortuneType = FortuneType(rawValue: i)!
+        fortuneType = FortuneType(rawValue: i) ?? fortuneType
         break
       }
       assert(fortuneType.rawValue < kNumFortuneTypes)

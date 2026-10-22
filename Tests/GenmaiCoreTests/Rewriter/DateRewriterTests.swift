@@ -35,7 +35,7 @@ private func initSegment(_ key: String, _ value: String, _ segments: Segments) {
 private func insertCandidate(
   _ key: String, _ value: String, _ position: Int, _ segment: Segment
 ) {
-  let cand = segment.insertCandidate(position)!
+  let cand = segment.insertNewCandidate(position)
   cand.contentKey = key
   cand.value = value
   cand.contentValue = value

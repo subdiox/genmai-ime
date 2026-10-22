@@ -127,28 +127,28 @@ public enum KeyEventUtil {
       return
     }
 
-    let newKeyCode: Character
+    let newKeyCode: UInt8
     switch numpadKey {
     case .multiply:
-      newKeyCode = "*"
+      newKeyCode = UInt8(ascii: "*")
     case .add:
-      newKeyCode = "+"
+      newKeyCode = UInt8(ascii: "+")
     case .subtract:
-      newKeyCode = "-"
+      newKeyCode = UInt8(ascii: "-")
     case .decimal:
-      newKeyCode = "."
+      newKeyCode = UInt8(ascii: ".")
     case .divide:
-      newKeyCode = "/"
+      newKeyCode = UInt8(ascii: "/")
     case .equals:
-      newKeyCode = "="
+      newKeyCode = UInt8(ascii: "=")
     case .comma:
-      newKeyCode = ","
+      newKeyCode = UInt8(ascii: ",")
     default:
       GenmaiLog.error("Unexpected numpad key: \(numpadKey)")
       return
     }
 
-    newKeyEvent.keyCode = UInt32(newKeyCode.asciiValue!)
+    newKeyEvent.keyCode = UInt32(newKeyCode)
   }
 
   /// Removes modifier keys which are specified by |remove_modifiers|.

@@ -67,7 +67,7 @@ extension PredictionSupplementalModel {
 }
 
 /// No-op supplemental model (engine::SupplementalModelStub).
-public final class PredictionSupplementalModelStub: PredictionSupplementalModel, @unchecked Sendable {
+public final class PredictionSupplementalModelStub: PredictionSupplementalModel, Sendable {
   public static let shared = PredictionSupplementalModelStub()
   public init() {}
   public func isAvailable() -> Bool { false }
