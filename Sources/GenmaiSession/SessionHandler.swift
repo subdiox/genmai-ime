@@ -155,7 +155,11 @@ public final class SessionHandler {
   /// Returns true if SessionHandle is available.
   public func getIsAvailable() -> Bool { isAvailable }
 
-  public var engine: any EngineInterface { engineImpl! }
+  /// The engine (C++ dereferences `engine_`; a handler without one is a programming error).
+  public var engine: any EngineInterface {
+    guard let engineImpl else { preconditionFailure("SessionHandler has no engine") }
+    return engineImpl
+  }
 
   public func getDataVersion() -> String { engine.getDataVersion() }
 

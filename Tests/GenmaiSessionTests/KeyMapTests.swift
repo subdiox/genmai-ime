@@ -147,8 +147,6 @@ private var isCompositionModeXCommandSupported: Bool {
 
   @Test func getCommandForKeyString() {
     var keymap = KeyMap<PrecompositionState.Commands>()
-    var ok = false
-    _ = ok
 
     // When a key event is not registered, GetCommand should return false.
     do {

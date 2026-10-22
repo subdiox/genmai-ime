@@ -239,15 +239,15 @@ public final class SessionHandlerTool {
   }
 
   private func evalCommandInternal(
-    _ input: inout Genmai_Commands_Input, _ output: UnsafeMutablePointer<Genmai_Commands_Output>?,
+    _ input: inout Genmai_Commands_Input, _ output: inout Genmai_Commands_Output,
     _ allowCallback: Bool
   ) -> Bool {
     input.id = id
     var command = Genmai_Commands_Command()
     command.input = input
     var result = handler.evalCommand(&command)
-    if result, let output {
-      output.pointee = command.output
+    if result {
+      output = command.output
     }
 
     // If callback is allowed and the callback field exists, evaluate the callback
@@ -260,7 +260,7 @@ public final class SessionHandlerTool {
       input2.command = command.output.callback.sessionCommand
       input2.command.text = callbackText
       // Disallow further recursion.
-      result = evalCommandInternal(&input2, output, false)
+      result = evalCommandInternal(&input2, &output, false)
     }
     callbackText = ""
     return result
@@ -269,11 +269,13 @@ public final class SessionHandlerTool {
   private func evalCommand(_ input: inout Genmai_Commands_Input, _ output: inout Genmai_Commands_Output)
     -> Bool
   {
-    withUnsafeMutablePointer(to: &output) { evalCommandInternal(&input, $0, true) }
+    evalCommandInternal(&input, &output, true)
   }
 
   private func evalCommand(_ input: inout Genmai_Commands_Input, _ output: Never?) -> Bool {
-    evalCommandInternal(&input, nil, true)
+    // The C++ passes a null output; the result is discarded.
+    var discarded = Genmai_Commands_Output()
+    return evalCommandInternal(&input, &discarded, true)
   }
 }
 
@@ -289,7 +291,8 @@ func mergeFrom<M: SwiftProtobuf.Message>(_ target: inout M, _ source: M) {
 
 /// Builds the text format "a { b { c: value } }" for `names` = [a, b, c].
 private func nestedTextFormat(_ names: [String], _ value: String) -> String {
-  var text = "\(names.last!): \(value)"
+  guard let last = names.last else { return value }
+  var text = "\(last): \(value)"
   for name in names.dropLast().reversed() {
     text = "\(name) { \(text) }"
   }
@@ -653,12 +656,12 @@ public final class SessionHandlerInterpreter {
     } else if command == "SET_REQUEST" {
       try assertTrue(args.count >= 3)
       try assertTrue(
-        setOrAddFieldValueFromString(Array(args[1..<(args.count - 1)]), args.last!, &request))
+        setOrAddFieldValueFromString(Array(args[1..<(args.count - 1)]), args[args.count - 1], &request))
       try assertTrue(client.setRequest(request, &lastOutput))
     } else if command == "SET_CONFIG" {
       try assertTrue(args.count >= 3)
       try assertTrue(
-        setOrAddFieldValueFromString(Array(args[1..<(args.count - 1)]), args.last!, &config))
+        setOrAddFieldValueFromString(Array(args[1..<(args.count - 1)]), args[args.count - 1], &config))
       try assertTrue(client.setConfig(config, &lastOutput))
     } else if command == "MERGE_DECODER_EXPERIMENT_PARAMS" {
       try assertTrue(args.count == 2)
