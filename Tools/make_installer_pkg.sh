@@ -77,7 +77,6 @@ codesign --verify --strict --deep "$WORK/root$APP_PATH"
 
 substitute() {
   sed -e "s|@@@GENMAI_APPLICATIONS_DIR@@@|$APPLICATIONS_DIR|g" \
-      -e "s|@@@GENMAI_APP_PATH@@@|$APP_PATH|g" \
       -e "s|@@@GENMAI_APP_NAME@@@|${APP_PATH:t}|g" \
       -e "s|@@@GENMAI_PACKAGE_NAME@@@|$PKG_NAME|g" \
       -e "s|@@@GENMAI_VERSION@@@|$VERSION|g" \

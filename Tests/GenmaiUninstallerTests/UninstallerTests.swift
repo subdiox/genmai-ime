@@ -149,13 +149,30 @@ final class Counter {
       Uninstaller.deleteCommand(for: ["/a b", "/c"]) == "/bin/rm -rf '/a b' && /bin/rm -rf '/c'")
   }
 
-  @Test func appleScriptSource() {
-    let command = Uninstaller.deleteCommand(for: [#"/x "y" \z"#])
-    #expect(
-      AppleScriptPrivilegedCommandRunner.source(for: command)
-        == #"do shell script "/bin/rm -rf '/x \"y\" \\z'" with administrator privileges"#)
-    #expect(AppleScriptPrivilegedCommandRunner.kAuthorizationErrorNumbers.contains(-128))
-    #expect(AppleScriptPrivilegedCommandRunner.kAuthorizationErrorNumbers.contains(-60006))
+  @Test func authorizationScript() {
+    let script = AuthorizationPrivilegedCommandRunner.script(for: Uninstaller.deleteCommand(for: ["/x"]))
+    #expect(script == "/bin/rm -rf '/x'; echo genmai-uninstaller-exit:$?")
+    #expect(AuthorizationPrivilegedCommandRunner.exitStatus(in: "genmai-uninstaller-exit:0\n") == 0)
+    #expect(AuthorizationPrivilegedCommandRunner.exitStatus(in: "rm: x: Permission denied\ngenmai-uninstaller-exit:1\n") == 1)
+    #expect(AuthorizationPrivilegedCommandRunner.exitStatus(in: "") == nil)
+    #expect(AuthorizationPrivilegedCommandRunner.kAuthorizationErrors.contains(errAuthorizationCanceled))
+  }
+
+  @Test func perUserInstallNeedsNoAuthorization() async throws {
+    let install = try FakeInstall()
+    defer { install.remove() }
+    try install.makeBundle(
+      "Library/Input Methods/Genmai.app", identifier: UninstallerLayout.kBundleIdentifier, home: true)
+    let runner = FixedCommandRunner(.authorizationFailed)
+    let controller = UninstallerController(
+      uninstaller: Uninstaller(layout: install.layout, runner: runner), language: .english, icon: NSImage(),
+      terminate: {})
+    #expect(controller.items.map(\.kind) == [.userInputMethod])
+    #expect(!controller.needsAuthorization)
+    await controller.uninstall()
+    #expect(controller.phase == .succeeded)
+    #expect(runner.commands.isEmpty)
+    #expect(!install.exists("Library/Input Methods/Genmai.app", home: true))
   }
 
   @Test func deleteFilesRemovesThePortAndKeepsEverythingElse() throws {
@@ -204,14 +221,14 @@ final class Counter {
     defer { install.remove() }
     try install.populate()
     let items = install.layout.removeItems()
-    #expect(items.map(\.kind) == [.inputMethod, .applicationsFolder, .manualInputMethod])
+    #expect(items.map(\.kind) == [.inputMethod, .applicationsFolder, .userInputMethod])
     #expect(items.map(\.path) == install.layout.removePaths())
     #expect(
       RemoveItem(kind: .inputMethod, path: "/Library/Input Methods/Genmai.app/").displayPath
         == "/Library/Input Methods/Genmai.app")
     let home = FileManager.default.homeDirectoryForCurrentUser.path(percentEncoded: false)
     #expect(
-      RemoveItem(kind: .manualInputMethod, path: home + "Library/Input Methods/Genmai.app/").displayPath
+      RemoveItem(kind: .userInputMethod, path: home + "Library/Input Methods/Genmai.app/").displayPath
         == "~/Library/Input Methods/Genmai.app")
   }
 
@@ -226,7 +243,7 @@ final class Counter {
     #expect(japanese.later == "後で")
     #expect(japanese.keptNote.contains("再インストール"))
     for strings in [english, japanese] {
-      for text in [strings.confirmMessage, strings.succeededMessage, strings.removalFailedMessage] {
+      for text in [strings.confirmMessage(needsAuthorization: true), strings.confirmMessage(needsAuthorization: false), strings.succeededMessage, strings.removalFailedMessage] {
         #expect(!text.contains("Mozc") && !text.contains("Google") && !text.contains("..."))
       }
     }
@@ -245,7 +262,10 @@ struct ControllerFixture {
     let runner = FixedCommandRunner(result)
     let reboots = self.reboots
     let terminated = self.terminated
-    var uninstaller = Uninstaller(layout: try FakeInstall().layout, runner: runner)
+    // Installed for all users: removing it needs the (fake) authorization.
+    let install = try FakeInstall()
+    try install.makeBundle("Library/Input Methods/Genmai.app", identifier: UninstallerLayout.kBundleIdentifier)
+    var uninstaller = Uninstaller(layout: install.layout, runner: runner)
     uninstaller.reboot = {
       reboots.count += 1
       return true
@@ -261,8 +281,8 @@ struct ControllerFixture {
   @Test func cancelTerminatesWithoutUninstalling() throws {
     let fixture = try ControllerFixture(.success)
     #expect(fixture.controller.phase == .confirm)
-    // No /Applications/Genmai (only 0.1.0 installed one): just the input method, which holds the uninstaller.
     #expect(fixture.controller.items.map(\.kind) == [.inputMethod])
+    #expect(fixture.controller.needsAuthorization)
     fixture.controller.close()
     #expect(fixture.terminated.count == 1)
     #expect(fixture.runner.commands.isEmpty)
@@ -406,6 +426,7 @@ struct ControllerFixture {
   @Test func nothingIsRemovedWithoutAuthorization() async throws {
     let install = try FakeInstall()
     defer { install.remove() }
+    try install.makeBundle("Library/Input Methods/Genmai.app", identifier: UninstallerLayout.kBundleIdentifier)
     try Self.makeProfile(install)
     let controller = UninstallerController(
       uninstaller: Uninstaller(layout: install.layout, runner: FixedCommandRunner(.authorizationFailed)),

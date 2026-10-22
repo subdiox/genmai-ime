@@ -16,7 +16,7 @@ final class UninstallerAppDelegate: NSObject, NSApplicationDelegate {
 struct UninstallerApp: App {
   @NSApplicationDelegateAdaptor(UninstallerAppDelegate.self) private var appDelegate
   @State private var controller = UninstallerController(
-    uninstaller: Uninstaller(layout: .installed, runner: AppleScriptPrivilegedCommandRunner()))
+    uninstaller: Uninstaller(layout: .installed, runner: AuthorizationPrivilegedCommandRunner()))
 
   var body: some Scene {
     Window(UninstallerStrings().windowTitle, id: "uninstaller") {

@@ -30,10 +30,13 @@ struct UninstallerStrings: Sendable, Equatable {
   // Confirmation
 
   var confirmTitle: String { pick("Uninstall Genmai?", "Genmaiをアンインストールしますか？") }
-  var confirmMessage: String {
-    pick(
-      "Genmai will be removed from this Mac. You’ll be asked for an administrator password.",
-      "このMacからGenmaiを削除します。管理者のパスワードの入力を求められます。")
+  /// `needsAuthorization`: Genmai is installed for all users (administrator rights, Touch ID or password).
+  func confirmMessage(needsAuthorization: Bool) -> String {
+    needsAuthorization
+      ? pick(
+        "Genmai will be removed from this Mac. You’ll be asked to authenticate as an administrator.",
+        "このMacからGenmaiを削除します。管理者として認証を求められます。")
+      : pick("Genmai will be removed for your user account.", "このユーザーのGenmaiを削除します。")
   }
   var alsoRemove: String { pick("Also remove", "次のデータも削除する") }
   var keptNote: String {
@@ -62,9 +65,9 @@ struct UninstallerStrings: Sendable, Equatable {
 
   func itemName(_ kind: RemoveItem.Kind) -> String {
     switch kind {
-    case .inputMethod: pick("Genmai input method", "Genmai入力メソッド")
+    case .inputMethod: pick("Genmai input method (for all users)", "Genmai入力メソッド（すべてのユーザー用）")
     case .applicationsFolder: pick("Genmai folder of an earlier version", "以前のバージョンのGenmaiフォルダ")
-    case .manualInputMethod: pick("Genmai input method in your home folder", "ホームフォルダのGenmai入力メソッド")
+    case .userInputMethod: pick("Genmai input method (for this user)", "Genmai入力メソッド（このユーザー用）")
     }
   }
 

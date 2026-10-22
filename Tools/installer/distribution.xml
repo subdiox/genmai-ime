@@ -6,7 +6,7 @@
  (the Swift package targets macOS 15) and hostArchitectures, which Tools/make_installer_pkg.sh fills with
  the architectures of the built binaries (@@@HOST_ARCHITECTURES@@@), and no logout at the end: the postinstall
  script restarts the input method (there are no launch agents to load), so updates take effect at once.
- Not in Mozc: localized welcome and conclusion pages (Resources/{en,ja}.lproj/*.html) and the app icon as the
+ Not in Mozc: the destination can be all users or the current user's home (domains), localized welcome and conclusion pages (Resources/{en,ja}.lproj/*.html) and the app icon as the
  background in both appearances (background.tiff, made from Tools/assets/genmai.icns by make_installer_pkg.sh).
 -->
 
@@ -20,8 +20,9 @@
         <os-version min="15.0"/>
     </allowed-os-versions>
     <pkg-ref id="io.github.subdiox.genmai.pkg"/>
-    <domains enable_localSystem="true"/>
-    <options rootVolumeOnly="true"/>
+    <!-- "Install for all users of this computer" (default; /Library/Input Methods) or "Install for me only"
+         (~/Library/Input Methods, no administrator rights). -->
+    <domains enable_localSystem="true" enable_currentUserHome="true" enable_anywhere="false"/>
     <options customize="never" require-scripts="false" hostArchitectures="@@@HOST_ARCHITECTURES@@@"/>
     <choices-outline>
         <line choice="default">

@@ -1,0 +1,32 @@
+{
+  "fill" : {
+    "linear-gradient" : [
+      "srgb:0.83000,0.62000,0.38000,1.00000",
+      "srgb:0.55000,0.36000,0.20000,1.00000"
+    ]
+  },
+  "groups" : [
+    {
+      "layers" : [
+        { "glass" : true, "image-name" : "symbol.png", "name" : "symbol" },
+        { "glass" : true, "image-name" : "disc.png", "name" : "disc" }
+      ],
+      "name" : "badge",
+      "shadow" : { "kind" : "neutral", "opacity" : 0.5 },
+      "translucency" : { "enabled" : false, "value" : 0.5 }
+    },
+    {
+      "layers" : [
+        { "glass" : false, "image-name" : "glyph.png", "name" : "glyph" }
+      ],
+      "name" : "glyph",
+      "shadow" : { "kind" : "none", "opacity" : 0 },
+      "translucency" : { "enabled" : false, "value" : 0 }
+    }
+  ],
+  "supported-platforms" : {
+    "squares" : [
+      "macOS"
+    ]
+  }
+}

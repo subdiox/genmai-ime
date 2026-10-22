@@ -61,7 +61,7 @@ private struct UninstallerHeader: View {
   private var message: String {
     let strings = controller.strings
     switch controller.phase {
-    case .confirm, .removing: return strings.confirmMessage
+    case .confirm, .removing: return strings.confirmMessage(needsAuthorization: controller.needsAuthorization)
     case .succeeded: return strings.succeededMessage
     case .failed(.authorization): return strings.authorizationFailedMessage
     case .failed(.removal): return strings.removalFailedMessage

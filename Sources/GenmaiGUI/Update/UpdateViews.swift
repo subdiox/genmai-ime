@@ -8,7 +8,7 @@ import SwiftUI
 public enum UpdateStrings {
   public enum Key: CaseIterable, Sendable {
     case section, automaticCheck, currentVersion, checkNow, checking, upToDate, available, install, downloading,
-      cancel, installerOpened, checkFailed, installFailed, skip, later, releaseNotes, dialogTitle
+      cancel, installerOpened, installed, checkFailed, installFailed, skip, later, releaseNotes, dialogTitle
   }
 
   static let english: [Key: String] = [
@@ -23,6 +23,7 @@ public enum UpdateStrings {
     .downloading: "Downloading… %@ of %@",
     .cancel: "Cancel",
     .installerOpened: "The installer is open. Follow its steps to finish the update.",
+    .installed: "The update is installed. [ProductName] uses it the next time you type.",
     .checkFailed: "Could not check for updates: %@",
     .installFailed: "Could not download the update: %@",
     .skip: "Skip This Version",
@@ -43,6 +44,7 @@ public enum UpdateStrings {
     .downloading: "ダウンロード中… %1$@ / %2$@",
     .cancel: "キャンセル",
     .installerOpened: "インストーラを開きました。画面の指示に従ってアップデートを完了してください。",
+    .installed: "アップデートをインストールしました。次に入力するときから新しいバージョンになります。",
     .checkFailed: "アップデートを確認できませんでした: %@",
     .installFailed: "アップデートをダウンロードできませんでした: %@",
     .skip: "このバージョンをスキップ",
@@ -91,7 +93,7 @@ struct UpdateStatusView: View {
           .textSelection(.enabled)
         Spacer()
         Button(UpdateStrings.text(.checkNow)) { Task { await update.check() } }
-          .disabled(update.latest == .checking || update.install != .idle && update.install != .opened)
+          .disabled(update.latest == .checking || update.install.isBusy)
       }
       UpdateLatestView(update: update)
       UpdateInstallView(update: update, showsInstallButton: showsInstallButton)
@@ -159,6 +161,14 @@ struct UpdateInstallView: View {
         }
         Button(UpdateStrings.text(.cancel)) { update.cancelInstall() }
       }
+    case .installed:
+      Label {
+        Text(verbatim: UpdateStrings.text(.installed))
+      } icon: {
+        Image(systemName: "checkmark.circle.fill")
+          .foregroundStyle(.green)
+      }
+      .font(.callout)
     case .opened:
       Text(verbatim: UpdateStrings.text(.installerOpened))
         .font(.callout)

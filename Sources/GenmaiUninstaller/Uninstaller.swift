@@ -5,23 +5,24 @@
 // +doUninstall: (delete, then one modal dialog per outcome) is UninstallerController's single-window flow.
 //
 // Deviations from C++:
-// - Privileges: the C++ obtains an AuthorizationRef (AuthorizationCopyRights with kAuthorizationRightExecute)
-//   and runs /bin/rm through AuthorizationExecuteWithPrivileges, which has been deprecated since macOS 10.7 and
-//   has no in-process replacement short of a privileged helper (SMAppService daemon + XPC), which is far too
-//   heavy for a one-shot uninstaller. The port runs the same `/bin/rm -rf <path>` commands, chained with `&&`
-//   so the first failure stops the rest like the C++ loop, as one AppleScript
-//   `do shell script "..." with administrator privileges` (NSAppleScript, in process, so the system password
-//   prompt names this app). Authorization and execution therefore happen in one step; a cancelled or denied
-//   authorization (AppleScript errors -128, -60005, -60006, -60007) is reported as the C++'s auth error, any
-//   other failure as the uninstall error. The runner is injectable (`PrivilegedCommandRunner`) so tests run
-//   the generated command unprivileged against a temporary directory.
+// - Privileges: like the C++, administrator rights come from Authorization Services (AuthorizationCopyRights
+//   with kAuthorizationRightExecute: the system's own dialog, which offers Touch ID) and `/bin/rm` runs as root
+//   through AuthorizationExecuteWithPrivileges. That call has been deprecated since macOS 10.7 (Swift marks it
+//   unavailable, so it is looked up with dlsym); the only replacement is a privileged helper (SMAppService daemon
+//   + XPC) that the user first has to allow in System Settings › Login Items, far too heavy for a one-shot
+//   uninstaller. A cancelled or denied authorization is the C++'s auth error, any other failure the uninstall
+//   error. Only installations outside the home folder need it: a per-user installation (~/Library/Input
+//   Methods, Installer's "Install for me only") is removed without administrator rights. The runner is
+//   injectable (`PrivilegedCommandRunner`) so tests run the generated command unprivileged against a temporary
+//   directory.
 // - Paths (kRemovePaths): adapted to this port's install layout (Tools/make_installer_pkg.sh) and bundle id
 //   io.github.subdiox.genmai.inputmethod.Japanese, which was chosen so that the Swift port and the C++ Mozc
 //   (/Library/Input Methods/Mozc.app, /Applications/Mozc) can be installed side by side:
-//     /Library/Input Methods/Genmai.app   (C++: /Library/Input Methods/Mozc.app)
-//     /Applications/Genmai                (C++: /Applications/Mozc, holds this uninstaller)
-//   plus a manually installed bundle from Tools/make_ime_bundle.sh (~/Library/Input Methods/Genmai.app), but
-//   only if its CFBundleIdentifier is this port's, so the C++ Mozc is never removed. The LaunchAgents plists of the converter / renderer are n/a: the Swift IME runs both
+//     /Library/Input Methods/Genmai.app   (C++: /Library/Input Methods/Mozc.app; all users)
+//     /Applications/Genmai                (C++: /Applications/Mozc; only 0.1.0 installed it)
+//     ~/Library/Input Methods/Genmai.app  (this user only, or a development copy from Tools/make_ime_bundle.sh)
+//   each only if it is there, and the bundles only if their CFBundleIdentifier is this port's, so the C++ Mozc
+//   is never removed. The LaunchAgents plists of the converter / renderer are n/a: the Swift IME runs both
 //   in-process and installs no LaunchAgents. Like the C++, the user's profile (~/Library/Application Support/
 //   Genmai) is kept.
 // - MacUtil::RemovePrelauncherLoginItem is n/a (the in-process design has no prelauncher login item).
@@ -32,6 +33,7 @@
 
 import AppKit
 import Foundation
+import Security
 import GenmaiBase
 
 /// Where the port's files are installed. `systemRoot` / `homeDirectory` exist so that tests can point the
@@ -63,22 +65,25 @@ struct UninstallerLayout: Sendable, Equatable {
     systemRoot.appending(path: "Applications/\(Self.kProductName)", directoryHint: .isDirectory)
   }
 
-  /// The bundle that Tools/make_ime_bundle.sh tells the user to copy by hand (the system-wide location is
-  /// `inputMethodBundle`).
+  /// The per-user installation (Installer's "Install for me only", or a copy of Tools/make_ime_bundle.sh's
+  /// bundle); the system-wide location is `inputMethodBundle`.
   var manualInstallCandidates: [URL] {
     [homeDirectory.appending(path: "Library/Input Methods/\(Self.kProductName).app", directoryHint: .isDirectory)]
   }
 
-  /// kRemovePaths: the input method (with this uninstaller inside), the applications folder of an old version if
-  /// it is there, then any manually installed bundle of this port.
+  /// kRemovePaths: the input method installed for all users and the applications folder of an old version (both
+  /// need administrator rights), then the input method installed for this user; each only if it is there.
   func removeItems() -> [RemoveItem] {
-    var items = [RemoveItem(kind: .inputMethod, path: inputMethodBundle.path(percentEncoded: false))]
+    var items: [RemoveItem] = []
+    if Self.bundleIdentifier(at: inputMethodBundle) == Self.kBundleIdentifier {
+      items.append(RemoveItem(kind: .inputMethod, path: inputMethodBundle.path(percentEncoded: false)))
+    }
     if FileManager.default.fileExists(atPath: applicationsFolder.path(percentEncoded: false)) {
       items.append(RemoveItem(kind: .applicationsFolder, path: applicationsFolder.path(percentEncoded: false)))
     }
     for candidate in manualInstallCandidates
     where Self.bundleIdentifier(at: candidate) == Self.kBundleIdentifier {
-      items.append(RemoveItem(kind: .manualInputMethod, path: candidate.path(percentEncoded: false)))
+      items.append(RemoveItem(kind: .userInputMethod, path: candidate.path(percentEncoded: false)))
     }
     return items
   }
@@ -192,7 +197,7 @@ struct RemoveItem: Sendable, Equatable, Hashable {
     /// /Applications/Genmai of an old version.
     case applicationsFolder
     /// ~/Library/Input Methods/Genmai.app.
-    case manualInputMethod
+    case userInputMethod
   }
 
   var kind: Kind
@@ -217,45 +222,85 @@ enum PrivilegedCommandResult: Sendable, Equatable {
   case failed(String)
 }
 
-/// Runs a /bin/sh command line as root. Replaces AuthorizationCopyRights + AuthorizationExecuteWithPrivileges.
+/// Runs a /bin/sh command line as root.
 @MainActor
 protocol PrivilegedCommandRunner {
   func run(_ shellCommand: String) -> PrivilegedCommandResult
 }
 
-/// `do shell script "<command>" with administrator privileges` through NSAppleScript.
-struct AppleScriptPrivilegedCommandRunner: PrivilegedCommandRunner {
-  /// AppleScript / Authorization Services errors that mean "no rights were granted".
-  static let kAuthorizationErrorNumbers: Set<Int> = [
-    -128,  // userCanceledErr
-    -60005,  // errAuthorizationDenied
-    -60006,  // errAuthorizationCanceled
-    -60007,  // errAuthorizationInteractionNotAllowed
+/// GetPrevilegeRights + AuthorizationExecuteWithPrivileges, like the C++: the system's authorization dialog (with
+/// Touch ID), then `/bin/sh -c <command>` as root.
+struct AuthorizationPrivilegedCommandRunner: PrivilegedCommandRunner {
+  /// Authorization Services errors that mean "no rights were granted".
+  static let kAuthorizationErrors: Set<OSStatus> = [
+    errAuthorizationDenied, errAuthorizationCanceled, errAuthorizationInteractionNotAllowed,
   ]
+  /// Printed after the command with its exit status (AuthorizationExecuteWithPrivileges does not report it).
+  static let exitMarker = "genmai-uninstaller-exit:"
 
-  static func source(for shellCommand: String) -> String {
-    "do shell script \"\(appleScriptEscaped(shellCommand))\" with administrator privileges"
+  /// The command line run as root: the command, then its exit status.
+  static func script(for shellCommand: String) -> String {
+    "\(shellCommand); echo \(exitMarker)$?"
   }
 
-  /// Escapes `string` for an AppleScript string literal.
-  static func appleScriptEscaped(_ string: String) -> String {
-    string.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\"")
+  /// The exit status in the command's output, nil if it is missing.
+  static func exitStatus(in output: String) -> Int32? {
+    guard let range = output.range(of: exitMarker, options: .backwards) else { return nil }
+    return Int32(output[range.upperBound...].trimmingCharacters(in: .whitespacesAndNewlines))
   }
+
+  private typealias ExecuteWithPrivileges = @convention(c) (
+    AuthorizationRef, UnsafePointer<CChar>, AuthorizationFlags, UnsafePointer<UnsafeMutablePointer<CChar>?>,
+    UnsafeMutablePointer<UnsafeMutablePointer<FILE>?>?
+  ) -> OSStatus
 
   func run(_ shellCommand: String) -> PrivilegedCommandResult {
-    guard let script = NSAppleScript(source: Self.source(for: shellCommand)) else {
-      return .failed("cannot compile the AppleScript")
+    var authorization: AuthorizationRef?
+    guard AuthorizationCreate(nil, nil, [], &authorization) == errAuthorizationSuccess, let authorization else {
+      return .failed("AuthorizationCreate failed")
     }
-    var error: NSDictionary?
-    _ = script.executeAndReturnError(&error)
-    guard let error else {
-      return .success
+    defer { AuthorizationFree(authorization, [.destroyRights]) }
+    let status = kAuthorizationRightExecute.withCString { name in
+      var item = AuthorizationItem(name: name, valueLength: 0, value: nil, flags: 0)
+      return withUnsafeMutablePointer(to: &item) { items in
+        var rights = AuthorizationRights(count: 1, items: items)
+        return AuthorizationCopyRights(
+          authorization, &rights, nil, [.interactionAllowed, .extendRights, .preAuthorize], nil)
+      }
     }
-    let number = (error[NSAppleScript.errorNumber] as? Int) ?? 0
-    if Self.kAuthorizationErrorNumbers.contains(number) {
+    if Self.kAuthorizationErrors.contains(status) {
       return .authorizationFailed
     }
-    return .failed((error[NSAppleScript.errorMessage] as? String) ?? "AppleScript error \(number)")
+    guard status == errAuthorizationSuccess else {
+      return .failed("AuthorizationCopyRights: \(status)")
+    }
+    guard let symbol = dlsym(UnsafeMutableRawPointer(bitPattern: -2), "AuthorizationExecuteWithPrivileges") else {
+      return .failed("AuthorizationExecuteWithPrivileges is not available")
+    }
+    let execute = unsafeBitCast(symbol, to: ExecuteWithPrivileges.self)
+    var pipe: UnsafeMutablePointer<FILE>?
+    let arguments = ["-c", Self.script(for: shellCommand)].map { strdup($0) }
+    defer { arguments.forEach { free($0) } }
+    let result = (arguments + [nil]).withUnsafeBufferPointer { argv in
+      execute(authorization, "/bin/sh", [], argv.baseAddress!, &pipe)
+    }
+    if Self.kAuthorizationErrors.contains(result) {
+      return .authorizationFailed
+    }
+    guard result == errAuthorizationSuccess, let pipe else {
+      return .failed("AuthorizationExecuteWithPrivileges: \(result)")
+    }
+    // The command's output until it exits (the pipe closes).
+    var output = Data()
+    var buffer = [UInt8](repeating: 0, count: 4096)
+    while true {
+      let count = fread(&buffer, 1, buffer.count, pipe)
+      if count <= 0 { break }
+      output.append(contentsOf: buffer[0..<count])
+    }
+    fclose(pipe)
+    let text = String(decoding: output, as: UTF8.self)
+    return Self.exitStatus(in: text) == 0 ? .success : .failed(text)
   }
 }
 
@@ -275,14 +320,30 @@ struct Uninstaller {
     paths.map { "/bin/rm -rf \(shellQuoted($0))" }.joined(separator: " && ")
   }
 
-  /// GetPrevilegeRights + DeleteFiles.
+  /// GetPrevilegeRights + DeleteFiles: the paths outside the home folder as root (one authorization), then the
+  /// user's own ones without rights. Nothing is removed if the authorization is refused.
   func deleteFiles() -> PrivilegedCommandResult {
+    let home = layout.homeDirectory.standardizedFileURL.path(percentEncoded: false)
     let paths = layout.removePaths()
-    let result = runner.run(Self.deleteCommand(for: paths))
-    if case .failed(let message) = result {
-      NSLog("Failed to remove path: %@", message)
+    let system = paths.filter { !$0.hasPrefix(home) }
+    if !system.isEmpty {
+      let result = runner.run(Self.deleteCommand(for: system))
+      if result != .success {
+        if case .failed(let message) = result {
+          NSLog("Failed to remove path: %@", message)
+        }
+        return result
+      }
     }
-    return result
+    for path in paths where path.hasPrefix(home) && FileManager.default.fileExists(atPath: path) {
+      do {
+        try FileManager.default.removeItem(atPath: path)
+      } catch {
+        NSLog("Failed to remove path: %@", "\(error)")
+        return .failed("\(error)")
+      }
+    }
+    return .success
   }
 
   /// RunReboot: asks loginwindow to restart (kAERestart), like Apple menu > Restart.

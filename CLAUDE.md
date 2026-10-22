@@ -268,10 +268,19 @@ table; use "…" and "ユーザー".
   facing copyright is "Copyright © 2026 subdiox"; Mozc's license notices stay in `credits_en.html` (linked from the
   About dialog; required by Mozc's BSD license). Google-only features (usage statistics upload, uninstall survey)
   were removed.
+- Install location: Installer offers "all users" (`/Library/Input Methods`, the default; Installer asks for an
+  administrator) or "me only" (`~/Library/Input Methods`, no administrator rights) — distribution.xml `domains`;
+  the scripts derive the domain from `$2` and run their user-level steps with `sudo -u` only when they run as root.
+  An installation for all users removes a per-user copy (same bundle id). In-app updates install where Genmai is:
+  per user with `installer -target CurrentUserHomeDirectory` (no window, no rights), for all users by opening
+  Installer (`GenmaiPackageInstaller`).
 - Uninstaller (GenmaiUninstaller, `UninstallGenmai.app`) lives in `Genmai.app/Contents/Resources` (built by
   Tools/make_ime_bundle.sh) and is opened from the settings (General › Uninstall Genmai…); nothing is installed into
-  /Applications (0.1.0 did; preinstall and the uninstaller remove that folder). It removes the input method with
-  administrator rights and, as the user, the data kinds the user checks (AI model + caches checked by default; user
+  /Applications (0.1.0 did; preinstall and the uninstaller remove that folder). Items outside the home folder are
+  removed as root after the system authorization dialog (Authorization Services, Touch ID) through
+  AuthorizationExecuteWithPrivileges (deprecated, looked up with dlsym, as Mozc / Google Japanese Input do; the
+  only replacement, an SMAppService daemon, needs approval in System Settings first); a per-user installation is
+  removed without rights. The user data kinds the user checks go too (AI model + caches checked by default; user
   dictionary, learning data, settings kept by default).
 - Releases: GitHub releases of subdiox/genmai-ime, tag vX.Y.Z (= `kProductVersion`), asset `Genmai-X.Y.Z.pkg`.
   Normally made by the GitHub Actions workflow `.github/workflows/release.yml`: bump `kProductVersion`, commit, push

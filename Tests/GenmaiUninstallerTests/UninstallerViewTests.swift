@@ -22,6 +22,7 @@ import Testing
       }
     let icon = NSImage(contentsOf: Self.repositoryRoot.appending(path: "Tools/assets/genmai.icns")) ?? NSImage()
     let install = try FakeInstall()
+    try install.makeBundle("Library/Input Methods/Genmai.app", identifier: UninstallerLayout.kBundleIdentifier)
     try UninstallerUserDataTests.makeProfile(install)
     let controller = UninstallerController(
       uninstaller: Uninstaller(layout: install.layout, runner: FixedCommandRunner(result)),

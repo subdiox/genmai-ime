@@ -22,8 +22,15 @@ public final class GenmaiUpdateModel {
   public enum Install: Equatable, Sendable {
     case idle
     case downloading(received: Int64, total: Int64)
-    /// The package was opened with Installer.
+    /// The package was opened with Installer (Genmai is installed for all users).
     case opened
+    /// The package was installed for this user (no Installer window; Genmai is installed per user).
+    case installed
+
+    var isBusy: Bool {
+      if case .downloading = self { return true }
+      return false
+    }
     case failed(String)
   }
 
@@ -40,8 +47,8 @@ public final class GenmaiUpdateModel {
       release, progress in
       try await GenmaiUpdater.download(release, progress: progress)
     }
-  /// Opens the package with Installer (replaced by tests).
-  var openInstaller: @MainActor (URL) -> Bool = { NSWorkspace.shared.open($0) }
+  /// Installs the package where Genmai is installed (replaced by tests).
+  var installPackage: @Sendable (URL) async -> Install = { await GenmaiPackageInstaller.install($0) }
 
   private let settingsURL: URL
   private var installTask: Task<Void, Never>?
@@ -104,7 +111,8 @@ public final class GenmaiUpdateModel {
       let result: Install
       do {
         let package = try await downloader(release, report)
-        result = self?.openInstaller(package) == false ? .failed("cannot open \(package.lastPathComponent)") : .opened
+        guard let installPackage = self?.installPackage else { return }
+        result = await installPackage(package)
       } catch is CancellationError {
         result = .idle
       } catch {
@@ -134,5 +142,48 @@ public final class GenmaiUpdateModel {
     } catch {
       NSLog("Genmai: cannot save %@: %@", settingsURL.path, "\(error)")
     }
+  }
+}
+
+/// Installs a downloaded package into the same place as the running Genmai, so that an update never leaves a second
+/// copy: a per-user installation (~/Library/Input Methods) is updated with `installer -target
+/// CurrentUserHomeDirectory`, which needs no administrator rights and shows no window; an installation for all users
+/// (/Library/Input Methods) opens the package in Installer, which asks for administrator rights itself.
+enum GenmaiPackageInstaller {
+  /// The input method bundle this app belongs to (Genmai.app/Contents/Resources/Genmai.app → Genmai.app).
+  static var inputMethodBundle: URL {
+    Bundle.main.bundleURL.deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+  }
+
+  static func isPerUser(_ bundle: URL = inputMethodBundle) -> Bool {
+    bundle.standardizedFileURL.path(percentEncoded: false)
+      .hasPrefix(URL.homeDirectory.standardizedFileURL.path(percentEncoded: false))
+  }
+
+  @MainActor
+  static func install(_ package: URL) async -> GenmaiUpdateModel.Install {
+    guard isPerUser() else {
+      return NSWorkspace.shared.open(package) ? .opened : .failed("cannot open \(package.lastPathComponent)")
+    }
+    let process = Process()
+    process.executableURL = URL(filePath: "/usr/sbin/installer")
+    process.arguments = ["-pkg", package.path(percentEncoded: false), "-target", "CurrentUserHomeDirectory"]
+    let output = Pipe()
+    process.standardOutput = output
+    process.standardError = output
+    let status: Int32 = await withCheckedContinuation { continuation in
+      process.terminationHandler = { continuation.resume(returning: $0.terminationStatus) }
+      do {
+        try process.run()
+      } catch {
+        process.terminationHandler = nil
+        continuation.resume(returning: -1)
+      }
+    }
+    if status == 0 {
+      return .installed
+    }
+    let message = String(decoding: output.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
+    return .failed(message.isEmpty ? "installer exited with \(status)" : message)
   }
 }

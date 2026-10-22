@@ -2,6 +2,7 @@
 
 import Foundation
 import GenmaiClient
+import Synchronization
 import Testing
 
 @testable import GenmaiGUI
@@ -63,13 +64,16 @@ import Testing
       progress(500, release.package.size)
       return package
     }
-    var opened: [URL] = []
-    model.openInstaller = { opened.append($0); return true }
+    let opened = Mutex<[URL]>([])
+    model.installPackage = { url in
+      opened.withLock { $0.append(url) }
+      return .opened
+    }
     model.installUpdate()
     #expect(model.install == .downloading(received: 0, total: 1000))
     while case .downloading = model.install { await Task.yield() }
     #expect(model.install == .opened)
-    #expect(opened == [package])
+    #expect(opened.withLock { $0 } == [package])
 
     model.downloader = { _, _ in throw GenmaiUpdateError.damaged("Genmai-0.2.0.pkg") }
     model.installUpdate()
@@ -90,6 +94,11 @@ import Testing
     model.cancelInstall()
     while case .downloading = model.install { await Task.yield() }
     #expect(model.install == .idle)
+  }
+
+  @Test func installLocation() {
+    #expect(GenmaiPackageInstaller.isPerUser(URL.homeDirectory.appending(path: "Library/Input Methods/Genmai.app")))
+    #expect(!GenmaiPackageInstaller.isPerUser(URL(filePath: "/Library/Input Methods/Genmai.app")))
   }
 
   @Test func strings() {

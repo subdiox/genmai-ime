@@ -53,6 +53,13 @@ final class UninstallerController {
 
   var isBusy: Bool { phase == .removing }
 
+  /// Some of the items are outside the home folder (installed for all users): removing them needs administrator
+  /// rights.
+  var needsAuthorization: Bool {
+    let home = uninstaller.layout.homeDirectory.standardizedFileURL.path(percentEncoded: false)
+    return items.contains { !$0.path.hasPrefix(home) }
+  }
+
   /// cancel: / Quit / Later.
   func close() {
     terminate()

@@ -42,8 +42,9 @@ interval, 45–64 ms when it is pressed right after it.
 
 Download `Genmai-X.Y.Z.pkg` from the [latest release](https://github.com/subdiox/genmai-ime/releases/latest) and
 open it. The package is not signed with a Developer ID yet: if macOS refuses to open it, allow it in System
-Settings › Privacy & Security (**Open Anyway**). It installs into `/Library/Input Methods` and selects the input
-source; you can also add **Genmai** in System Settings › Keyboard › Input Sources. Settings and learning data live
+Settings › Privacy & Security (**Open Anyway**). It installs for all users (`/Library/Input Methods`, asks for an
+administrator) or, with "Install for me only", for your account (`~/Library/Input Methods`, no administrator
+needed), and selects the input source; you can also add **Genmai** in System Settings › Keyboard › Input Sources. Settings and learning data live
 in `~/Library/Application Support/Genmai`. To uninstall, use **Uninstall Genmai…** in the settings (General); it asks which of your data (AI model,
 user dictionary, learning data, settings) to remove as well.
 
