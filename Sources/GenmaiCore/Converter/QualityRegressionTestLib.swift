@@ -122,8 +122,9 @@ public enum QualityRegressionTest {
   private static func examineResults(
     _ enabled: Bool, _ platform: UInt32, _ results: ResultTable, _ report: inout Report
   ) {
-    for label in results.keys.sorted(by: { Array($0.utf8).lexicographicallyPrecedes($1.utf8) }) {
-      let values = results[label]!.sorted { a, b in
+    let sortedResults = results.sorted { Array($0.key.utf8).lexicographicallyPrecedes($1.key.utf8) }
+    for (label, labelResults) in sortedResults {
+      let values = labelResults.sorted { a, b in
         if a.0 != b.0 { return a.0 < b.0 }
         return Array(a.1.utf8).lexicographicallyPrecedes(b.1.utf8)
       }

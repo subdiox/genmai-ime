@@ -122,13 +122,7 @@ public struct DataSetReader: Sendable {
     guard let data = get(name) else {
       return nil
     }
-    let offset: Int
-    if let p = data.baseAddress, let base = memblock.baseAddress {
-      offset = p - base
-    } else {
-      offset = 0
-    }
-    return (offset, data.count)
+    return (memblock.byteOffset(of: data.bytes), data.count)
   }
 
   /// Verifies the checksum of binary image.
@@ -137,9 +131,7 @@ public struct DataSetReader: Sendable {
       return false
     }
     // Checksum is computed for all but last 28 bytes.
-    let actualChecksum = memblock.bytes.withMemoryRebound(to: UInt8.self) { p in
-      UnverifiedSHA1.makeDigest(UnsafeBufferPointer(rebasing: p[0..<(p.count - 28)]))
-    }
+    let actualChecksum = UnverifiedSHA1.makeDigest(memblock.data[0..<(memblock.count - 28)])
 
     // Extract the stored SHA1; see dataset.proto for file format.
     let kSHA1Length = 20

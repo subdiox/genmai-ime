@@ -10,8 +10,8 @@ import GenmaiBase
 import GenmaiStorage
 
 /// `mozc::dictionary::ValueDictionary`.
-public final class ValueDictionary: DictionaryInterface, @unchecked Sendable {
-  // @unchecked Sendable: immutable; |value_trie| is immutable after open().
+public final class ValueDictionary: DictionaryInterface, Sendable {
+  // Immutable; |value_trie| is immutable after open().
 
   // This class doesn't take the ownership of |value_trie| (the LoudsTrie
   // object is shared, e.g. `SystemDictionary.valueTrie`; its image must stay
@@ -49,16 +49,16 @@ public final class ValueDictionary: DictionaryInterface, @unchecked Sendable {
   }
 
   private func handleTerminalNode(
-    _ node: LoudsTrie.Node, _ callback: any DictionaryCallback, _ encodedValueBuffer: UnsafeMutablePointer<UInt8>
+    _ node: LoudsTrie.Node, _ callback: any DictionaryCallback
   ) -> DictionaryCallbackResult {
-    let encodedValue = valueTrie.restoreKeyString(node, encodedValueBuffer)
+    let encodedValue = valueTrie.restoreKeyString(node)
 
     let value = codec.decodeValue(encodedValue)
     var result = callback.onKey(value)
     if result != .traverseContinue {
       return result
     }
-    result = callback.onActualKey(value, value, /* num_expanded= */ 0)
+    result = callback.onActualKey(value, value, 0)  // num_expanded
     if result != .traverseContinue {
       return result
     }
@@ -75,33 +75,30 @@ public final class ValueDictionary: DictionaryInterface, @unchecked Sendable {
       return
     }
 
-    withUnsafeTemporaryAllocation(of: UInt8.self, capacity: LoudsTrie.kMaxDepth + 1) { buffer in
-      let encodedValueBuffer = buffer.baseAddress!
-      // Traverse subtree rooted at |node|.
-      var queue: [LoudsTrie.Node] = [node]
-      var head = 0
-      repeat {
-        node = queue[head]
-        head += 1
+    // Traverse subtree rooted at |node|.
+    var queue: [LoudsTrie.Node] = [node]
+    var head = 0
+    repeat {
+      node = queue[head]
+      head += 1
 
-        if valueTrie.isTerminalNode(node) {
-          switch handleTerminalNode(node, callback, encodedValueBuffer) {
-          case .traverseDone:
-            return
-          case .traverseCull:
-            continue
-          default:
-            break
-          }
+      if valueTrie.isTerminalNode(node) {
+        switch handleTerminalNode(node, callback) {
+        case .traverseDone:
+          return
+        case .traverseCull:
+          continue
+        default:
+          break
         }
+      }
 
-        valueTrie.moveToFirstChild(&node)
-        while valueTrie.isValidNode(node) {
-          queue.append(node)
-          LoudsTrie.moveToNextSibling(&node)
-        }
-      } while head < queue.count
-    }
+      valueTrie.moveToFirstChild(&node)
+      while valueTrie.isValidNode(node) {
+        queue.append(node)
+        LoudsTrie.moveToNextSibling(&node)
+      }
+    } while head < queue.count
   }
 
   public func lookupExact(_ key: String, callback: any DictionaryCallback) {
@@ -115,7 +112,7 @@ public final class ValueDictionary: DictionaryInterface, @unchecked Sendable {
     if callback.onKey(key) != .traverseContinue {
       return
     }
-    if callback.onActualKey(key, key, /* num_expanded= */ 0) != .traverseContinue {
+    if callback.onActualKey(key, key, 0) != .traverseContinue {  // num_expanded
       return
     }
     _ = callback.onToken(key, key, Self.fillToken(suggestionOnlyWordId, key))

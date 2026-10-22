@@ -60,15 +60,16 @@ public struct KeyExpansionTable: Sendable {
 
   /// Character version (`char`) for tests.
   public mutating func add(_ key: Character, _ data: String) {
-    add(key.asciiValue!, Array(data.utf8))
+    guard let key = key.asciiValue else {
+      preconditionFailure("KeyExpansionTable keys are ASCII characters")
+    }
+    add(key, Array(data.utf8))
   }
 
   @inline(__always)
   public func expandKey(_ key: UInt8) -> ExpandedKey {
     let base = Int(key) * 4
-    return table.withUnsafeBufferPointer { t in
-      ExpandedKey((t[base], t[base + 1], t[base + 2], t[base + 3]))
-    }
+    return ExpandedKey((table[base], table[base + 1], table[base + 2], table[base + 3]))
   }
 
   /// Returns the default (no-effective) KeyExpansionTable instance.

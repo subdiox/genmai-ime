@@ -11,11 +11,11 @@ import GenmaiStorage
 @testable import GenmaiCore
 
 /// mozc::SuggestionFilter (prediction/suggestion_filter.cc) for the tests.
-final class TestSuggestionFilter: SuggestionFilterProtocol, @unchecked Sendable {
+final class TestSuggestionFilter: SuggestionFilterProtocol, Sendable {
   private let filter: ExistenceFilter
 
   init(_ data: DataSpan<UInt32>) throws {
-    filter = try ExistenceFilter.read(UnsafeRawBufferPointer(data.buffer))
+    filter = try ExistenceFilter.read(data.view.bytes)
   }
 
   func isBadSuggestion(_ text: String) -> Bool {

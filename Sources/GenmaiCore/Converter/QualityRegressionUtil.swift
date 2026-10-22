@@ -315,14 +315,13 @@ public final class QualityRegressionUtil {
     }
 
     if command == kConversionMatch || command == kConversionNotMatch {
-      let regex: NSRegularExpression
+      let regex: Regex<AnyRegexOutput>
       do {
-        regex = try NSRegularExpression(pattern: "\\A(?:\(expectedValue))\\z")
+        regex = try Regex("(?:\(expectedValue))").matchingSemantics(.unicodeScalar)
       } catch {
         throw StatusError.invalidArgument("Invalid regex: \(expectedValue)")
       }
-      let range = NSRange(actualValue.startIndex..<actualValue.endIndex, in: actualValue)
-      let matched = regex.firstMatch(in: actualValue, options: [.anchored], range: range) != nil
+      let matched = actualValue.wholeMatch(of: regex) != nil
       return (command == kConversionMatch) ? matched : !matched
     }
 

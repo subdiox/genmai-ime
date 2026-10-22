@@ -25,7 +25,10 @@ final class ValueDictionaryTests {
   private func buildValueDictionary() -> ValueDictionary {
     loudsTrieBuilder.build()
     image = DataView(copying: loudsTrieBuilder.image)
-    loudsTrie.open(image.baseAddress!)
+    guard let base = image.baseAddress else {
+      preconditionFailure("the trie image is not empty")
+    }
+    loudsTrie.open(base)
     return ValueDictionary(posMatcher, loudsTrie)
   }
 

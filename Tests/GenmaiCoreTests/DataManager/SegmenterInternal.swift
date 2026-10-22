@@ -50,14 +50,15 @@ struct SegmenterInternal {
     throws -> [ClosedRange<Int>]?
   {
     if pattern == "*" { return nil }
-    let regex = try NSRegularExpression(pattern: pattern.replacingOccurrences(of: "*", with: "[^,]+"))
+    let regex = try Regex(pattern.replacingOccurrences(of: "*", with: "[^,]+")).matchingSemantics(.unicodeScalar)
     var ranges: [ClosedRange<Int>] = []
     var minId = -1
     var maxId = -1
     for p in sortedKeys {
-      let id = pos[p]!
-      let ns = p as NSString
-      if regex.firstMatch(in: p, options: .anchored, range: NSRange(location: 0, length: ns.length)) != nil {
+      guard let id = pos[p] else {
+        preconditionFailure("sortedKeys are the keys of pos")
+      }
+      if p.prefixMatch(of: regex) != nil {
         if minId == -1 {
           minId = id
           maxId = id

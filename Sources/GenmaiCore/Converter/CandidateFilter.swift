@@ -31,8 +31,9 @@ public struct CandidateFilterCandidateId: Hashable {
   }
 
   public func hash(into hasher: inout Hasher) {
-    var value = value
-    value.withUTF8 { hasher.combine(bytes: UnsafeRawBufferPointer($0)) }
+    for byte in value.utf8 {
+      hasher.combine(byte)
+    }
     hasher.combine(lid)
     hasher.combine(rid)
   }

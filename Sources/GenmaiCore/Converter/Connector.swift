@@ -1,6 +1,8 @@
 // Port of mozc/src/converter/connector.{h,cc} (3.35.6354).
 
+import Foundation
 import GenmaiBase
+import Synchronization
 
 /// `mozc::Connector`: the connection (transition) cost matrix.
 ///
@@ -9,11 +11,10 @@ import GenmaiBase
 /// C++ one, so results are bit exact including its quirks (an untouched bucket
 /// holds 0, which is a hit for (rid 0, lid 0) with cost 0).
 ///
-/// `@unchecked Sendable`: the matrix is immutable. The cache entries are
-/// 64-bit words read and written with plain aligned loads/stores (the C++ code
-/// uses relaxed atomics); concurrent access may only lose cache updates, never
-/// produce a wrong value, because the tag and value share one word.
-public final class Connector: @unchecked Sendable {
+/// `Sendable`: the matrix is immutable after `create`; the cache (relaxed
+/// atomics in C++) is guarded by a mutex. The tag and the value share one
+/// word, as in C++.
+public final class Connector: Sendable {
   public static let kInvalidCost: Int16 = 30000
 
   private static let kConnectorMagicNumber: UInt16 = 0xCDAB
@@ -23,7 +24,7 @@ public final class Connector: @unchecked Sendable {
   /// The number of consecutive compact bits that a chunk bit represents.
   private static let kChunkWidth: UInt32 = 8
 
-  /// One row of the matrix: byte offsets of its blocks from `base` and the
+  /// One row of the matrix: byte offsets of its blocks in `data` and the
   /// offsets of its rank indices in `rankIndex`.
   private struct Row {
     var chunkBits: Int = 0
@@ -33,37 +34,29 @@ public final class Connector: @unchecked Sendable {
     var compactRank: Int = 0
   }
 
-  private let data: DataView
-  private let base: UnsafeRawPointer
-  private var rows: UnsafeMutableBufferPointer<Row>
-  private var rankIndex: UnsafeMutablePointer<UInt16>
-  private var defaultCost: Int = 0  // byte offset of the default cost array
-  private var resolution: Int = 0
+  /// The matrix image (keeps the data set alive).
+  private let data: Data
+  private let rows: [Row]
+  private let rankIndex: [UInt16]
+  private let defaultCost: Int  // byte offset of the default cost array
+  private let resolution: Int
   /// True if the values of the rows are quantized to 1 byte.
-  private var use1ByteValue = false
+  private let use1ByteValue: Bool
   /// Cache for transition cost.
-  private let cache: UnsafeMutablePointer<UInt64>
+  private let cache = Mutex([UInt64](repeating: 0, count: Int(kCacheSize)))
 
-  private init(_ data: DataView) {
+  private init(data: Data, rows: [Row], rankIndex: [UInt16], defaultCost: Int, metadata: Metadata) {
     self.data = data
-    base = data.baseAddress ?? UnsafeRawPointer(bitPattern: 0x10)!
-    rows = .allocate(capacity: 0)
-    rankIndex = .allocate(capacity: 1)
-    cache = .allocate(capacity: Int(Self.kCacheSize))
-    cache.initialize(repeating: 0, count: Int(Self.kCacheSize))
-  }
-
-  deinit {
-    rows.deallocate()
-    rankIndex.deallocate()
-    cache.deallocate()
+    self.rows = rows
+    self.rankIndex = rankIndex
+    self.defaultCost = defaultCost
+    resolution = Int(metadata.resolution)
+    use1ByteValue = metadata.use1ByteValue
   }
 
   /// `Connector::Create`.
   public static func create(_ connectionData: DataView) throws -> Connector {
-    let connector = Connector(connectionData)
-    try connector.initialize()
-    return connector
+    try initialize(connectionData)
   }
 
   /// `Connector::Create` over a copy of `bytes` (tests).
@@ -105,11 +98,12 @@ public final class Connector: @unchecked Sendable {
       throw StatusError.failedPrecondition(
         "connector.cc: At least \(Metadata.kByteSize) bytes expected.  (\(data.count) bytes)")
     }
+    let bytes = data.data.span
     var metadata = Metadata()
-    metadata.magic = UInt16(littleEndian: data.bytes.loadUnaligned(fromByteOffset: 0, as: UInt16.self))
-    metadata.resolution = UInt16(littleEndian: data.bytes.loadUnaligned(fromByteOffset: 2, as: UInt16.self))
-    metadata.rsize = UInt16(littleEndian: data.bytes.loadUnaligned(fromByteOffset: 4, as: UInt16.self))
-    metadata.lsize = UInt16(littleEndian: data.bytes.loadUnaligned(fromByteOffset: 6, as: UInt16.self))
+    metadata.magic = bytes.loadLittleEndian(at: 0)
+    metadata.resolution = bytes.loadLittleEndian(at: 2)
+    metadata.rsize = bytes.loadLittleEndian(at: 4)
+    metadata.lsize = bytes.loadLittleEndian(at: 6)
 
     if metadata.magic != kConnectorMagicNumber {
       throw StatusError.failedPrecondition(
@@ -122,10 +116,9 @@ public final class Connector: @unchecked Sendable {
     return metadata
   }
 
-  private func initialize() throws {
-    let metadata = try Self.parseMetadata(data)
-    resolution = Int(metadata.resolution)
-    use1ByteValue = metadata.use1ByteValue
+  private static func initialize(_ data: DataView) throws -> Connector {
+    let metadata = try parseMetadata(data)
+    let bytes = data.data.span
 
     let dataEnd = data.count
     // Set the read location to the metadata end.
@@ -136,8 +129,7 @@ public final class Connector: @unchecked Sendable {
     }
     // A helper to check if the array is aligned at 32-bit boundary.
     func validateAlignment(_ offset: Int, _ name: String) throws {
-      let addr = UInt(bitPattern: base) &+ UInt(offset)
-      let alignment = addr % 4
+      let alignment = data.misalignment(of: offset, to: 4)
       if alignment != 0 {
         throw StatusError.failedPrecondition(
           "connector.cc: \(debugInfo(ptr)): \(name) is not 32-bit aligned: Aligned at \(alignment) byte")
@@ -156,7 +148,7 @@ public final class Connector: @unchecked Sendable {
     }
 
     // Read default cost array and move the read pointer.
-    defaultCost = ptr
+    let defaultCost = ptr
     // Each element of default cost array is 2 bytes.
     let defaultCostSize = metadata.defaultCostArraySize * 2
     try validateSize(ptr, defaultCostSize, "Default cost")
@@ -165,9 +157,7 @@ public final class Connector: @unchecked Sendable {
 
     let chunkBitsSize = metadata.chunkBitsSize
     let rsize = Int(metadata.rsize)
-    rows.deallocate()
-    rows = .allocate(capacity: rsize)
-    rows.initialize(repeating: Row())
+    var rows = [Row](repeating: Row(), count: rsize)
     var indexSize = 0
     for i in 0..<rsize {
       // Each row is formatted as follows:
@@ -179,11 +169,11 @@ public final class Connector: @unchecked Sendable {
       // |ptr| points to here now.  Every uint8_t[] block needs to be aligned at
       // 32-bit boundary.
       try validateSize(ptr, 2, "Compact bits size of row \(i)/\(rsize)")
-      let compactBitsSize = Int(UInt16(littleEndian: base.loadUnaligned(fromByteOffset: ptr, as: UInt16.self)))
+      let compactBitsSize = Int(bytes.loadLittleEndian(UInt16.self, at: ptr))
       ptr += 2
 
       try validateSize(ptr, 2, "Values size of row \(i)/\(rsize)")
-      let valuesSize = Int(UInt16(littleEndian: base.loadUnaligned(fromByteOffset: ptr, as: UInt16.self)))
+      let valuesSize = Int(bytes.loadLittleEndian(UInt16.self, at: ptr))
       ptr += 2
 
       try validateSize(ptr, chunkBitsSize, "Chunk bits of row \(i)/\(rsize)")
@@ -210,21 +200,23 @@ public final class Connector: @unchecked Sendable {
 
     // Allocate the storage for the rank indices of all rows at once, exactly as
     // large as needed, and build them.
-    rankIndex.deallocate()
-    rankIndex = .allocate(capacity: max(indexSize, 1))
-    for i in 0..<rsize {
-      let row = rows[i]
-      buildIndex(row.chunkBits, chunkBitsSize / 4, row.chunkRank)
-      buildIndex(row.compactBits, (row.values - row.compactBits) / 4, row.compactRank)
+    var rankIndex = [UInt16](repeating: 0, count: max(indexSize, 1))
+    for row in rows {
+      buildIndex(bytes, row.chunkBits, chunkBitsSize / 4, row.chunkRank, &rankIndex)
+      buildIndex(bytes, row.compactBits, (row.values - row.compactBits) / 4, row.compactRank, &rankIndex)
     }
+    return Connector(
+      data: data.data, rows: rows, rankIndex: rankIndex, defaultCost: defaultCost, metadata: metadata)
   }
 
   /// `RankBitVector::BuildIndex`: the number of 1-bits before each word.
-  private func buildIndex(_ dataOffset: Int, _ words: Int, _ rankOffset: Int) {
+  private static func buildIndex(
+    _ bytes: Span<UInt8>, _ dataOffset: Int, _ words: Int, _ rankOffset: Int, _ rankIndex: inout [UInt16]
+  ) {
     var numBits: UInt32 = 0
     for i in 0..<words {
       rankIndex[rankOffset + i] = UInt16(truncatingIfNeeded: numBits)
-      let word = UInt32(littleEndian: base.loadUnaligned(fromByteOffset: dataOffset + 4 * i, as: UInt32.self))
+      let word = bytes.loadLittleEndian(UInt32.self, at: dataOffset + 4 * i)
       numBits += UInt32(word.nonzeroBitCount)
     }
   }
@@ -232,9 +224,9 @@ public final class Connector: @unchecked Sendable {
   /// `RankBitVector::Rank1IfSet`: returns the number of 1-bits in [0, n) if
   /// bit n is set, or -1.
   @inline(__always)
-  private func rank1IfSet(_ dataOffset: Int, _ rankOffset: Int, _ n: UInt32) -> Int {
+  private func rank1IfSet(_ bytes: Span<UInt8>, _ dataOffset: Int, _ rankOffset: Int, _ n: UInt32) -> Int {
     let wordIndex = Int(n / 32)
-    let word = UInt32(littleEndian: base.loadUnaligned(fromByteOffset: dataOffset + 4 * wordIndex, as: UInt32.self))
+    let word = bytes.loadLittleEndian(UInt32.self, at: dataOffset + 4 * wordIndex)
     let bit: UInt32 = 1 << (n % 32)
     if word & bit == 0 {
       return -1
@@ -244,26 +236,25 @@ public final class Connector: @unchecked Sendable {
 
   /// `Row::GetValue`: returns the value in the row if found, or -1.
   @inline(__always)
-  private func getValue(_ row: Row, _ index: UInt16) -> Int {
-    let chunkRank = rank1IfSet(row.chunkBits, row.chunkRank, UInt32(index) / Self.kChunkWidth)
+  private func getValue(_ bytes: Span<UInt8>, _ row: Row, _ index: UInt16) -> Int {
+    let chunkRank = rank1IfSet(bytes, row.chunkBits, row.chunkRank, UInt32(index) / Self.kChunkWidth)
     if chunkRank < 0 {
       return -1
     }
     let compactRank = rank1IfSet(
-      row.compactBits, row.compactRank, UInt32(chunkRank) * Self.kChunkWidth + UInt32(index) % Self.kChunkWidth)
+      bytes, row.compactBits, row.compactRank, UInt32(chunkRank) * Self.kChunkWidth + UInt32(index) % Self.kChunkWidth)
     if compactRank < 0 {
       return -1
     }
     let valuePosition = compactRank
     var value: UInt16
     if use1ByteValue {
-      value = UInt16(base.load(fromByteOffset: row.values + valuePosition, as: UInt8.self))
+      value = UInt16(bytes[row.values + valuePosition])
       if value == UInt16(Self.kInvalid1ByteCostValue) {
         value = UInt16(Self.kInvalidCost)
       }
     } else {
-      value = UInt16(
-        littleEndian: base.loadUnaligned(fromByteOffset: row.values + 2 * valuePosition, as: UInt16.self))
+      value = bytes.loadLittleEndian(UInt16.self, at: row.values + 2 * valuePosition)
     }
     return Int(value)
   }
@@ -282,19 +273,22 @@ public final class Connector: @unchecked Sendable {
     // The result hash value becomes reasonably random.
 
     // Upper 32bits stores the value-cost, lower 32 bits the index.
-    let cv = cache[Int(bucket)]
-    if UInt32(truncatingIfNeeded: cv) == index {
-      return Int(Int32(truncatingIfNeeded: cv >> 32))
+    return cache.withLock { cache in
+      let cv = cache[Int(bucket)]
+      if UInt32(truncatingIfNeeded: cv) == index {
+        return Int(Int32(truncatingIfNeeded: cv >> 32))
+      }
+      let value = lookupCost(rid, lid)
+      cache[Int(bucket)] = UInt64(UInt32(truncatingIfNeeded: value)) << 32 | UInt64(index)
+      return value
     }
-    let value = lookupCost(rid, lid)
-    cache[Int(bucket)] = UInt64(UInt32(truncatingIfNeeded: value)) << 32 | UInt64(index)
-    return value
   }
 
   private func lookupCost(_ rid: UInt16, _ lid: UInt16) -> Int {
-    let value = getValue(rows[Int(rid)], lid)
+    let bytes = data.span
+    let value = getValue(bytes, rows[Int(rid)], lid)
     if value < 0 {
-      return Int(UInt16(littleEndian: base.loadUnaligned(fromByteOffset: defaultCost + 2 * Int(rid), as: UInt16.self)))
+      return Int(bytes.loadLittleEndian(UInt16.self, at: defaultCost + 2 * Int(rid)))
     }
     // kInvalidCost is stored as is regardless of the resolution, so it must not
     // be scaled.

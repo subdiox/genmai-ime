@@ -43,8 +43,8 @@ public final class CachingConnector {
   private let hasBonus: Bool
   private let particleOmissionTransitionCostBonus: Int
   private let posMatcher: PosMatcher
-  private let cacheLid: UnsafeMutablePointer<UInt16>
-  private let cacheCost: UnsafeMutablePointer<Int32>
+  private var cacheLid = [UInt16](repeating: kInvalidLid, count: kCacheSize)
+  private var cacheCost = [Int32](repeating: 0, count: kCacheSize)
   private var cacheLidValue: UInt16 = kInvalidLid
   private var isRightNodeTarget = false
 
@@ -56,15 +56,6 @@ public final class CachingConnector {
     self.connector = connector
     self.particleOmissionTransitionCostBonus = particleOmissionTransitionCostBonus
     self.posMatcher = posMatcher
-    cacheLid = .allocate(capacity: Self.kCacheSize)
-    cacheLid.initialize(repeating: Self.kInvalidLid, count: Self.kCacheSize)
-    cacheCost = .allocate(capacity: Self.kCacheSize)
-    cacheCost.initialize(repeating: 0, count: Self.kCacheSize)
-  }
-
-  deinit {
-    cacheLid.deallocate()
-    cacheCost.deallocate()
   }
 
   /// Prepares the cache for the inner loop where `rnodeLid` is fixed.
