@@ -78,7 +78,7 @@ final class UserHistoryTestModules: UserHistoryPredictorModules {
     self.posMatcher = posMatcher
     let userPosData = dataManager.getUserPosData()
     self.userDictionary = UserDictionary(
-      UserPos(userPosData.tokenArray, userPosData.stringArray), posMatcher)
+      UserPos(userPosData.tokenArray, userPosData.stringArray), posMatcher, PredictionTestUserDictionary.emptyFile())
     self.dictionary = dictionary
     self.storage = UserHistoryStorage()
     self.segmenter = Segmenter(dataManager: dataManager)

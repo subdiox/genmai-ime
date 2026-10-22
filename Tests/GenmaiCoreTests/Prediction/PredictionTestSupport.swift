@@ -54,7 +54,7 @@ final class PredictionTestModules: PredictionModules, UserHistoryPredictorModule
     self.posMatcher = posMatcher
     let userPosData = dataManager.getUserPosData()
     let userDictionary = UserDictionary(
-      UserPos(userPosData.tokenArray, userPosData.stringArray), posMatcher)
+      UserPos(userPosData.tokenArray, userPosData.stringArray), posMatcher, PredictionTestUserDictionary.emptyFile())
     self.userDictionary = userDictionary
     if let dictionary {
       self.dictionary = dictionary
@@ -383,3 +383,12 @@ extension PT {
 }
 
 let predictionMockDataAvailable = DataManagerTestSupport.hasMockData
+
+enum PredictionTestUserDictionary {
+  /// A user dictionary file that does not exist: never the user dictionary of the developer's profile, whose words
+  /// would change the predictions.
+  static func emptyFile() -> String {
+    FileManager.default.temporaryDirectory
+      .appendingPathComponent("genmai-test-no-user-dictionary-\(UUID().uuidString).db").path
+  }
+}
