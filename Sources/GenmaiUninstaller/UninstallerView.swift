@@ -237,7 +237,7 @@ private struct UninstallerFooter: View {
       case .succeeded:
         Button(strings.later, action: controller.close)
           .keyboardShortcut(.cancelAction)
-        Button(strings.restartNow, action: controller.restartNow)
+        Button(strings.logOutNow, action: controller.logOutNow)
           .keyboardShortcut(.defaultAction)
       case .failed:
         Button(strings.quit, action: controller.close)

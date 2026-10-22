@@ -1,7 +1,7 @@
 // Port of mozc/src/mac/Uninstaller/Uninstaller.{h,mm} (3.35.6354).
 //
 // The uninstaller asks for administrator rights, removes the installed files with `/bin/rm -rf` one path at a
-// time (stopping at the first failure), reports the result and offers to restart the computer. The C++'s
+// time (stopping at the first failure), reports the result and offers to log out. The C++'s
 // +doUninstall: (delete, then one modal dialog per outcome) is UninstallerController's single-window flow.
 //
 // Deviations from C++:
@@ -26,9 +26,10 @@
 //   in-process and installs no LaunchAgents. Like the C++, the user's profile (~/Library/Application Support/
 //   Genmai) is kept.
 // - MacUtil::RemovePrelauncherLoginItem is n/a (the in-process design has no prelauncher login item).
-// - RunReboot: the C++ runs /sbin/reboot as root (with a TODO to "use OS-specific API instead"). The port asks
-//   loginwindow for a normal restart (the `restart` Apple event, kAERestart), which lets other apps save
-//   their documents and needs no privileges.
+// - RunReboot: the C++ runs /sbin/reboot as root (with a TODO to "use OS-specific API instead"). Logging out is
+//   enough to finish (the input method runs in the user's session), so the port asks loginwindow for the log-out
+//   dialog (the `logo` Apple event, kAELogOut, like Apple menu > Log Out), which lets other apps save their
+//   documents and needs no privileges.
 // - The uninstall survey and the Keystone ticket removal are not ported (the OSS build does neither).
 
 import AppKit
@@ -251,19 +252,58 @@ struct AuthorizationPrivilegedCommandRunner: PrivilegedCommandRunner {
     return Int32(output[range.upperBound...].trimmingCharacters(in: .whitespacesAndNewlines))
   }
 
-  private typealias ExecuteWithPrivileges =
-    @convention(c) (
-      AuthorizationRef, UnsafePointer<CChar>, AuthorizationFlags, UnsafePointer<UnsafeMutablePointer<CChar>?>,
-      UnsafeMutablePointer<UnsafeMutablePointer<FILE>?>?
-    ) -> OSStatus
-
   func run(_ shellCommand: String) -> PrivilegedCommandResult {
     var authorization: AuthorizationRef?
     guard AuthorizationCreate(nil, nil, [], &authorization) == errAuthorizationSuccess, let authorization else {
       return .failed("AuthorizationCreate failed")
     }
     defer { AuthorizationFree(authorization, [.destroyRights]) }
-    let status = kAuthorizationRightExecute.withCString { name in
+    let status = AuthorizationCalls.copyExecuteRight(authorization)
+    if Self.kAuthorizationErrors.contains(status) {
+      return .authorizationFailed
+    }
+    guard status == errAuthorizationSuccess else {
+      return .failed("AuthorizationCopyRights: \(status)")
+    }
+    let execution = AuthorizationCalls.executeWithPrivileges(
+      authorization, tool: "/bin/sh", arguments: ["-c", Self.script(for: shellCommand)])
+    let output: Data
+    switch execution {
+    case .unavailable:
+      return .failed("AuthorizationExecuteWithPrivileges is not available")
+    case .failed(let result):
+      if Self.kAuthorizationErrors.contains(result) {
+        return .authorizationFailed
+      }
+      return .failed("AuthorizationExecuteWithPrivileges: \(result)")
+    case .finished(let data):
+      output = data
+    }
+    let text = String(decoding: output, as: UTF8.self)
+    return Self.exitStatus(in: text) == 0 ? .success : .failed(text)
+  }
+}
+
+/// The C calls of `AuthorizationCommandRunner` that need pointers: Authorization Services' rights array, the
+/// deprecated AuthorizationExecuteWithPrivileges (looked up with dlsym, its argv of C strings) and the FILE pipe
+/// of its output. Swift has no pointer-free form of these C APIs, so they are kept here, in one place.
+private enum AuthorizationCalls {
+  enum Execution {
+    case unavailable
+    case failed(OSStatus)
+    /// The command's output until it exited.
+    case finished(Data)
+  }
+
+  private typealias ExecuteWithPrivileges =
+    @convention(c) (
+      AuthorizationRef, UnsafePointer<CChar>, AuthorizationFlags, UnsafePointer<UnsafeMutablePointer<CChar>?>,
+      UnsafeMutablePointer<UnsafeMutablePointer<FILE>?>?
+    ) -> OSStatus
+
+  /// AuthorizationCopyRights for kAuthorizationRightExecute, with the system's authentication dialog.
+  static func copyExecuteRight(_ authorization: AuthorizationRef) -> OSStatus {
+    kAuthorizationRightExecute.withCString { name in
       var item = AuthorizationItem(name: name, valueLength: 0, value: nil, flags: 0)
       return withUnsafeMutablePointer(to: &item) { items in
         var rights = AuthorizationRights(count: 1, items: items)
@@ -271,41 +311,38 @@ struct AuthorizationPrivilegedCommandRunner: PrivilegedCommandRunner {
           authorization, &rights, nil, [.interactionAllowed, .extendRights, .preAuthorize], nil)
       }
     }
-    if Self.kAuthorizationErrors.contains(status) {
-      return .authorizationFailed
-    }
-    guard status == errAuthorizationSuccess else {
-      return .failed("AuthorizationCopyRights: \(status)")
-    }
+  }
+
+  /// Runs `tool` with `arguments` as root and reads its output until the pipe closes.
+  static func executeWithPrivileges(
+    _ authorization: AuthorizationRef, tool: String, arguments: [String]
+  ) -> Execution {
     guard let symbol = dlsym(UnsafeMutableRawPointer(bitPattern: -2), "AuthorizationExecuteWithPrivileges") else {
-      return .failed("AuthorizationExecuteWithPrivileges is not available")
+      return .unavailable
     }
     let execute = unsafeBitCast(symbol, to: ExecuteWithPrivileges.self)
     var pipe: UnsafeMutablePointer<FILE>?
-    let words: [String] = ["-c", Self.script(for: shellCommand)]
-    let arguments: [UnsafeMutablePointer<CChar>?] = words.map { strdup($0) }
-    defer { arguments.forEach { free($0) } }
-    let argv: [UnsafeMutablePointer<CChar>?] = arguments + [nil]
-    let result = argv.withUnsafeBufferPointer { buffer in
-      execute(authorization, "/bin/sh", [], buffer.baseAddress!, &pipe)
+    let cArguments: [UnsafeMutablePointer<CChar>?] = arguments.map { strdup($0) }
+    defer {
+      for argument in cArguments { free(argument) }
     }
-    if Self.kAuthorizationErrors.contains(result) {
-      return .authorizationFailed
+    let argv: [UnsafeMutablePointer<CChar>?] = cArguments + [nil]
+    let result = argv.withUnsafeBufferPointer { buffer in
+      guard let base = buffer.baseAddress else { return errAuthorizationInvalidPointer }
+      return execute(authorization, tool, [], base, &pipe)
     }
     guard result == errAuthorizationSuccess, let pipe else {
-      return .failed("AuthorizationExecuteWithPrivileges: \(result)")
+      return .failed(result)
     }
-    // The command's output until it exits (the pipe closes).
     var output = Data()
-    var buffer = [UInt8](repeating: 0, count: 4096)
+    var chunk = [UInt8](repeating: 0, count: 4096)
     while true {
-      let count = fread(&buffer, 1, buffer.count, pipe)
+      let count = fread(&chunk, 1, chunk.count, pipe)
       if count <= 0 { break }
-      output.append(contentsOf: buffer[0..<count])
+      output.append(contentsOf: chunk[0..<count])
     }
     fclose(pipe)
-    let text = String(decoding: output, as: UTF8.self)
-    return Self.exitStatus(in: text) == 0 ? .success : .failed(text)
+    return .finished(output)
   }
 }
 
@@ -313,7 +350,7 @@ struct AuthorizationPrivilegedCommandRunner: PrivilegedCommandRunner {
 struct Uninstaller {
   var layout: UninstallerLayout
   var runner: any PrivilegedCommandRunner
-  var reboot: @MainActor () -> Bool = { Uninstaller.requestRestart() }
+  var logOut: @MainActor () -> Bool = { Uninstaller.requestLogOut() }
 
   /// Quotes `string` for /bin/sh.
   static func shellQuoted(_ string: String) -> String {
@@ -351,13 +388,13 @@ struct Uninstaller {
     return .success
   }
 
-  /// RunReboot: asks loginwindow to restart (kAERestart), like Apple menu > Restart.
-  static func requestRestart() -> Bool {
-    let source = "tell application \"loginwindow\" to «event aevtrrst»"
+  /// RunReboot: asks loginwindow to log out (kAELogOut), like Apple menu > Log Out.
+  static func requestLogOut() -> Bool {
+    let source = "tell application \"loginwindow\" to «event aevtlogo»"
     var error: NSDictionary?
     _ = NSAppleScript(source: source)?.executeAndReturnError(&error)
     if let error {
-      NSLog("Failed to restart: %@", error)
+      NSLog("Failed to log out: %@", error)
       return false
     }
     return true

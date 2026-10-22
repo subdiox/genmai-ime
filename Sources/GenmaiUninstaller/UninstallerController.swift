@@ -1,7 +1,7 @@
 // Port of mozc/src/mac/Uninstaller/DialogsController.{h,mm} and +[Uninstaller doUninstall:] (3.35.6354).
 //
 // The C++ shows four xib windows in turn (confirmation, then one modal dialog per outcome). The port is one
-// window whose content follows `phase`: confirm → removing → succeeded (restart now / later) or failed (try
+// window whose content follows `phase`: confirm → removing → succeeded (log out now / later) or failed (try
 // again / quit). Unlike the C++, which quits after an error, a failed or cancelled authorization can be retried.
 
 import AppKit
@@ -92,12 +92,12 @@ final class UninstallerController {
     }
   }
 
-  /// "Restart now" (RunReboot), then quit.
-  func restartNow() {
+  /// "Log out now" (RunReboot), then quit.
+  func logOutNow() {
     guard phase == .succeeded else {
       return
     }
-    _ = uninstaller.reboot()
+    _ = uninstaller.logOut()
     terminate()
   }
 }
