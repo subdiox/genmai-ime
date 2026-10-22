@@ -27,10 +27,7 @@
 // - RunReboot: the C++ runs /sbin/reboot as root (with a TODO to "use OS-specific API instead"). The port asks
 //   loginwindow for a normal restart (the `restart` Apple event, kAERestart), which lets other apps save
 //   their documents and needs no privileges.
-// - The uninstall survey (OpenUninstallSurvey) and the Keystone ticket removal are GOOGLE_JAPANESE_INPUT_BUILD
-//   only in the C++; the OSS build, which this port follows, does neither. The survey path is kept behind
-//   `opensUninstallSurvey` (default false = OSS) with the same URL (url::GetUninstallationSurveyUrl of the
-//   Mozc version) and order (survey first, then delete). Keystone is n/a.
+// - The uninstall survey and the Keystone ticket removal are not ported (the OSS build does neither).
 
 import AppKit
 import Foundation
@@ -156,15 +153,7 @@ protocol UninstallerDialogs: AnyObject {
 struct Uninstaller {
   var layout: UninstallerLayout
   var runner: any PrivilegedCommandRunner
-  /// GOOGLE_JAPANESE_INPUT_BUILD only in the C++; false for the OSS build.
-  var opensUninstallSurvey = false
-  var openURL: @MainActor (URL) -> Bool = { NSWorkspace.shared.open($0) }
   var reboot: @MainActor () -> Bool = { Uninstaller.requestRestart() }
-
-  /// kUninstallSurveyUrl (initializeUninstaller).
-  static var uninstallSurveyURL: URL? {
-    URL(string: Url.getUninstallationSurveyUrl(Version.getGenmaiVersion()))
-  }
 
   /// Quotes `string` for /bin/sh.
   static func shellQuoted(_ string: String) -> String {
@@ -174,13 +163,6 @@ struct Uninstaller {
   /// DeleteFiles's command line: `/bin/rm -rf <path>` per path, stopping at the first failure.
   static func deleteCommand(for paths: [String]) -> String {
     paths.map { "/bin/rm -rf \(shellQuoted($0))" }.joined(separator: " && ")
-  }
-
-  func openUninstallSurvey() -> Bool {
-    guard let url = Self.uninstallSurveyURL else {
-      return false
-    }
-    return openURL(url)
   }
 
   /// GetPrevilegeRights + DeleteFiles.
@@ -195,10 +177,6 @@ struct Uninstaller {
 
   /// +[Uninstaller doUninstall:].
   func doUninstall(_ dialogs: some UninstallerDialogs) async {
-    if opensUninstallSurvey && !openUninstallSurvey() {
-      _ = await dialogs.reportUninstallError()
-      return
-    }
     switch deleteFiles() {
     case .authorizationFailed:
       _ = await dialogs.reportAuthError()

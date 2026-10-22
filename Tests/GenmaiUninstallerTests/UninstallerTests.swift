@@ -138,7 +138,6 @@ final class RecordingDialogs: UninstallerDialogs {
 @MainActor
 final class Counter {
   var count = 0
-  var urls: [URL] = []
 }
 
 @MainActor
@@ -247,14 +246,9 @@ final class Counter {
       reboots.count += 1
       return true
     }
-    uninstaller.openURL = { url in
-      reboots.urls.append(url)
-      return true
-    }
     await uninstaller.doUninstall(dialogs)
     #expect(dialogs.reports == [.uninstallSuccess])
     #expect(reboots.count == (restartNow ? 1 : 0))
-    #expect(reboots.urls.isEmpty)  // The OSS build does not open the survey.
     #expect(!install.exists("Library/Input Methods/Genmai.app"))
   }
 
@@ -278,34 +272,6 @@ final class Counter {
     let uninstaller = Uninstaller(layout: try FakeInstall().layout, runner: FixedCommandRunner(.failed("rm")))
     await uninstaller.doUninstall(dialogs)
     #expect(dialogs.reports == [.uninstallError])
-  }
-
-  @Test func surveyIsOpenedBeforeDeletingWhenEnabled() async throws {
-    let runner = FixedCommandRunner(.success)
-    let opened = Counter()
-    var uninstaller = Uninstaller(layout: try FakeInstall().layout, runner: runner)
-    uninstaller.opensUninstallSurvey = true
-    uninstaller.openURL = { url in
-      #expect(runner.commands.isEmpty)
-      opened.urls.append(url)
-      return true
-    }
-    uninstaller.reboot = { true }
-    await uninstaller.doUninstall(RecordingDialogs(answer: false))
-    let expected = Url.getUninstallationSurveyUrl(Version.getGenmaiVersion())
-    #expect(opened.urls.map(\.absoluteString) == [expected])
-    #expect(expected.hasPrefix("http://www.google.com/support/ime/japanese/bin/request.py?contact_type=surveyime&hl=jp&format=inproduct&version=3%2E"))
-    #expect(runner.commands.count == 1)
-
-    // OpenUninstallSurvey() && DeleteFiles(): a failure to open the survey skips the deletion.
-    let runner2 = FixedCommandRunner(.success)
-    var failing = Uninstaller(layout: try FakeInstall().layout, runner: runner2)
-    failing.opensUninstallSurvey = true
-    failing.openURL = { _ in false }
-    let dialogs = RecordingDialogs(answer: true)
-    await failing.doUninstall(dialogs)
-    #expect(dialogs.reports == [.uninstallError])
-    #expect(runner2.commands.isEmpty)
   }
 
   @Test func strings() {

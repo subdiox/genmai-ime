@@ -15,9 +15,11 @@
 #   Genmai.app/Contents/Resources/{English,Japanese}.lproj/InfoPlist.strings
 #   Genmai.app/Contents/Resources/credits_en.html  <- data/installer/credits_en.html
 #   Genmai.app/Contents/Resources/genmai.data        <- Data/genmai.data (the OSS data set, Tools/build_oracle.sh);
-#                                                   OssDataManager finds it via Bundle.main (GenmaiTool.app
+#                                                   OssDataManager finds it via Bundle.main (the tool app
 #                                                   finds it next to itself)
-#   Genmai.app/Contents/Resources/GenmaiTool.app     <- config dialog, dictionary tool, word register, about, error
+#   Genmai.app/Contents/Resources/Genmai.app       <- GenmaiTool (config dialog, dictionary tool, word register,
+#                                                   about, error, update), named after the product so that the
+#                                                   Dock, the app switcher and Activity Monitor show "Genmai"
 # Both bundles are ad-hoc code signed.
 #
 # Usage: Tools/make_ime_bundle.sh [--debug] [--build-data]
@@ -58,7 +60,7 @@ DISPLAY_NAME_JA="Genmai"
 INPUT_MODE_ANNOTATION="Genmai"
 VERSION=$(sed -n 's/.*kProductVersion = "\(.*\)"/\1/p' "$ROOT/Sources/GenmaiBase/VersionDef.swift")
 SHORT_VERSION=$VERSION
-COPYRIGHT="Copyright © 2026 subdiox. Based on Mozc, Copyright © Google LLC (BSD-3-Clause)."
+COPYRIGHT="Copyright © 2026 subdiox"
 
 DATA_SET=${DATA_SET:-$ROOT/Data/genmai.data}
 if (( BUILD_DATA )); then
@@ -133,10 +135,10 @@ for lproj in English Japanese; do
   plutil -lint "$OUT/Contents/Resources/$lproj.lproj/InfoPlist.strings" >/dev/null
 done
 
-# --- GenmaiTool.app (the dialogs) ---
-TOOL=$OUT/Contents/Resources/GenmaiTool.app
+# --- Genmai.app in Contents/Resources (GenmaiTool, the dialogs) ---
+TOOL=$OUT/Contents/Resources/$PRODUCT_NAME.app
 mkdir -p "$TOOL/Contents/MacOS" "$TOOL/Contents/Resources"
-cp "$BIN_DIR/GenmaiTool" "$TOOL/Contents/MacOS/GenmaiTool"
+cp "$BIN_DIR/GenmaiTool" "$TOOL/Contents/MacOS/$PRODUCT_NAME"
 cp "$ROOT/Tools/assets/genmai.icns" "$TOOL/Contents/Resources/product_icon.icns"
 cp "$ROOT/Tools/assets/product_logo.png" "$TOOL/Contents/Resources/product_logo.png"
 cat >| "$TOOL/Contents/Info.plist" <<PLIST
@@ -152,7 +154,7 @@ cat >| "$TOOL/Contents/Info.plist" <<PLIST
 		<string>ja</string>
 	</array>
 	<key>CFBundleExecutable</key>
-	<string>GenmaiTool</string>
+	<string>$PRODUCT_NAME</string>
 	<key>CFBundleIconFile</key>
 	<string>product_icon.icns</string>
 	<key>CFBundleIdentifier</key>
@@ -160,6 +162,8 @@ cat >| "$TOOL/Contents/Info.plist" <<PLIST
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
 	<key>CFBundleName</key>
+	<string>$DISPLAY_NAME_EN</string>
+	<key>CFBundleDisplayName</key>
 	<string>$DISPLAY_NAME_EN</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>

@@ -6,7 +6,16 @@
 # that process is killed instead; macOS relaunches the input method from the new bundle when it is next used.
 # Then the input source is registered (and enabled / selected if it is not enabled yet) for the console user,
 # like the C++ (`Mozc --register_input_source`; here GenmaiIME, see Sources/GenmaiIME/main.swift).
+#
+# Not in Mozc: a copy of Genmai.app in the console user's ~/Library/Input Methods (a development install, see
+# Tools/make_ime_bundle.sh) has the same bundle identifier and would shadow the installed one; it is removed.
 CONSOLE_USER=`/usr/bin/stat -f%Su /dev/console`
+if [ -n "$CONSOLE_USER" ] && [ "$CONSOLE_USER" != "root" ]; then
+  USER_HOME=`/usr/bin/dscl . -read "/Users/$CONSOLE_USER" NFSHomeDirectory 2>/dev/null | /usr/bin/awk '{print $2}'`
+  if [ -n "$USER_HOME" ] && [ -d "$USER_HOME/Library/Input Methods/@@@GENMAI_APP_NAME@@@" ]; then
+    /bin/rm -rf "$USER_HOME/Library/Input Methods/@@@GENMAI_APP_NAME@@@"
+  fi
+fi
 /usr/bin/sudo -u $CONSOLE_USER /usr/bin/killall GenmaiIME > /dev/null 2>&1
 
 if [ -n "$CONSOLE_USER" ] && [ "$CONSOLE_USER" != "root" ] && [ "$COMMAND_LINE_INSTALL" != "1" ]; then

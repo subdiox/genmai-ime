@@ -213,18 +213,13 @@ private func makeNonDefaultConfig() -> Genmai_Config_Config {
   }
 
   @Test func platformHooks() {
-    nonisolated(unsafe) var stats = true
     nonisolated(unsafe) var loginItem = false
     let platform = ConfigDialogPlatform(
-      isUsageStatsEnabled: { stats }, setUsageStatsEnabled: { stats = $0 },
       isLoginItemEnabled: { loginItem }, setLoginItemEnabled: { loginItem = $0 })
     let model = ConfigDialogModel(
       client: ConfigDialogMockClient(config: ConfigHandler.defaultConfig()), platform: platform)
-    #expect(model.values.usageStats)
-    model.values.usageStats = false
     model.values.startup = true
     #expect(model.update())
-    #expect(!stats)
     #expect(loginItem)
   }
 

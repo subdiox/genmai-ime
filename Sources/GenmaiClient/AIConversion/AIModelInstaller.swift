@@ -8,9 +8,7 @@
 // tokenizer.json and `genmai_model.json` (which release is installed). The conversion is plain Swift (GenmaiTool
 // does not link MLX); it produces the same bits as MLX's `astype(bfloat16)` (round to nearest even).
 
-import CryptoKit
 import Foundation
-import Synchronization
 
 /// Which model release is installed (`genmai_model.json` in the model directory).
 public struct GenmaiModelInfo: Codable, Equatable, Sendable {
@@ -239,7 +237,9 @@ public enum AIModelInstaller {
       if !isComplete(local, file) {
         try? fm.removeItem(at: local)
         let base = done
-        try await download(release.url(of: file), to: local, name: file.name) { received in
+        try await FileDownload.download(
+          release.url(of: file), to: local, failure: { AIModelInstallError.download(file.name, status: $0) }
+        ) { received in
           progress(.downloading(received: base + received, total: total))
         }
       }
@@ -336,89 +336,13 @@ public enum AIModelInstaller {
     return size == file.size
   }
 
-  private static func download(
-    _ url: URL, to destination: URL, name: String, progress: @escaping @Sendable (Int64) -> Void
-  ) async throws {
-    let downloader = Downloader(destination: destination, name: name, progress: progress)
-    let session = URLSession(configuration: .default, delegate: downloader, delegateQueue: nil)
-    defer { session.finishTasksAndInvalidate() }
-    let task = session.downloadTask(with: url)
-    try await withTaskCancellationHandler {
-      try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, any Error>) in
-        downloader.continuation.withLock { $0 = continuation }
-        task.resume()
-      }
-    } onCancel: {
-      task.cancel()
-    }
-  }
-
-  /// The session delegate of one download: reports the bytes received and moves the finished file into place.
-  /// (The task delegate of `URLSession.download(from:delegate:)` gets no progress callbacks.)
-  private final class Downloader: NSObject, URLSessionDownloadDelegate, Sendable {
-    let destination: URL
-    let name: String
-    let progress: @Sendable (Int64) -> Void
-    let continuation = Mutex<CheckedContinuation<Void, any Error>?>(nil)
-    /// Set when the file arrived but could not be used (HTTP error, move failed).
-    let failure = Mutex<(any Error)?>(nil)
-
-    init(destination: URL, name: String, progress: @escaping @Sendable (Int64) -> Void) {
-      self.destination = destination
-      self.name = name
-      self.progress = progress
-    }
-
-    func urlSession(
-      _ session: URLSession, downloadTask: URLSessionDownloadTask, didWriteData bytesWritten: Int64,
-      totalBytesWritten: Int64, totalBytesExpectedToWrite: Int64
-    ) {
-      progress(totalBytesWritten)
-    }
-
-    func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask, didFinishDownloadingTo location: URL) {
-      // The file is deleted when this returns.
-      let status = (downloadTask.response as? HTTPURLResponse)?.statusCode ?? 0
-      do {
-        guard status == 200 else { throw AIModelInstallError.download(name, status: status) }
-        try FileManager.default.moveItem(at: location, to: destination)
-      } catch {
-        failure.withLock { $0 = error }
-      }
-    }
-
-    func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: (any Error)?) {
-      let result = error ?? failure.withLock { $0 }
-      guard let continuation = continuation.withLock({ c in defer { c = nil }; return c }) else { return }
-      if let result {
-        continuation.resume(throwing: (result as? URLError)?.code == .cancelled ? CancellationError() : result)
-      } else {
-        continuation.resume()
-      }
-    }
-  }
-
   /// Whether the file at `url` has `checksum`.
-  @concurrent
   static func checksum(of url: URL, _ checksum: GenmaiModelRelease.File.Checksum) async throws -> Bool {
-    let handle = try FileHandle(forReadingFrom: url)
-    defer { try? handle.close() }
-    func hash<H: HashFunction>(_ h: inout H) throws -> String {
-      while let chunk = try handle.read(upToCount: 8 << 20), !chunk.isEmpty {
-        try Task.checkCancellation()
-        h.update(data: chunk)
-      }
-      return h.finalize().map { String(format: "%02x", $0) }.joined()
-    }
     switch checksum {
     case .sha256(let expected):
-      var h = SHA256()
-      return try hash(&h) == expected.lowercased()
+      return try await FileDownload.sha256(of: url) == expected.lowercased()
     case .gitBlob(let expected):
-      let size = (try FileManager.default.attributesOfItem(atPath: url.path)[.size] as? Int) ?? 0
-      var h = Insecure.SHA1()
-      h.update(data: Data("blob \(size)\0".utf8))
-      return try hash(&h) == expected.lowercased()
+      return try await FileDownload.gitBlobSHA1(of: url) == expected.lowercased()
     }
   }
 }

@@ -10,12 +10,14 @@
 #   /Applications/Genmai/.localized/{en,ja}.strings       <- Tools/installer/Resources/*.lproj/Localizable.strings
 # Scripts (Tools/installer/*_template.sh with @@@...@@@ substituted, like build_tools/tweak_macinstaller_script.py):
 #   preinstall   removes the previous /Applications/Genmai
-#   postinstall  kills the running input method (GenmaiIME, which hosts the converter in-process; the C++ kills
-#                GenmaiConverter) and runs `GenmaiIME --register_input_source` as the console user
+#   postinstall  removes a development copy in the console user's ~/Library/Input Methods (same bundle id), kills
+#                the running input method (GenmaiIME, which hosts the converter in-process; the C++ kills
+#                GenmaiConverter) and runs `GenmaiIME --register_input_source` as the console user. No logout is
+#                required (distribution.xml); the input method restarts with the new bundle when next used.
 # Not ported: /Library/LaunchAgents/org.mozc.inputmethod.Japanese.{Converter,Renderer}.plist. The C++ starts
 # mozc_server and mozc_renderer through launchd; the Swift IME runs both in-process, so there is nothing to
 # launch. The Qt ConfigDialog / DictionaryTool symlinks in /Applications/Mozc (TweakForProductbuild with Qt)
-# are n/a as well: the dialogs live in GenmaiTool.app inside the input method bundle.
+# are n/a as well: the dialogs live in the tool app inside the input method bundle.
 #
 # As in build_package.py, the component plist from `pkgbuild --analyze` gets BundleOverwriteAction = "" so an
 # upgrade overwrites the bundle in place and keeps the input source registration (google/mozc#1439). In
@@ -81,6 +83,7 @@ codesign --verify --strict --deep "$WORK/root$APP_PATH"
 substitute() {
   sed -e "s|@@@GENMAI_APPLICATIONS_DIR@@@|$APPLICATIONS_DIR|g" \
       -e "s|@@@GENMAI_APP_PATH@@@|$APP_PATH|g" \
+      -e "s|@@@GENMAI_APP_NAME@@@|${APP_PATH:t}|g" \
       -e "s|@@@GENMAI_PACKAGE_NAME@@@|$PKG_NAME|g" \
       -e "s|@@@GENMAI_VERSION@@@|$VERSION|g" \
       -e "s|@@@HOST_ARCHITECTURES@@@|$HOST_ARCHITECTURES|g" \

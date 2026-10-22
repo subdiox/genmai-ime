@@ -59,6 +59,7 @@ func registerInputSource() {
 
 /// Kept alive for the lifetime of the process.
 nonisolated(unsafe) var imkServer: IMKServer?
+nonisolated(unsafe) var updateChecker: GenmaiUpdateChecker?
 
 let kUsage = """
   Usage: GenmaiIME [--register_input_source | --self_test | --help]
@@ -250,6 +251,11 @@ func runInputMethod() -> Int32 {
   let environment = GenmaiIMEEnvironment.shared
   _ = environment.renderer
   environment.start()
+
+  // Not in Mozc: the daily update check (if enabled in the settings).
+  let checker = GenmaiUpdateChecker()
+  checker.start()
+  updateChecker = checker
 
   let app = NSApplication.shared
   app.run()

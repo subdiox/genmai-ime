@@ -35,10 +35,28 @@ interval, 45–64 ms when it is pressed right after it.
 ## Requirements
 
 - macOS 15 or later, Apple silicon (AI conversion uses Metal through MLX)
-- Xcode 26 or later (Swift 6.2 toolchain with the Metal toolchain installed)
 - ~1 GB of disk for the AI model
+- To build: Xcode 26 or later (Swift 6.2 toolchain with the Metal toolchain installed)
 
-## Build and install
+## Install
+
+Download `Genmai-X.Y.Z.pkg` from the [latest release](https://github.com/subdiox/genmai-ime/releases/latest) and
+open it. The package is not signed with a Developer ID yet: if macOS refuses to open it, allow it in System
+Settings › Privacy & Security (**Open Anyway**). It installs into `/Library/Input Methods` and selects the input
+source; you can also add **Genmai** in System Settings › Keyboard › Input Sources. Settings and learning data live
+in `~/Library/Application Support/Genmai`. To uninstall, run `/Applications/Genmai/UninstallGenmai.app`.
+
+### Updates
+
+Genmai checks GitHub for a new release once a day and shows a notification; clicking it opens the update dialog,
+which downloads the package (verified against the SHA-256 GitHub lists) and opens the installer. The settings (tab
+"Misc" › Updates) turn the automatic check off, check on request and install the update. The check sends no data
+besides the request for the release list.
+
+Releases are made with `Tools/make_release.sh --publish` (bump `kProductVersion` in
+`Sources/GenmaiBase/VersionDef.swift` first): it builds the package, tags `vX.Y.Z` and creates the GitHub release.
+
+## Build from source
 
 ```sh
 git clone https://github.com/subdiox/genmai-ime.git
@@ -49,7 +67,7 @@ build/Genmai.app/Contents/MacOS/GenmaiIME --self_test
 ```
 
 Install it either with the installer package (`Tools/make_installer_pkg.sh` → `build/Genmai.pkg`, installs into
-`/Library/Input Methods`) or by hand:
+`/Library/Input Methods` and removes a copy in `~/Library/Input Methods`) or by hand:
 
 ```sh
 cp -R build/Genmai.app ~/Library/Input\ Methods/

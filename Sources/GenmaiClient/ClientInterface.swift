@@ -94,6 +94,8 @@ public enum ToolMode: String, CaseIterable, Sendable {
   case wordRegisterDialog = "word_register_dialog"
   case aboutDialog = "about_dialog"
   case errorMessageDialog = "error_message_dialog"
+  /// Not in Mozc: the update dialog (opened from the IME's update notification).
+  case updateDialog = "update_dialog"
 
   /// Maps `Output.LaunchToolMode` to the tool mode string (client/client.cc LaunchToolWithProtoBuf).
   public init?(_ mode: Output.ToolMode) {

@@ -46,31 +46,4 @@ public enum Url {
     }
     return String(decoding: result, as: UTF8.self)
   }
-
-  private static let kSurveyBaseUrl = "http://www.google.com/support/ime/japanese/bin/request.py"
-  private static let kSurveyVersionEntry = "version"
-  private static let kSurveyContactTypeEntry = "contact_type"
-  private static let kSurveyContactType = "surveyime"
-  private static let kSurveyHtmlLanguageEntry = "hl"
-  private static let kSurveyHtmlLanguage = "jp"
-  private static let kSurveyFormatEntry = "format"
-  private static let kSurveyFormat = "inproduct"
-
-  private static func paramPairToString(_ key: String, _ value: some StringProtocol) -> String {
-    key + "=" + encodeUrl(value)
-  }
-
-  /// Returns the URL of the uninstallation survey (used by the macOS
-  /// uninstaller).
-  public static func getUninstallationSurveyUrl(_ version: some StringProtocol) -> String {
-    var params = [
-      paramPairToString(kSurveyContactTypeEntry, kSurveyContactType),
-      paramPairToString(kSurveyHtmlLanguageEntry, kSurveyHtmlLanguage),
-      paramPairToString(kSurveyFormatEntry, kSurveyFormat),
-    ]
-    if !version.isEmpty {
-      params.append(paramPairToString(kSurveyVersionEntry, version))
-    }
-    return kSurveyBaseUrl + "?" + params.joined(separator: "&")
-  }
 }

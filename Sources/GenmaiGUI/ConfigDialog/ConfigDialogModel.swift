@@ -62,7 +62,6 @@ public struct ConfigDialogValues: Equatable, Sendable {
   public var suggestionsSize = 3
 
   // tab5
-  public var usageStats = false
   public var incognitoMode = false
   public var presentationMode = false
 
@@ -221,29 +220,21 @@ public struct ConfigDialogValues: Equatable, Sendable {
   }
 }
 
-/// Platform hooks of the dialog (StatsConfigUtil, MacUtil login item).
+/// Platform hooks of the dialog (MacUtil login item).
 public struct ConfigDialogPlatform: Sendable {
-  public var isUsageStatsEnabled: @MainActor @Sendable () -> Bool
-  public var setUsageStatsEnabled: @MainActor @Sendable (Bool) -> Void
   public var isLoginItemEnabled: @MainActor @Sendable () -> Bool
   public var setLoginItemEnabled: @MainActor @Sendable (Bool) -> Void
 
   public init(
-    isUsageStatsEnabled: @escaping @MainActor @Sendable () -> Bool,
-    setUsageStatsEnabled: @escaping @MainActor @Sendable (Bool) -> Void,
     isLoginItemEnabled: @escaping @MainActor @Sendable () -> Bool,
     setLoginItemEnabled: @escaping @MainActor @Sendable (Bool) -> Void
   ) {
-    self.isUsageStatsEnabled = isUsageStatsEnabled
-    self.setUsageStatsEnabled = setUsageStatsEnabled
     self.isLoginItemEnabled = isLoginItemEnabled
     self.setLoginItemEnabled = setLoginItemEnabled
   }
 
-  /// The OSS build: NullStatsConfigUtilImpl (never enabled) and no prelauncher login item (the Swift IME
-  /// has no separate converter process to start on login).
+  /// No prelauncher login item (the Swift IME has no separate converter process to start on login).
   public static let oss = ConfigDialogPlatform(
-    isUsageStatsEnabled: { false }, setUsageStatsEnabled: { _ in },
     isLoginItemEnabled: { false }, setLoginItemEnabled: { _ in })
 }
 
@@ -332,6 +323,8 @@ public final class ConfigDialogModel {
   private var baseConfig = Genmai_Config_Config()
   private var isLoading = false
   private let aiSettingsURL: URL?
+  /// Not in Mozc: updates of Genmai itself (tab "Misc").
+  public let appUpdate: GenmaiUpdateModel
   /// The AI settings as last loaded / saved.
   private var savedAIValues = AIConversionSettings()
 
@@ -340,8 +333,10 @@ public final class ConfigDialogModel {
     client: any GenmaiClientProtocol,
     platform: ConfigDialogPlatform = .oss,
     launchTool: @escaping @MainActor (String) -> Void = { _ in },
-    aiSettingsURL: URL? = nil
+    aiSettingsURL: URL? = nil,
+    appUpdate: GenmaiUpdateModel? = nil
   ) {
+    self.appUpdate = appUpdate ?? GenmaiUpdateModel()
     self.client = client
     self.platform = platform
     self.launchTool = launchTool
@@ -484,7 +479,6 @@ public final class ConfigDialogModel {
     defer { isLoading = false }
     baseConfig = config
     var newValues = ConfigDialogValues(config: config)
-    newValues.usageStats = platform.isUsageStatsEnabled()
     newValues.startup = platform.isLoginItemEnabled()
     values = newValues
     characterFormEditor.load(config)
@@ -494,8 +488,6 @@ public final class ConfigDialogModel {
   public func convertToProto() -> Genmai_Config_Config {
     var config = baseConfig
     values.apply(to: &config)
-    // GetSendStatsCheckBox
-    platform.setUsageStatsEnabled(values.usageStats)
     characterFormEditor.save(&config)
     return config
   }

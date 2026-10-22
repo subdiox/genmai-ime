@@ -222,6 +222,24 @@ unchanged; the hook only forwards). GenmaiCore and GenmaiSession contain no AI c
   GenmaiMacTests (key queue, suggestion refresh), GenmaiRendererTests (`CandidatePlacement`), GenmaiAITests
   (tokenizer, decoding, KV reuse / draft vs. plain), GenmaiAIClientTests (model-backed speculation).
 
+## App updates and releases (not in Mozc)
+
+- The tool app (product GenmaiTool) is bundled as `Genmai.app/Contents/Resources/Genmai.app` with executable
+  `Genmai` (`GenmaiConst.kGenmaiTool`), so the Dock, the app switcher and Activity Monitor show "Genmai". The user
+  facing copyright is "Copyright © 2026 subdiox"; Mozc's license notices stay in `credits_en.html` (linked from the
+  About dialog; required by Mozc's BSD license). Google-only features (usage statistics upload, uninstall survey)
+  were removed.
+- Releases: GitHub releases of subdiox/genmai-ime, tag vX.Y.Z (= `kProductVersion`), asset `Genmai-X.Y.Z.pkg`, made
+  with `Tools/make_release.sh [--publish]`. The package installs into `/Library/Input Methods`, removes a copy in
+  the console user's `~/Library/Input Methods` (same bundle id) and needs no logout.
+- Updates (GenmaiClient/Update): `GenmaiAppRelease.latest` (GitHub API `/repos/.../releases`: highest vX.Y.Z, no
+  drafts / pre-releases, with a .pkg asset; size + SHA-256 `digest`), `GenmaiUpdater.download` (shared
+  `FileDownload`, also used by the model installer), `GenmaiUpdateSettings` (`<profile>/update.json`:
+  `automatic_check` (default on), `last_check`, `skipped_version`). The IME (`GenmaiMac/GenmaiUpdateChecker`) checks
+  once a day and posts a notification that opens the tool mode `update_dialog`; the config dialog's tab "Misc" has
+  the "Updates" section (`GenmaiUpdateModel`). The downloaded package has no quarantine attribute and is opened with
+  Installer.
+
 ## Status
 
 See `PORTING_STATUS.md` (per upstream file: not started / ported / tested / parity-verified).

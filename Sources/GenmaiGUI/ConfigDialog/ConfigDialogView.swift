@@ -1,5 +1,5 @@
 // SwiftUI version of mozc/src/gui/config_dialog/config_dialog.ui (3.35.6354), macOS layout:
-// tabs General / Dictionary / Advanced / Suggest / Privacy / Misc (+ AI, not in Mozc), "Reset to defaults",
+// tabs General / Dictionary / Advanced / Suggest / Privacy / Misc (+ updates in Misc and the AI tab, not in Mozc), "Reset to defaults",
 // Cancel / Apply / OK.
 
 import GenmaiClient
@@ -374,16 +374,6 @@ struct PrivacyTab: View {
       } header: {
         ConfigSectionHeader(title: "Presentation mode")
       }
-      Section {
-        MessageToggle(
-          message: tr(
-            ui,
-            "Help make [ProductName] better by automatically sending usage statistics and crash reports to Google (changes will take effect after you log out and log back in)"
-          ),
-          isOn: $model.values.usageStats)
-      } header: {
-        ConfigSectionHeader(title: "Usage statistics and crash reports")
-      }
     }
     .formStyle(.grouped)
   }
@@ -419,6 +409,8 @@ struct MiscTab: View {
       } header: {
         ConfigSectionHeader(title: "Startup")
       }
+      // Not in Mozc: updates of Genmai itself.
+      UpdateSection(update: model.appUpdate)
       #if DEBUG
         // disable logging options in release builds (NDEBUG).
         Section {

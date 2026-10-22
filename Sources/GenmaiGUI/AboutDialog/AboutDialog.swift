@@ -20,7 +20,7 @@ public struct AboutDialogContent: Equatable, Sendable {
     windowTitle = tr(kContext, "About [ProductName]", language: language)
     productName = tr(kContext, "[ProductName]", language: language)
     version = "(" + Version.getProductVersion() + ")"
-    copyright = tr(kContext, "Copyright 2026 Google LLC. All rights reserved.", language: language)
+    copyright = "Copyright © 2026 subdiox"
     let termsHTML = tr(
       kContext,
       "<html><body>[ProductName] <a href=\"[ProductUrl]\"><span style=\" text-decoration: underline; color:#0000ff;\">product information</span></a> <a href=\"[ForumUrl]\"><span style=\" text-decoration: underline; color:#0000ff;\">[ForumName]</span></a></body></html>",
@@ -45,7 +45,7 @@ public struct AboutDialogContent: Equatable, Sendable {
     return replaced
   }
 
-  /// Where credits_en.html is installed: next to GenmaiTool.app in Mozc.app/Contents/Resources, or in the
+  /// Where credits_en.html is installed: next to the tool app in Genmai.app/Contents/Resources, or in the
   /// tool's own resources.
   @MainActor
   public static func defaultCreditsPath() -> String {

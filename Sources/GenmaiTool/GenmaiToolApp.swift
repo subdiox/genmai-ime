@@ -1,7 +1,8 @@
 // Port of mozc/src/gui/tool/mozc_tool_libmain.cc, the *_libmain.cc of each dialog and
 // gui/base/singleton_window_helper (3.35.6354).
 //
-// GenmaiTool.app hosts the SwiftUI dialogs of GenmaiGUI. The mode comes from `--mode=<mode>` (or the
+// GenmaiTool (installed as Genmai.app in Genmai.app/Contents/Resources) hosts the SwiftUI dialogs of GenmaiGUI
+// (and the update dialog, not in Mozc). The mode comes from `--mode=<mode>` (or the
 // FLAGS_mode environment variable, like the C++ on macOS), the error type of the error dialog from
 // `--error_type=` / FLAGS_error_type, and the word register defaults from the environment variables set by
 // the IME. Only one window per mode and desktop runs at a time: a second instance asks the first one to come
@@ -118,6 +119,8 @@ final class ToolAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         return nil
       }
       view = AnyView(ErrorMessageDialogView(message: message))
+    case .updateDialog:
+      view = AnyView(UpdateDialogView())
     }
     return AnyView(view.environment(\.closeDialog, close))
   }
@@ -129,6 +132,7 @@ final class ToolAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     case .wordRegisterDialog: tr("WordRegisterDialog", "[ProductName] Word Register Dialog")
     case .aboutDialog: tr("AboutDialog", "About [ProductName]")
     case .errorMessageDialog: ErrorMessageDialog.title()
+    case .updateDialog: UpdateStrings.text(.dialogTitle)
     }
   }
 

@@ -3,20 +3,21 @@
 //
 // The C++ launches ConfigDialog.app / DictionaryTool.app / ... (thin wrappers of GenmaiTool.app) from the
 // server directory and passes the mode through environment variables. The Swift bundle ships a single
-// GenmaiTool.app in Mozc.app/Contents/Resources; the mode is passed as `--mode=<mode>` (plus
+// tool app (GenmaiTool, installed as Genmai.app) in Genmai.app/Contents/Resources; the mode is passed as `--mode=<mode>` (plus
 // `--error_type=<type>` for the error dialog) and extra environment variables (the word register text).
 
 import AppKit
+import GenmaiBase
 import GenmaiClient
 
 @MainActor
 public final class MacToolLauncher: ToolLauncher {
   private let toolURL: URL
 
-  /// - Parameter toolURL: GenmaiTool.app. Defaults to Contents/Resources/GenmaiTool.app of the main bundle.
+  /// - Parameter toolURL: the tool app. Defaults to Contents/Resources/Genmai.app of the main bundle.
   public init(toolURL: URL? = nil) {
     self.toolURL =
-      toolURL ?? Bundle.main.bundleURL.appendingPathComponent("Contents/Resources/GenmaiTool.app")
+      toolURL ?? Bundle.main.bundleURL.appendingPathComponent("Contents/Resources/" + GenmaiConst.kGenmaiTool)
   }
 
   @discardableResult
