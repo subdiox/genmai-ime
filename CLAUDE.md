@@ -286,6 +286,9 @@ table; use "…" and "ユーザー".
   only replacement, an SMAppService daemon, needs approval in System Settings first); a per-user installation is
   removed without rights. The user data kinds the user checks go too (AI model + caches checked by default; user
   dictionary, learning data, settings kept by default).
+- CI: `.github/workflows/ci.yml` builds every product and runs `swift test` on each push to main and on pull
+  requests (macos-26 runner, the same Xcode as releases; the data sets are built and cached, model tests skip).
+  The local Xcode can be newer than the runner's: code that compiles here can still fail there.
 - Releases: GitHub releases of subdiox/genmai-ime, tag vX.Y.Z (= `kProductVersion`), asset `Genmai-X.Y.Z.pkg`.
   Normally made by the GitHub Actions workflow `.github/workflows/release.yml`: bump `kProductVersion`, commit, push
   the tag `vX.Y.Z`; the workflow (macos-26 runner, newest Xcode ≥ 26 + Metal toolchain) builds the data set and the
