@@ -100,8 +100,9 @@ BOS / EOS ids and the outputs end in garbage).
   bit-identical to MLX `astype`; Conv1D weights (out, in); metadata `format=genmai-bf16-out-in`; 0.62 GB) and
   replaces config.json / tokenizer.json / model.safetensors / `genmai_model.json` (installed release) in the model
   directory one file at a time (other files are left alone). Downloads are kept in `~/Library/Caches/Genmai/download`
-  until the install succeeds. Front ends: the settings tab "AI" (Download / Update button with progress and
-  cancel; afterwards it sends RELOAD and `GenmaiAugmenter` reloads because `AIModelStatus.identity` — size and
+  until the install succeeds. `AIModelInstaller.uninstall` removes only those files (and the directory if
+  nothing else is left; "Remove Model…" in the settings, after a confirmation, then RELOAD). Front ends: the
+  settings tab "AI" (Download / Update button with progress and cancel; afterwards it sends RELOAD and `GenmaiAugmenter` reloads because `AIModelStatus.identity` — size and
   mtime of the weights — changed), `genmai-cli install` and `Tools/prepare_genmai_model.sh`. The prompt format is
   `genmai_prompt_format` in config.json (0.1.0 installs had genmai_fmt.txt, removed on install). **New release:**
   update `GenmaiModelRelease.current` (sizes / sha256 from `https://huggingface.co/api/models/subdiox/genmai/tree/<tag>`),

@@ -11,6 +11,7 @@ public enum AIStrings {
     case tab, sectionAI, enable, explanation, sectionSettings, timeout, candidates, modelDirectory,
       modelDirectoryPlaceholder, sectionModel, modelFound, modelMissing, modelVersion, modelVersionUnknown,
       modelUpToDate, download, update, downloadNote, downloading, verifying, converting, cancel, installFailed,
+      remove, removeConfirm, removeFailed,
       checkAgain, saveFailed, milliseconds
   }
 
@@ -40,6 +41,10 @@ public enum AIStrings {
     .converting: "Installing…",
     .cancel: "Cancel",
     .installFailed: "Could not install the model: %@",
+    .remove: "Remove Model…",
+    .removeConfirm:
+      "Remove the AI model from %@? AI conversion stops working until you download the model again (the settings are kept).",
+    .removeFailed: "Could not remove the model: %@",
     .checkAgain: "Check again",
     .saveFailed: "Failed to save the AI conversion settings.",
     .milliseconds: "%d ms",
@@ -71,6 +76,9 @@ public enum AIStrings {
     .converting: "インストール中…",
     .cancel: "キャンセル",
     .installFailed: "モデルをインストールできませんでした: %@",
+    .remove: "モデルを削除…",
+    .removeConfirm: "%@ から AI モデルを削除しますか? もう一度ダウンロードするまで AI 変換は使えなくなります (設定はそのまま残ります)。",
+    .removeFailed: "モデルを削除できませんでした: %@",
     .checkAgain: "再確認",
     .saveFailed: "AI 変換の設定を保存できませんでした。",
     .milliseconds: "%d ミリ秒",
@@ -255,6 +263,9 @@ struct AIModelInstallRow: View {
         Text(verbatim: String(format: AIStrings.text(.modelUpToDate), release.info.version))
           .font(.callout)
           .foregroundStyle(.secondary)
+      }
+      if model.aiModelStatus.isFound {
+        Button(AIStrings.text(.remove), role: .destructive) { model.removeAIModel() }
       }
     }
   }

@@ -420,6 +420,28 @@ public final class ConfigDialogModel {
     }
   }
 
+  /// The "Remove model" button: asks first, then deletes the model files (`performRemoveAIModel`).
+  public func removeAIModel() {
+    guard aiModelStatus.isFound, !aiModelInstall.isRunning else { return }
+    showQuestion(String(format: AIStrings.text(.removeConfirm), aiValues.resolvedModelDirectory.path)) {
+      [weak self] in
+      self?.performRemoveAIModel()
+    }
+  }
+
+  /// Deletes the model files from the model directory and tells the IME to reload (it then converts without AI
+  /// until a model is installed again).
+  func performRemoveAIModel() {
+    do {
+      try AIModelInstaller.uninstall(from: aiValues.resolvedModelDirectory)
+    } catch {
+      showMessage(.critical, String(format: AIStrings.text(.removeFailed), "\(error)"))
+    }
+    aiModelInstall = .idle
+    refreshAIModelStatus()
+    _ = client.reload()
+  }
+
   /// Cancels the running download / installation (the model directory is left as it was).
   public func cancelAIModelInstall() {
     aiModelInstallTask?.cancel()

@@ -148,6 +148,25 @@ public enum AIModelInstaller {
     try? fm.removeItem(at: downloads)
   }
 
+  /// The files an installation writes (and `uninstall` removes), including the format file of 0.1.0 installs.
+  static let installedFiles = ["config.json", "tokenizer.json", "model.safetensors", GenmaiModelInfo.fileName, "genmai_fmt.txt"]
+
+  /// Removes the model from `directory`: only the model's own files; the directory itself only if nothing else
+  /// is left in it. Also drops downloads kept from an interrupted installation.
+  public static func uninstall(from directory: URL, cacheDirectory: URL = AIModelInstaller.cacheDirectory) throws {
+    let fm = FileManager.default
+    for name in installedFiles {
+      let url = directory.appending(path: name)
+      if fm.fileExists(atPath: url.path) {
+        try fm.removeItem(at: url)
+      }
+    }
+    if let rest = try? fm.contentsOfDirectory(atPath: directory.path), rest.allSatisfy({ $0 == ".DS_Store" }) {
+      try? fm.removeItem(at: directory)
+    }
+    try? fm.removeItem(at: cacheDirectory)
+  }
+
   /// Writes the runtime model file for the HF safetensors file `source` (see `GenmaiSafetensors.prepare`) and copies
   /// config.json and tokenizer.json next to it, without a `genmai_model.json` (`genmai-cli prepare`).
   public static func prepare(source: URL, destination: URL) async throws {

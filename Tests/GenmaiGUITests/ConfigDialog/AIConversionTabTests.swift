@@ -121,6 +121,47 @@ import Testing
     #expect(client.reloadCount == 0)
   }
 
+  @Test func removesOnlyTheModelFiles() throws {
+    let dir = TempDir()
+    let client = ConfigDialogMockClient()
+    let model = ConfigDialogModel(client: client, aiSettingsURL: dir.settings)
+    let modelDir = dir.url.appending(path: "model")
+    try FileManager.default.createDirectory(at: modelDir, withIntermediateDirectories: true)
+    model.aiModelDirectoryText = modelDir.path
+    for f in AIModelStatus.requiredFiles + ["genmai_fmt.txt"] {
+      try Data().write(to: modelDir.appending(path: f))
+    }
+    try GenmaiModelRelease.current.info.save(to: modelDir)
+    try Data().write(to: modelDir.appending(path: "notes.txt"))
+    model.refreshAIModelStatus()
+    #expect(model.aiModelStatus.isFound)
+
+    model.removeAIModel()
+    #expect(model.pendingMessage?.kind == .question)
+    #expect(model.aiModelStatus.isFound)  // nothing happens before the answer
+    model.performRemoveAIModel()
+    #expect(!model.aiModelStatus.isFound)
+    #expect(client.reloadCount == 1)
+    #expect(try FileManager.default.contentsOfDirectory(atPath: modelDir.path) == ["notes.txt"])
+
+    // an otherwise empty model directory is removed too
+    try FileManager.default.removeItem(at: modelDir.appending(path: "notes.txt"))
+    for f in AIModelStatus.requiredFiles {
+      try Data().write(to: modelDir.appending(path: f))
+    }
+    model.refreshAIModelStatus()
+    model.performRemoveAIModel()
+    #expect(!FileManager.default.fileExists(atPath: modelDir.path))
+  }
+
+  @Test func removeIsOfferedOnlyForAnInstalledModel() {
+    let dir = TempDir()
+    let model = ConfigDialogModel(client: ConfigDialogMockClient(), aiSettingsURL: dir.settings)
+    model.aiModelDirectoryText = dir.url.appending(path: "none").path
+    model.removeAIModel()
+    #expect(model.pendingMessage == nil)
+  }
+
   @Test func installStrings() {
     let downloading = AIStrings.installPhase(.downloading(received: 0, total: 1_000_000_000), language: .english)
     #expect(downloading.hasPrefix("Downloading… "))
