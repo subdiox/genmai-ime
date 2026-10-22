@@ -11,8 +11,8 @@ public enum AIStrings {
     case tab, sectionAI, enable, explanation, sectionSettings, timeout, candidates, modelDirectory,
       modelDirectoryPlaceholder, sectionModel, modelFound, modelMissing, modelVersion, modelVersionUnknown,
       modelUpToDate, download, update, downloadNote, downloading, verifying, installing, cancel, installFailed,
-      remove, removeConfirm, removeFailed, checkingLatest, latestFailed, retry,
-      checkAgain, saveFailed, milliseconds
+      remove, removeConfirm, removeFailed, checkingLatest, latestFailed, retry, variant, variantQ8, variantBF16,
+      variantMissing, checkAgain, saveFailed, milliseconds
   }
 
   static let english: [Key: String] = [
@@ -29,7 +29,11 @@ public enum AIStrings {
     .sectionModel: "Model",
     .modelFound: "Model found: %@",
     .modelMissing: "Model not found: %@ (missing %@)",
-    .modelVersion: "Version: genmai %@",
+    .modelVersion: "Version: genmai %@ (%@)",
+    .variant: "Model type",
+    .variantQ8: "Standard (8-bit quantized)",
+    .variantBF16: "High precision (bf16)",
+    .variantMissing: "genmai %@ has no %@ weights.",
     .modelVersionUnknown: "Version: unknown (not installed from a release)",
     .modelUpToDate: "genmai %@ is the latest version.",
     .download: "Download genmai %@",
@@ -67,7 +71,11 @@ public enum AIStrings {
     .sectionModel: "モデル",
     .modelFound: "モデルが見つかりました: %@",
     .modelMissing: "モデルが見つかりません: %@ (%@ がありません)",
-    .modelVersion: "バージョン: genmai %@",
+    .modelVersion: "バージョン: genmai %1$@（%2$@）",
+    .variant: "モデルの種類",
+    .variantQ8: "標準（8bit 量子化）",
+    .variantBF16: "高精度（bf16）",
+    .variantMissing: "genmai %1$@ には「%2$@」がありません。",
     .modelVersionUnknown: "バージョン: 不明 (リリースからインストールされていません)",
     .modelUpToDate: "genmai %@ は最新版です。",
     .download: "genmai %@ をダウンロード",
@@ -109,7 +117,15 @@ public enum AIStrings {
   public static func modelVersion(_ status: AIModelStatus, language: GUILanguage = .current) -> String? {
     guard case .found(_, let info) = status else { return nil }
     guard let info else { return text(.modelVersionUnknown, language: language) }
-    return String(format: text(.modelVersion, language: language), info.version)
+    return String(
+      format: text(.modelVersion, language: language), info.version, variantName(info.installedVariant, language: language))
+  }
+
+  public static func variantName(_ variant: AIModelVariant, language: GUILanguage = .current) -> String {
+    switch variant {
+    case .q8: text(.variantQ8, language: language)
+    case .bf16: text(.variantBF16, language: language)
+    }
   }
 
   /// What the running installation is doing.
@@ -125,8 +141,11 @@ public enum AIStrings {
   }
 
   /// The explanation under the download button.
-  public static func downloadNote(_ release: GenmaiModelRelease, language: GUILanguage = .current) -> String {
-    String(format: text(.downloadNote, language: language), bytes(release.downloadSize), release.info.repository)
+  public static func downloadNote(
+    _ release: GenmaiModelRelease, variant: AIModelVariant, language: GUILanguage = .current
+  ) -> String {
+    String(
+      format: text(.downloadNote, language: language), bytes(release.downloadSize(for: variant)), release.info.repository)
   }
 
   static func bytes(_ count: Int64) -> String {
@@ -188,6 +207,14 @@ struct AIConversionTab: View {
       }
       .disabled(!model.aiValues.enabled)
       Section {
+        Picker(selection: $model.aiValues.modelVariant) {
+          ForEach(AIModelVariant.allCases, id: \.self) { variant in
+            Text(verbatim: AIStrings.variantName(variant)).tag(variant)
+          }
+        } label: {
+          Text(verbatim: AIStrings.text(.variant))
+        }
+        .disabled(model.aiModelInstall.isRunning)
         AIModelStatusRow(status: model.aiModelStatus) {
           model.refreshAIModelStatus()
           Task { await model.checkLatestAIModel(force: true) }
@@ -290,12 +317,20 @@ struct AIModelLatestRow: View {
         }
       }
     case .available(let release):
-      if model.aiModelStatus.needsInstall(release) {
+      let variant = model.aiValues.modelVariant
+      if !release.variants.contains(variant) {
+        Text(
+          verbatim: String(
+            format: AIStrings.text(.variantMissing), release.info.version, AIStrings.variantName(variant))
+        )
+        .font(.callout)
+        .foregroundStyle(.secondary)
+      } else if model.aiModelStatus.needsInstall(release, variant: variant) {
         VStack(alignment: .leading, spacing: 6) {
           Button(String(format: AIStrings.text(model.aiModelStatus.isFound ? .update : .download), release.info.version)) {
             model.installAIModel()
           }
-          Text(verbatim: AIStrings.downloadNote(release))
+          Text(verbatim: AIStrings.downloadNote(release, variant: variant))
             .font(.callout)
             .foregroundStyle(.secondary)
             .fixedSize(horizontal: false, vertical: true)

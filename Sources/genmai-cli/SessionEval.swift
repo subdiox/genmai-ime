@@ -399,6 +399,13 @@ func runSessionEval(_ arguments: [String]) async {
       if preeditMismatch > 0 {
         print("   warning: \(preeditMismatch) items' preedit differs from the reading")
       }
+      if mode.hasPrefix("ai") {
+        let m = GenmaiConverter.memoryStats
+        print(
+          String(
+            format: "   MLX memory: active %.0f MB, cache %.0f MB, peak %.0f MB", Double(m.active) / 1e6,
+            Double(m.cache) / 1e6, Double(m.peak) / 1e6))
+      }
       if showErrors {
         errors.forEach { print($0) }
       }

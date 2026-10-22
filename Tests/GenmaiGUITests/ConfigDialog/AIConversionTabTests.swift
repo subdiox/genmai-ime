@@ -66,7 +66,7 @@ import Testing
     }
     model.refreshAIModelStatus()
     #expect(model.aiModelStatus.isFound)
-    #expect(model.aiModelStatus.needsInstall(Self.release))  // no genmai_model.json
+    #expect(model.aiModelStatus.needsInstall(Self.release, variant: .q8))  // no genmai_model.json
     #expect(AIStrings.modelStatus(model.aiModelStatus, language: .japanese).hasPrefix("モデルが見つかりました"))
     model.aiModelDirectoryText = ""
     #expect(model.aiValues.modelDirectory == nil)
@@ -75,7 +75,12 @@ import Testing
 
   nonisolated static let release = GenmaiModelRelease(
     info: GenmaiModelInfo(version: "0.2.0", repository: "subdiox/genmai", revision: "v0.2.0"),
-    files: [.init(name: "model.safetensors", size: 1000, checksum: .sha256("00"))])
+    files: [
+      .init(name: "config.json", size: 10, checksum: .gitBlob("00")),
+      .init(name: "tokenizer.json", size: 20, checksum: .gitBlob("00")),
+      .init(name: "model-8bit.safetensors", size: 1000, checksum: .sha256("00")),
+      .init(name: "model-bf16.safetensors", size: 2000, checksum: .sha256("00")),
+    ])
 
   @Test func looksUpTheLatestRelease() async {
     let dir = TempDir()
@@ -104,16 +109,19 @@ import Testing
     model.aiModelDirectoryText = dir.url.path
     model.aiModelReleaseFetcher = { Self.release }
     await model.checkLatestAIModel()
-    #expect(model.aiModelStatus.needsInstall(Self.release))
+    #expect(model.aiModelStatus.needsInstall(Self.release, variant: .q8))
     let (phases, continuation) = AsyncStream<AIModelInstaller.Phase>.makeStream()
-    model.aiModelInstaller = { release, directory, progress in
+    model.aiModelInstaller = { release, variant, directory, progress in
       #expect(release == Self.release)
+      #expect(variant == .q8)
       progress(.downloading(received: 500, total: 1000))
       progress(.installing)
       for f in AIModelStatus.requiredFiles {
         try Data().write(to: directory.appending(path: f))
       }
-      try release.info.save(to: directory)
+      var info = release.info
+      info.variant = variant
+      try info.save(to: directory)
       continuation.finish()
     }
     model.installAIModel()
@@ -121,10 +129,16 @@ import Testing
     for await _ in phases {}
     while model.aiModelInstall.isRunning { await Task.yield() }
     #expect(model.aiModelInstall == .idle)
-    #expect(model.aiModelStatus == .found(model.aiValues.resolvedModelDirectory, info: Self.release.info))
-    #expect(!model.aiModelStatus.needsInstall(Self.release))
+    var installed = Self.release.info
+    installed.variant = .q8
+    #expect(model.aiModelStatus == .found(model.aiValues.resolvedModelDirectory, info: installed))
+    #expect(!model.aiModelStatus.needsInstall(Self.release, variant: .q8))
     #expect(client.reloadCount == 1)
-    #expect(AIStrings.modelVersion(model.aiModelStatus, language: .english) == "Version: genmai 0.2.0")
+    #expect(
+      AIStrings.modelVersion(model.aiModelStatus, language: .english) == "Version: genmai 0.2.0 (Standard (8-bit quantized))")
+    // Choosing the other variant offers its download.
+    model.aiValues.modelVariant = .bf16
+    #expect(model.aiModelStatus.needsInstall(Self.release, variant: model.aiValues.modelVariant))
   }
 
   @Test func failedOrCancelledInstallation() async throws {
@@ -134,13 +148,13 @@ import Testing
     model.aiModelDirectoryText = dir.url.path
     model.aiModelReleaseFetcher = { Self.release }
     await model.checkLatestAIModel()
-    model.aiModelInstaller = { _, _, _ in throw AIModelInstallError.download("model.safetensors", status: 404) }
+    model.aiModelInstaller = { _, _, _, _ in throw AIModelInstallError.download("model.safetensors", status: 404) }
     model.installAIModel()
     while model.aiModelInstall.isRunning { await Task.yield() }
     #expect(model.aiModelInstall == .failed("downloading model.safetensors failed (HTTP 404)"))
     #expect(client.reloadCount == 0)
 
-    model.aiModelInstaller = { _, _, _ in try await Task.sleep(for: .seconds(60)) }
+    model.aiModelInstaller = { _, _, _, _ in try await Task.sleep(for: .seconds(60)) }
     model.installAIModel()
     #expect(model.aiModelInstall.isRunning)
     model.cancelAIModelInstall()
@@ -194,7 +208,7 @@ import Testing
   @Test func installStrings() {
     let downloading = AIStrings.installPhase(.downloading(received: 0, total: 1_000_000_000), language: .english)
     #expect(downloading.hasPrefix("Downloading… "))
-    let note = AIStrings.downloadNote(Self.release, language: .japanese)
+    let note = AIStrings.downloadNote(Self.release, variant: .q8, language: .japanese)
     #expect(note.contains("subdiox/genmai"))
     #expect(AIStrings.modelVersion(.missing(URL(filePath: "/x"), missingFiles: []), language: .english) == nil)
     #expect(AIStrings.modelVersion(.found(URL(filePath: "/x"), info: nil), language: .japanese)?.contains("不明") == true)

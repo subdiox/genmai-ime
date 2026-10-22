@@ -299,6 +299,8 @@ public enum AIConversionMerger {
     public var alternatives = 0
     /// Segments where Mozc's top was kept because the user rejected the AI's text for them before.
     public var keptLearned = 0
+    /// AI pieces not used because they would replace a word of the user dictionary (the word stays on top).
+    public var keptUserWords = 0
     /// The segments that got the AI's text on top (key → value), for `AIConversionHook` to see whether the user
     /// commits them or chooses something else.
     public var aiSegments: [Piece] = []
@@ -355,18 +357,31 @@ public enum AIConversionMerger {
         let engineText = tops[g.segments].joined()
         // The AI's whole-sentence choice wins over Mozc's learned tops (user segment history), which stay right
         // below it; only an AI text the user replaced after this very conversion before is not proposed again.
-        if g.text != engineText && rejected(Piece(key: keys[g.segments].joined(), value: g.text)) {
+        // Words the user registered win over the AI: a piece that drops one keeps Mozc's segments, with the
+        // user's word on top (names such as 陽稀 for はるき, which the model would write the common way).
+        let dropsUserWord =
+          g.text != engineText && !Self.userWords(in: g.segments, of: segments, coveredBy: g.text)
+        if g.text != engineText && (dropsUserWord || rejected(Piece(key: keys[g.segments].joined(), value: g.text))) {
           for i in g.segments {
-            groups.append(AIConversionAligner.Group(segments: i..<(i + 1), text: tops[i]))
+            let segment = segments.conversionSegment(i)
+            groups.append(AIConversionAligner.Group(segments: i..<(i + 1), text: Self.userWord(segment) ?? tops[i]))
             aiGroups.append(false)
           }
-          outcome.keptLearned += 1
+          if dropsUserWord {
+            outcome.keptUserWords += 1
+          } else {
+            outcome.keptLearned += 1
+          }
         } else {
           groups.append(g)
           aiGroups.append(g.text != engineText)
         }
       }
     } else {
+      if !Self.userWords(in: 0..<size, of: segments, coveredBy: aiTop) {
+        outcome.keptUserWords += 1
+        return outcome
+      }
       if rejected(Piece(key: keys.joined(), value: aiTop)) {
         outcome.keptLearned += 1
         return outcome
@@ -443,6 +458,29 @@ public enum AIConversionMerger {
       }
     }
     return outcome
+  }
+
+  /// Whether `text` keeps every user dictionary word of the segments `range` (true if they have none): one of the
+  /// segment's user dictionary candidates must appear in it (as its content word, without the particle).
+  static func userWords(in range: Range<Int>, of segments: Segments, coveredBy text: String) -> Bool {
+    range.allSatisfy { i in
+      let words = userDictionaryCandidates(segments.conversionSegment(i))
+      return words.isEmpty || words.contains { !$0.contentValue.isEmpty && text.contains($0.contentValue) }
+    }
+  }
+
+  /// The candidates of `segment` that come from the user dictionary, best first.
+  static func userDictionaryCandidates(_ segment: Segment) -> [Candidate] {
+    (0..<min(segment.candidatesSize, 50)).map { segment.candidate($0) }
+      .filter { $0.attributes & Attribute.userDictionary != 0 }
+  }
+
+  /// The user dictionary word to show on top of `segment` when Mozc's top is not one (nil: keep Mozc's top).
+  static func userWord(_ segment: Segment) -> String? {
+    guard segment.candidatesSize > 0, segment.candidate(0).attributes & Attribute.userDictionary == 0 else {
+      return nil
+    }
+    return userDictionaryCandidates(segment).first?.value
   }
 
   static func candidateValues(_ segment: Segment) -> [String] {

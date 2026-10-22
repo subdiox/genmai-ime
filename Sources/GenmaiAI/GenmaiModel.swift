@@ -100,10 +100,44 @@ public final class GenmaiModel {
     public let tokenizer: GenmaiTokenizer
     /// Seconds spent in `init` (reading + converting the weights, tokenizer).
     public let loadSeconds: Double
+    /// Bytes of the weights in memory.
+    public let weightBytes: Int
 
     private struct Layer {
-        let ln1w, ln1b, attnW, attnB, projW, projB, ln2w, ln2b, fcW, fcB, mlpProjW, mlpProjB: MLXArray
+        let ln1w, ln1b, attnB, projB, ln2w, ln2b, fcB, mlpProjB: MLXArray
+        let attnW, projW, fcW, mlpProjW: Weight
     }
+
+    /// A linear layer's weight, (out, in): bf16, or quantized with MLX's affine group quantization (a file
+    /// written by `writeQuantized`: the packed `<name>` with `<name>.scales` / `<name>.biases`).
+    private enum Weight {
+        case dense(MLXArray)
+        case quantized(wq: MLXArray, scales: MLXArray, biases: MLXArray?, bits: Int, groupSize: Int)
+
+        var arrays: [MLXArray] {
+            switch self {
+            case .dense(let w): [w]
+            case .quantized(let wq, let scales, let biases, _, _): [wq, scales] + (biases.map { [$0] } ?? [])
+            }
+        }
+
+        /// `x @ W.T`.
+        func apply(_ x: MLXArray) -> MLXArray {
+            switch self {
+            case .dense(let w):
+                matmul(x, w.T)
+            case .quantized(let wq, let scales, let biases, let bits, let groupSize):
+                quantizedMM(x, wq, scales: scales, biases: biases, transpose: true, groupSize: groupSize, bits: bits)
+            }
+        }
+    }
+
+    /// Metadata `format` of a file written by `writeQuantized` (with `bits` and `group_size`).
+    public static let quantizedFormat = "genmai-quantized-out-in"
+    /// Suffixes of the linear layers' weights (the ones `writeQuantized` quantizes).
+    static let linearSuffixes = ["attn.c_attn.weight", "attn.c_proj.weight", "mlp.c_fc.weight", "mlp.c_proj.weight"]
+    /// Bits per weight of the quantized linear layers, or nil for bf16.
+    public let quantizationBits: Int?
 
     private let layers: [Layer]
     private let wte: MLXArray
@@ -155,6 +189,7 @@ public final class GenmaiModel {
     public init(directory: URL) throws {
         let t0 = Date()
         Self.configureMetallib()
+        Self.configureMemory()
         let cfgURL = directory.appending(path: "config.json")
         let tokURL = directory.appending(path: "tokenizer.json")
         let wURL = directory.appending(path: "model.safetensors")
@@ -165,10 +200,25 @@ public final class GenmaiModel {
         if let fmt = cfg.promptFormat, fmt != "zenzlc" {
             throw GenmaiError.badModel("prompt format \(fmt) (only zenzlc is supported)")
         }
-        let w = try Self.loadWeights(wURL, dtype: .bfloat16)
+        let (w, meta) = try Self.loadWeights(wURL, dtype: .bfloat16)
         func get(_ k: String) throws -> MLXArray {
             guard let a = w[k] else { throw GenmaiError.badModel("missing tensor \(k)") }
             return a
+        }
+        var bits: Int?
+        var groupSize = 0
+        if meta["format"] == Self.quantizedFormat {
+            guard let b = meta["bits"].flatMap(Int.init), let g = meta["group_size"].flatMap(Int.init) else {
+                throw GenmaiError.badModel("quantized weights without bits / group_size")
+            }
+            bits = b
+            groupSize = g
+        }
+        self.quantizationBits = bits
+        func linear(_ k: String) throws -> Weight {
+            guard let bits else { return .dense(try get(k)) }
+            return .quantized(
+                wq: try get(k), scales: try get(k + ".scales"), biases: w[k + ".biases"], bits: bits, groupSize: groupSize)
         }
         var layers: [Layer] = []
         for i in 0..<cfg.nLayer {
@@ -176,18 +226,21 @@ public final class GenmaiModel {
             layers.append(
                 Layer(
                     ln1w: try get(p + "ln_1.weight"), ln1b: try get(p + "ln_1.bias"),
-                    attnW: try get(p + "attn.c_attn.weight"), attnB: try get(p + "attn.c_attn.bias"),
-                    projW: try get(p + "attn.c_proj.weight"), projB: try get(p + "attn.c_proj.bias"),
+                    attnB: try get(p + "attn.c_attn.bias"), projB: try get(p + "attn.c_proj.bias"),
                     ln2w: try get(p + "ln_2.weight"), ln2b: try get(p + "ln_2.bias"),
-                    fcW: try get(p + "mlp.c_fc.weight"), fcB: try get(p + "mlp.c_fc.bias"),
-                    mlpProjW: try get(p + "mlp.c_proj.weight"), mlpProjB: try get(p + "mlp.c_proj.bias")))
+                    fcB: try get(p + "mlp.c_fc.bias"), mlpProjB: try get(p + "mlp.c_proj.bias"),
+                    attnW: try linear(p + "attn.c_attn.weight"), projW: try linear(p + "attn.c_proj.weight"),
+                    fcW: try linear(p + "mlp.c_fc.weight"), mlpProjW: try linear(p + "mlp.c_proj.weight")))
         }
         self.layers = layers
         self.wte = try get("wte.weight")
         self.wpe = try get("wpe.weight")
         self.lnfW = try get("ln_f.weight")
         self.lnfB = try get("ln_f.bias")
-        eval(Array(w.values))
+        let used = layers.flatMap { [$0.ln1w, $0.ln1b, $0.attnB, $0.projB, $0.ln2w, $0.ln2b, $0.fcB, $0.mlpProjB]
+            + $0.attnW.arrays + $0.projW.arrays + $0.fcW.arrays + $0.mlpProjW.arrays }
+        eval(used + [wte, wpe, lnfW, lnfB])
+        self.weightBytes = (used + [wte, wpe, lnfW, lnfB]).reduce(0) { $0 + $1.nbytes }
         self.config = cfg
         self.L = cfg.nLayer
         self.D = cfg.nEmbd
@@ -206,6 +259,15 @@ public final class GenmaiModel {
     /// `mlx-swift_Cmlx.bundle/Contents/Resources/default.metallib` next to the binary or bundle containing GenmaiAI
     /// (Tools/build_mlx_metallib.sh writes the safe-math `mlx.metallib` there). Does nothing if MLX's override path
     /// is already set or nothing is found.
+    /// Upper bound of MLX's buffer cache (freed GPU buffers kept for reuse). MLX's default is most of the system
+    /// memory: a decode allocates KV caches of up to (rows, heads, 1024, 64) per layer, and an input method that
+    /// kept every freed buffer grew to 12 GB within minutes. Beyond this limit freed buffers go back to the system.
+    public static let cacheLimitBytes = 256 << 20
+
+    static func configureMemory() {
+        Memory.cacheLimit = cacheLimitBytes
+    }
+
     static func configureMetallib() {
         guard GPU.metallib == nil else { return }
         let fm = FileManager.default
@@ -237,21 +299,46 @@ public final class GenmaiModel {
 
     /// Reads a safetensors file and returns the weights keyed without the `transformer.` prefix, in `dtype`, with
     /// the Conv1D matrices as (out, in) contiguous arrays.
-    static func loadWeights(_ url: URL, dtype: DType) throws -> [String: MLXArray] {
+    /// The weights of `url` (an HF file, a prepared bf16 file or a quantized file) by name, floats in `dtype`, and
+    /// the file's metadata.
+    static func loadWeights(_ url: URL, dtype: DType) throws -> ([String: MLXArray], [String: String]) {
         let (arrays, meta) = try loadArraysAndMetadata(url: url)
-        let prepared = meta["format"] == preparedFormat
+        let prepared = meta["format"] == preparedFormat || meta["format"] == quantizedFormat
         var w: [String: MLXArray] = [:]
         for (k0, v) in arrays {
             let k = k0.hasPrefix("transformer.") ? String(k0.dropFirst("transformer.".count)) : k0
             if k == "lm_head.weight" { continue }  // tied to wte
-            var a = v.dtype == dtype ? v : v.asType(dtype)
+            // packed quantized weights stay integers
+            var a = v.dtype == dtype || !v.dtype.isFloatingPoint ? v : v.asType(dtype)
             if !prepared && (k.hasSuffix("c_attn.weight") || k.hasSuffix("c_proj.weight") || k.hasSuffix("c_fc.weight")) {
                 // HF Conv1D weights are (in, out)
                 a = contiguous(a.T)
             }
             w[k] = a
         }
-        return w
+        return (w, meta)
+    }
+
+    /// Writes the model file `destination` with the linear layers of `source` (any file `init` loads) quantized to
+    /// `bits` (MLX affine, groups of `groupSize`); embeddings, layer norms and biases stay bf16.
+    public static func writeQuantized(from source: URL, to destination: URL, bits: Int, groupSize: Int = 64) throws {
+        let (w, meta) = try loadWeights(source, dtype: .bfloat16)
+        guard meta["format"] != quantizedFormat else { throw GenmaiError.badModel("already quantized") }
+        var out: [String: MLXArray] = [:]
+        for (k, a) in w {
+            if linearSuffixes.contains(where: { k.hasSuffix($0) }) {
+                let q = MLX.quantized(a, groupSize: groupSize, bits: bits)
+                out[k] = q.wq
+                out[k + ".scales"] = q.scales
+                if let b = q.biases { out[k + ".biases"] = b }
+            } else {
+                out[k] = a
+            }
+        }
+        eval(Array(out.values))
+        try save(
+            arrays: out, metadata: ["format": quantizedFormat, "bits": String(bits), "group_size": String(groupSize)],
+            url: destination)
     }
 
     // MARK: - Model
@@ -282,16 +369,16 @@ public final class GenmaiModel {
         let scale = 1 / Float(hd).squareRoot()
         for (i, p) in layers.enumerated() {
             var a = MLXFast.layerNorm(h, weight: p.ln1w, bias: p.ln1b, eps: eps)
-            let qkv = matmul(a, p.attnW.T) + p.attnB
+            let qkv = p.attnW.apply(a) + p.attnB
             let parts = qkv.split(parts: 3, axis: -1).map { $0.reshaped([B, S, H, hd]).transposed(0, 2, 1, 3) }
             let kc = Self.sliceUpdate(K[i], parts[1], start: start1, axes: [2])
             let vc = Self.sliceUpdate(V[i], parts[2], start: start1, axes: [2])
             K2.append(kc)
             V2.append(vc)
             let o = MLXFast.scaledDotProductAttention(queries: parts[0], keys: kc, values: vc, scale: scale, mask: mask)
-            h = h + matmul(o.transposed(0, 2, 1, 3).reshaped([B, S, D]), p.projW.T) + p.projB
+            h = h + p.projW.apply(o.transposed(0, 2, 1, 3).reshaped([B, S, D])) + p.projB
             a = MLXFast.layerNorm(h, weight: p.ln2w, bias: p.ln2b, eps: eps)
-            h = h + matmul(geluApproximate(matmul(a, p.fcW.T) + p.fcB), p.mlpProjW.T) + p.mlpProjB
+            h = h + p.mlpProjW.apply(geluApproximate(p.fcW.apply(a) + p.fcB)) + p.mlpProjB
         }
         let last = MLXFast.layerNorm(outputFrom.map { h[0..., $0...] } ?? h[0..., -1], weight: lnfW, bias: lnfB, eps: eps)
         let logits = matmul(last, wte.T).asType(.float32)

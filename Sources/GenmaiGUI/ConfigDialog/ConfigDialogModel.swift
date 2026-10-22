@@ -287,12 +287,12 @@ public final class ConfigDialogModel {
   var aiModelReleaseFetcher: @Sendable () async throws -> GenmaiModelRelease = {
     try await GenmaiModelRelease.latest()
   }
-  /// Downloads and installs a model release into a directory (replaced by tests).
+  /// Downloads and installs a variant of a model release into a directory (replaced by tests).
   var aiModelInstaller:
-    @Sendable (GenmaiModelRelease, URL, @escaping @Sendable (AIModelInstaller.Phase) -> Void) async throws -> Void = {
-      release, directory, progress in
-      try await AIModelInstaller.install(release, to: directory, progress: progress)
-    }
+    @Sendable (GenmaiModelRelease, AIModelVariant, URL, @escaping @Sendable (AIModelInstaller.Phase) -> Void) async throws
+      -> Void = { release, variant, directory, progress in
+        try await AIModelInstaller.install(release, variant: variant, to: directory, progress: progress)
+      }
   /// Edits not saved yet (Mozc's 'Apply' button state: off on launching, on after any edit).
   public private(set) var hasPendingChanges = false
   /// Not in Mozc: the settings window has no OK / Cancel / Apply; edits are saved shortly after they are made
@@ -392,7 +392,8 @@ public final class ConfigDialogModel {
   public func installAIModel() {
     guard aiModelInstallTask == nil, case .available(let release) = aiModelLatest else { return }
     let directory = aiValues.resolvedModelDirectory
-    aiModelInstall = .running(.downloading(received: 0, total: release.downloadSize))
+    let variant = aiValues.modelVariant
+    aiModelInstall = .running(.downloading(received: 0, total: release.downloadSize(for: variant)))
     let installer = aiModelInstaller
     // Progress arrives for every network chunk: forward it only when the shown permille changes.
     let lastShown = Mutex<Int>(-1)
@@ -411,7 +412,7 @@ public final class ConfigDialogModel {
     aiModelInstallTask = Task { [weak self] in
       let result: AIModelInstallState
       do {
-        try await installer(release, directory, report)
+        try await installer(release, variant, directory, report)
         result = .idle
       } catch is CancellationError {
         result = .idle

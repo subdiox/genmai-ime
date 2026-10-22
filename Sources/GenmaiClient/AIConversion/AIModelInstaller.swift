@@ -2,9 +2,9 @@
 //
 // The model is not bundled with the IME. The config dialog (GenmaiTool) and `genmai-cli install` look up the newest
 // release on Hugging Face (`GenmaiModelRelease.latest`: the highest vX.Y.Z tag whose config.json this IME can run)
-// and download its `model-bf16.safetensors`, the weights already in the runtime layout that GenmaiAI loads (bf16,
-// Conv1D weights (out, in), metadata format=genmai-bf16-out-in; 0.6 GB), with config.json and tokenizer.json, each
-// checked against the checksum Hugging Face lists. They are installed into the model directory as
+// and download its weights in the runtime layout GenmaiAI loads (`AIModelVariant`: `model-8bit.safetensors`, the
+// linear layers quantized to 8 bits, 0.34 GB, the default; or `model-bf16.safetensors`, 0.62 GB), with config.json
+// and tokenizer.json, each checked against the checksum Hugging Face lists. They are installed into the model directory as
 // model.safetensors / config.json / tokenizer.json with `genmai_model.json` (which release is installed).
 // The release's fp32 `model.safetensors` (HF layout, for transformers) is not downloaded; `genmai-cli prepare`
 // converts such a file from a local checkpoint (`GenmaiSafetensors.prepare`, plain Swift, the same bits as MLX's
@@ -12,17 +12,47 @@
 
 import Foundation
 
+/// The weights of a release: Conv1D weights (out, in), no lm_head, no `transformer.` prefix.
+public enum AIModelVariant: String, Codable, CaseIterable, Sendable {
+  /// The linear layers quantized to 8 bits (MLX affine, groups of 64); embeddings, norms and biases bf16.
+  case q8 = "8bit"
+  case bf16
+
+  public static let `default` = AIModelVariant.q8
+
+  /// The file in a release.
+  public var weightsFileName: String {
+    switch self {
+    case .q8: "model-8bit.safetensors"
+    case .bf16: "model-bf16.safetensors"
+    }
+  }
+
+  /// The metadata `format` of the file.
+  public var format: String {
+    switch self {
+    case .q8: GenmaiSafetensors.quantizedFormat
+    case .bf16: GenmaiSafetensors.preparedFormat
+    }
+  }
+}
+
 /// Which model release is installed (`genmai_model.json` in the model directory).
 public struct GenmaiModelInfo: Codable, Equatable, Sendable {
   public var version: String
   public var repository: String
   public var revision: String
+  /// nil in files written before variants existed (bf16).
+  public var variant: AIModelVariant?
 
-  public init(version: String, repository: String, revision: String) {
+  public init(version: String, repository: String, revision: String, variant: AIModelVariant? = nil) {
     self.version = version
     self.repository = repository
     self.revision = revision
+    self.variant = variant
   }
+
+  public var installedVariant: AIModelVariant { variant ?? .bf16 }
 
   public static let fileName = "genmai_model.json"
 
@@ -40,8 +70,8 @@ public struct GenmaiModelInfo: Codable, Equatable, Sendable {
   }
 }
 
-/// A model release on Hugging Face (a vX.Y.Z tag of the model repository), with the files to download and their
-/// checksums, as listed by the Hugging Face API.
+/// A model release on Hugging Face (a vX.Y.Z tag of the model repository), with its files (config, tokenizer and the
+/// weights of each variant it has) and their checksums, as listed by the Hugging Face API.
 public struct GenmaiModelRelease: Equatable, Sendable {
   public struct File: Equatable, Sendable {
     public enum Checksum: Equatable, Sendable {
@@ -72,12 +102,22 @@ public struct GenmaiModelRelease: Equatable, Sendable {
 
   /// The Hugging Face repository of the genmai model.
   public static let repository = "subdiox/genmai"
-  /// The runtime weights in a release (installed as `model.safetensors`).
-  public static let weightsFileName = "model-bf16.safetensors"
-  /// The files the IME downloads from a release.
-  public static let fileNames = ["config.json", "tokenizer.json", weightsFileName]
+  /// The files every release has besides the weights.
+  public static let commonFileNames = ["config.json", "tokenizer.json"]
 
-  public var downloadSize: Int64 { files.reduce(0) { $0 + $1.size } }
+  /// The files to download for `variant` (config, tokenizer, weights); nil if the release lacks those weights.
+  public func files(for variant: AIModelVariant) -> [File]? {
+    let names = Self.commonFileNames + [variant.weightsFileName]
+    let selected = names.compactMap { name in files.first { $0.name == name } }
+    return selected.count == names.count ? selected : nil
+  }
+
+  public func downloadSize(for variant: AIModelVariant) -> Int64 {
+    files(for: variant)?.reduce(0) { $0 + $1.size } ?? 0
+  }
+
+  /// The variants whose weights the release has.
+  public var variants: [AIModelVariant] { AIModelVariant.allCases.filter { files(for: $0) != nil } }
 
   public func url(of file: File) -> URL {
     URL(string: "https://huggingface.co/\(info.repository)/resolve/\(info.revision)/\(file.name)")!
@@ -96,7 +136,7 @@ public struct GenmaiModelRelease: Equatable, Sendable {
     for (version, tag) in tags {
       let release = try await fetch(repository: repository, tag: tag, version: version, session: session)
       let config = try await Self.fetch(
-        release.url(of: release.files[0]), name: "config.json of \(tag)", session: session)
+        release.url(of: release.files[0]), name: "config.json of \(tag)", session: session)  // files[0]: config.json
       if isCompatible(config: config) {
         return release
       }
@@ -161,15 +201,19 @@ public struct GenmaiModelRelease: Equatable, Sendable {
     return releases.sorted { compareVersions($0.version, $1.version) == .orderedDescending }
   }
 
-  /// The model files of a `/api/models/<repo>/tree/<rev>` response, in `fileNames` order.
+  /// The model files of a `/api/models/<repo>/tree/<rev>` response: config.json, tokenizer.json, then the weights
+  /// of the variants present (at least one), in `AIModelVariant` order.
   static func files(_ tree: Data) throws -> [File] {
     guard let entries = try JSONSerialization.jsonObject(with: tree) as? [[String: Any]] else {
       throw AIModelInstallError.badResponse("tree")
     }
-    return try fileNames.map { name in
-      guard let e = entries.first(where: { $0["path"] as? String == name && $0["type"] as? String == "file" }),
-        let size = (e["size"] as? NSNumber)?.int64Value
-      else {
+    func entry(_ name: String) -> [String: Any]? {
+      entries.first { $0["path"] as? String == name && $0["type"] as? String == "file" }
+    }
+    let weights = AIModelVariant.allCases.map(\.weightsFileName).filter { entry($0) != nil }
+    guard !weights.isEmpty else { throw AIModelInstallError.badResponse("no weights in the release") }
+    return try (commonFileNames + weights).map { name in
+      guard let e = entry(name), let size = (e["size"] as? NSNumber)?.int64Value else {
         throw AIModelInstallError.badResponse("\(name) is missing in the release")
       }
       if let lfs = e["lfs"] as? [String: Any], let sha = lfs["oid"] as? String {
@@ -225,18 +269,21 @@ public enum AIModelInstaller {
     URL.cachesDirectory.appending(path: "Genmai/download", directoryHint: .isDirectory)
   }
 
-  /// Downloads `release` and installs it into `directory`. Only the model's own files in
+  /// Downloads `variant` of `release` and installs it into `directory`. Only the model's own files in
   /// `directory` are replaced (each one atomically); other files are left alone. Honors task cancellation.
   public static func install(
-    _ release: GenmaiModelRelease, to directory: URL, cacheDirectory: URL = AIModelInstaller.cacheDirectory,
-    progress: @escaping @Sendable (Phase) -> Void = { _ in }
+    _ release: GenmaiModelRelease, variant: AIModelVariant, to directory: URL,
+    cacheDirectory: URL = AIModelInstaller.cacheDirectory, progress: @escaping @Sendable (Phase) -> Void = { _ in }
   ) async throws {
+    guard let files = release.files(for: variant) else {
+      throw AIModelInstallError.badResponse("\(release.info.revision) has no \(variant.rawValue) weights")
+    }
     let fm = FileManager.default
     let downloads = cacheDirectory.appending(path: release.info.revision, directoryHint: .isDirectory)
     try fm.createDirectory(at: downloads, withIntermediateDirectories: true)
-    let total = release.downloadSize
+    let total = release.downloadSize(for: variant)
     var done: Int64 = 0
-    for file in release.files {
+    for file in files {
       let local = downloads.appending(path: file.name)
       if !isComplete(local, file) {
         try? fm.removeItem(at: local)
@@ -251,7 +298,7 @@ public enum AIModelInstaller {
       progress(.downloading(received: done, total: total))
     }
     progress(.verifying)
-    for file in release.files {
+    for file in files {
       let local = downloads.appending(path: file.name)
       guard try await checksum(of: local, file.checksum) else {
         try? fm.removeItem(at: local)
@@ -261,9 +308,9 @@ public enum AIModelInstaller {
     guard GenmaiModelRelease.isCompatible(config: try Data(contentsOf: downloads.appending(path: "config.json"))) else {
       throw AIModelInstallError.badModel("config.json of \(release.info.revision) is not a model this IME can run")
     }
-    let weights = downloads.appending(path: GenmaiModelRelease.weightsFileName)
-    guard try GenmaiSafetensors.format(of: weights) == GenmaiSafetensors.preparedFormat else {
-      throw AIModelInstallError.badModel("\(GenmaiModelRelease.weightsFileName) is not in the runtime layout")
+    let weights = downloads.appending(path: variant.weightsFileName)
+    guard try GenmaiSafetensors.format(of: weights) == variant.format else {
+      throw AIModelInstallError.badModel("\(variant.weightsFileName) is not in the runtime layout")
     }
     try Task.checkCancellation()
     progress(.installing)
@@ -275,7 +322,9 @@ public enum AIModelInstaller {
     for name in ["config.json", "tokenizer.json"] {
       try fm.moveItem(at: downloads.appending(path: name), to: staging.appending(path: name))
     }
-    try release.info.save(to: staging)
+    var info = release.info
+    info.variant = variant
+    try info.save(to: staging)
     try Task.checkCancellation()
     // The weights last: a directory with the new weights always has the matching config and tokenizer.
     for name in ["config.json", "tokenizer.json", "model.safetensors", GenmaiModelInfo.fileName] {
@@ -355,6 +404,8 @@ public enum AIModelInstaller {
 public enum GenmaiSafetensors {
   /// Metadata `format` of the converted file (`GenmaiModel.preparedFormat` in GenmaiAI).
   public static let preparedFormat = "genmai-bf16-out-in"
+  /// Metadata `format` of 8-bit weights (`GenmaiModel.quantizedFormat`, written by `genmai-cli quantize`).
+  public static let quantizedFormat = "genmai-quantized-out-in"
 
   /// The metadata `format` of the safetensors file at `url` (nil if it has none).
   public static func format(of url: URL) throws -> String? {

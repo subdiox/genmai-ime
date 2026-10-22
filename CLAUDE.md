@@ -100,22 +100,30 @@ BOS / EOS ids and the outputs end in garbage).
   with its files from `/api/models/.../tree/<tag>` (sizes; LFS sha256 for the weights, git blob sha1 for the
   small files). **Nothing about a release is hard-coded**: publishing a new tag is enough, unless it needs decoder
   changes (then give it another prompt format / model type so older IMEs skip it). A release has the fp32
-  `model.safetensors` (HF layout, for transformers) and **`model-bf16.safetensors`**, the same weights in the runtime
-  layout (bf16 round-to-nearest-even, bit-identical to MLX `astype`; Conv1D weights (out, in); no lm_head / no
-  `transformer.` prefix; metadata `format=genmai-bf16-out-in`; 0.62 GB), written by `GenmaiSafetensors.prepare`
-  (`genmai-cli prepare <HF dir> <out>`) and uploaded with each release. `AIModelInstaller.install` downloads
-  config.json, tokenizer.json and model-bf16.safetensors (kept in `~/Library/Caches/Genmai/download/<tag>` until the
-  install succeeds), verifies the checksums, the config and the weights' format, and replaces config.json /
-  tokenizer.json / model.safetensors / `genmai_model.json` (installed release) one file at a time (other files are
-  left alone); no conversion on the user's Mac.
+  `model.safetensors` (HF layout, for transformers) and the runtime weights of each `AIModelVariant`:
+  **`model-8bit.safetensors`** (the default: linear layers MLX-affine-quantized to 8 bits, groups of 64, stored as
+  `<name>` (packed U32) + `<name>.scales` / `.biases`; embeddings, norms, biases bf16; metadata
+  `format=genmai-quantized-out-in`, `bits`, `group_size`; 0.34 GB; written by `genmai-cli quantize <bf16 dir> <file>`
+  = `GenmaiModel.writeQuantized`) and **`model-bf16.safetensors`** ("high precision": bf16 round-to-nearest-even,
+  bit-identical to MLX `astype`; Conv1D weights (out, in); no lm_head / no `transformer.` prefix; metadata
+  `format=genmai-bf16-out-in`; 0.62 GB; written by `GenmaiSafetensors.prepare` = `genmai-cli prepare <HF dir> <out>`).
+  8-bit vs. bf16 (session-eval, settle idle): AJIMEE 186 vs. 187 / 200, daily 92 / 92, hard 20 / 20, conversion key
+  slightly faster; 4-bit lost 6 AJIMEE items and was not released. `AIModelInstaller.install(release, variant:)`
+  downloads config.json, tokenizer.json and the variant's weights (kept in `~/Library/Caches/Genmai/download/<tag>`
+  until the install succeeds), verifies the checksums, the config and the weights' format, and replaces config.json /
+  tokenizer.json / model.safetensors / `genmai_model.json` (installed release and `variant`; none = bf16) one file at
+  a time (other files are left alone); no conversion on the user's Mac. The setting `model_variant` (AI tab "Model
+  type") picks the variant; choosing the other one offers its download (`AIModelStatus.needsInstall(_:variant:)`).
   `AIModelInstaller.uninstall` removes only those files (and the directory if nothing else is left). Front ends:
   the settings tab "AI" (looks up the latest release when shown; Download / Update when it is newer than the
   installed one, with progress and cancel; "Remove Model…" after a confirmation; both send RELOAD and
   `GenmaiAugmenter` reloads because `AIModelStatus.identity` — size and mtime of the weights — changed),
   `genmai-cli install [--tag vX.Y.Z]` and `Tools/prepare_genmai_model.sh`. The prompt format is
   `genmai_prompt_format` in config.json. For a new release upload `model-bf16.safetensors` (the model.safetensors
-  that `genmai-cli prepare` writes) next to the fp32 weights, and
-  also regenerate the Python fixture and the score in `convertDaily` (they test the installed model). Tests use
+  that `genmai-cli prepare` writes) and `model-8bit.safetensors` (`genmai-cli quantize`) next to the fp32 weights,
+  and
+  also regenerate the Python fixture and the score in `convertDaily` (they test the installed model; the comparisons
+  with the bf16 Python reference run only when the installed weights are bf16). Tests use
   `$GENMAI_MODEL_DIR`, else `~/Library/Application Support/Genmai/model`, and skip without it.
 - `genmai-cli`: `install`, `prepare` (local HF directory), `convert`, `eval [--incremental] [--every-key] [--draft]
   [--no-kv-reuse]` (per-item latency in the JSON), `compare`, `logprobs`, `session-eval` (below).
@@ -163,6 +171,12 @@ unchanged; the hook only forwards). GenmaiCore and GenmaiSession contain no AI c
   log-prob is accepted and the beam search continues after it, continuing only the best hypothesis of earlier
   chunks. Every-prefix replay: final conversion median 69 → 19 ms (daily), 107 → 36 ms (AJIMEE), same top-1.
   The decode steps of all cache buckets are compiled at load time (`warmup`).
+- **Memory:** MLX's buffer cache (freed GPU buffers kept for reuse) is capped at 256 MB
+  (`GenmaiModel.cacheLimitBytes`; MLX's default is most of the system memory and the IME reached 12 GB within
+  minutes) and returned to the system after 30 s without typing (`GenmaiAugmenter.idleReleaseDelay`,
+  `GenmaiConverter.releaseCachedMemory`). With bf16 weights, session-eval shows ~1.1 GB of arrays in use (weights
+  0.62 GB, prompt KV cache, incremental states), a 268 MB cache and a 2.9 GB peak during long batched decodes;
+  `session-eval` prints these (`MLX memory`). The cap did not change the conversion-key latency.
 - **Readings and forms:** the model gets the conversion key in the *preedit* character form ("？", "（", as in its
   training data); its output gets the *conversion* character form (`CharacterFormManager`).
 - **Merging (`AIConversionMerger`, `AIConversionAligner`):** if the AI top-1 differs from the engine's top, the AI
@@ -173,7 +187,9 @@ unchanged; the hook only forwards). GenmaiCore and GenmaiSession contain no AI c
   POS ids from an engine candidate with the same functional suffix, RERANKED so that committing it is learned like a
   user choice); the AI alternatives follow. The AI top wins over learned tops (user segment history; the learned
   value stays right below it); only a piece the user replaced after an AI conversion (`rejected`) keeps the
-  engine's top.
+  engine's top. **User dictionary words win over the AI:** an AI piece that does not contain one of the user
+  dictionary candidates of its segments is not used; those segments keep Mozc's result with the user's word on top
+  (`keptUserWords` in the debug log).
 - **AI result in the suggestion window:** `augmentSuggestion` computes what the conversion key would show (an
   engine conversion of a copy of the segments + the same merge) and puts it first, so the first suggestion equals
   the conversion result. Until the result for the current composition is ready, the last AI suggestion stays on

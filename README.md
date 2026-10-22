@@ -80,7 +80,8 @@ Settings and learning data live in `~/Library/Application Support/Genmai`.
 ### AI conversion
 
 The model is not part of the app. The settings (tab "AI") look up the latest model release on Hugging Face
-([subdiox/genmai](https://huggingface.co/subdiox/genmai)) and offer **Download**: it downloads the model (0.6 GB,
+([subdiox/genmai](https://huggingface.co/subdiox/genmai)) and offer **Download**: it downloads the model (0.34 GB,
+8-bit quantized; "High precision" in the same tab picks the bf16 weights, 0.62 GB, practically the same accuracy;
 checked against the checksums Hugging Face lists) and installs it into
 `~/Library/Application Support/Genmai/model`. When a newer model is released, the same place offers **Update**;
 **Remove Model…** deletes it. From the command line:

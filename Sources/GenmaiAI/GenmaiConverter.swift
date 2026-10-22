@@ -2,6 +2,7 @@
 // `GenmaiIncrementalConverter` (port of the Python reference `IncrementalConverter`).
 
 import Foundation
+import MLX
 import Synchronization
 
 /// The genmai converter. All MLX work happens on this actor (MLX arrays are not Sendable). Loading takes about a
@@ -42,6 +43,10 @@ public actor GenmaiConverter {
 
     private let model: GenmaiModel
     public nonisolated let loadSeconds: Double
+    /// Bytes of the model's weights in memory.
+    public nonisolated let weightBytes: Int
+    /// Bits per weight of the quantized linear layers; nil for bf16 weights.
+    public nonisolated let quantizationBits: Int?
     public nonisolated let tokenizer: GenmaiTokenizer
 
     /// The directory the IME loads the model from: `~/Library/Application Support/Genmai/model`
@@ -54,6 +59,8 @@ public actor GenmaiConverter {
         let m = try Self.mlxLock.withLock { _ in try GenmaiModel(directory: directory) }
         model = m
         loadSeconds = m.loadSeconds
+        weightBytes = m.weightBytes
+        quantizationBits = m.quantizationBits
         tokenizer = m.tokenizer
     }
 
@@ -96,6 +103,22 @@ public actor GenmaiConverter {
     /// Output tokens accepted from drafts / decode steps run so far (diagnostics).
     public var draftStats: (accepted: Int, decodeSteps: Int) {
         (model.draftTokensAccepted, model.decodeSteps)
+    }
+
+    /// MLX memory of the process: arrays in use, the buffer cache, the peak of arrays in use and the cache limit
+    /// (diagnostics). MLX trims the cache to the limit at its next allocation.
+    public static var memoryStats: (active: Int, cache: Int, peak: Int, cacheLimit: Int) {
+        (Memory.activeMemory, Memory.cacheMemory, Memory.peakMemory, Memory.cacheLimit)
+    }
+
+    /// Returns MLX's cached buffers to the system (the input method calls this when typing has paused for a
+    /// while); the model, the prompt KV cache and the drafts stay. Returns the cache size right after (0).
+    @discardableResult
+    public func releaseCachedMemory() -> Int {
+        Self.withMLX {
+            Memory.clearCache()
+            return Memory.cacheMemory
+        }
     }
 
     /// Drops the prompt KV cache and the drafts of the model (tests).

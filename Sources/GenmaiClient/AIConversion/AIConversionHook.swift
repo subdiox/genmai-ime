@@ -351,6 +351,7 @@ public final class AIConversionHook: Sendable {
       var note = "waited=\(Int(AIConversionDebugLog.milliseconds(record.waited)))ms"
       if let info { note += info.exact ? " exact" : " draft" }
       if record.outcome.keptLearned > 0 { note += " keptLearned=\(record.outcome.keptLearned)" }
+      if record.outcome.keptUserWords > 0 { note += " keptUserWords=\(record.outcome.keptUserWords)" }
       if !record.unreadable.isEmpty { note += " unreadable=\(record.unreadable)" }
       if let error = record.error { note += " error=\(error)" }
       note += " segments=" + (0..<segments.conversionSegmentsSize).map { segments.conversionSegment($0).key }
@@ -437,6 +438,7 @@ public final class AIConversionHook: Sendable {
       var note = type == .suggestion ? "suggestion" : "prediction"
       if shown == engineTop { note += " same-as-engine-suggestion" }
       if outcome.keptLearned > 0 { note += " keptLearned=\(outcome.keptLearned)" }
+      if outcome.keptUserWords > 0 { note += " keptUserWords=\(outcome.keptUserWords)" }
       if !dropped.isEmpty { note += " unreadable=\(dropped)" }
       debugLog.write(
         AIConversionDebugLog.Event(

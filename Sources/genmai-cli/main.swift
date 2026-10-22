@@ -1,11 +1,14 @@
 // genmai-cli: model preparation, conversion, evaluation and parity checks for GenmaiAI.
 //
-//   genmai-cli install [--tag vX.Y.Z] [destination dir]
+//   genmai-cli install [--tag vX.Y.Z] [--variant 8bit|bf16] [destination dir]
 //       downloads the newest model release this IME can run (or the given tag) from Hugging Face and installs it
-//       like the config dialog does (default destination: the IME's model directory)
+//       like the config dialog does (default: 8bit, into the IME's model directory)
 //   genmai-cli prepare <source model dir> <destination dir>
 //       writes the compact runtime model (bf16, Conv1D weights as (out, in)) + tokenizer.json, config.json for a
 //       local HF model directory (e.g. a checkpoint that is not a release)
+//   genmai-cli quantize [--bits 8] <model dir> <output file>
+//       writes the weights of <model dir> with the linear layers quantized (MLX affine, groups of 64): the
+//       model-8bit.safetensors of a release
 //   genmai-cli convert [--model DIR] [--context TEXT] [--beams N] <reading>...
 //   genmai-cli eval [--model DIR] --tag TAG [--beams 5] [--incremental] [--out-dir DIR] <eval set>...
 //       eval sets: anco-format .json (query / answer / left_context) or ime_v1 .jsonl (reading / positives /
@@ -35,7 +38,7 @@ func fail(_ msg: String) -> Never {
 
 var args = Array(CommandLine.arguments.dropFirst())
 guard let command = args.first else {
-    fail("usage: genmai-cli install|prepare|convert|eval|compare|session-eval ... (see Sources/genmai-cli/main.swift)")
+    fail("usage: genmai-cli install|prepare|quantize|convert|eval|compare|session-eval ... (see Sources/genmai-cli/main.swift)")
 }
 args.removeFirst()
 
@@ -64,7 +67,10 @@ args.removeFirst()
         let c = try GenmaiConverter(directory: dir)
         let t = Date()
         await c.warmup()
-        print(String(format: "model %@: load %.2f s, warmup %.2f s", dir.path, c.loadSeconds, Date().timeIntervalSince(t)))
+        print(
+            String(
+                format: "model %@: load %.2f s, warmup %.2f s, weights %.0f MB", dir.path, c.loadSeconds,
+                Date().timeIntervalSince(t), Double(c.weightBytes) / 1e6))
         return c
     } catch {
         fail("cannot load \(dir.path): \(error)")
@@ -112,6 +118,9 @@ func prefix(_ s: String, _ n: Int) -> String {
 switch command {
 case "install":
     let tag = option("--tag")
+    guard let variant = AIModelVariant(rawValue: option("--variant") ?? AIModelVariant.default.rawValue) else {
+        fail("--variant must be one of \(AIModelVariant.allCases.map(\.rawValue).joined(separator: ", "))")
+    }
     let release: GenmaiModelRelease
     do {
         if let tag {
@@ -123,11 +132,13 @@ case "install":
         fail("cannot look up the model release: \(error)")
     }
     let dst = args.first.map { URL(filePath: $0) } ?? GenmaiConverter.defaultModelDirectory
-    print("installing genmai \(release.info.version) (\(release.info.repository)@\(release.info.revision)) into \(dst.path)")
+    print(
+        "installing genmai \(release.info.version) \(variant.rawValue) (\(release.info.repository)@\(release.info.revision))"
+            + " into \(dst.path)")
     let last = Mutex<String>("")
     do {
         let t = Date()
-        try await AIModelInstaller.install(release, to: dst) { phase in
+        try await AIModelInstaller.install(release, variant: variant, to: dst) { phase in
             let line: String
             switch phase {
             case .downloading(let received, let total):
@@ -148,6 +159,20 @@ case "install":
         print("check:", try await c.convert("きょうはいいてんきですね").first?.text ?? "-")
     } catch {
         fail("install failed: \(error)")
+    }
+
+case "quantize":
+    let bits = option("--bits").flatMap(Int.init) ?? 8
+    guard args.count == 2 else { fail("usage: genmai-cli quantize [--bits 8] <model dir> <output file>") }
+    let src = URL(filePath: args[0])
+    let out = URL(filePath: args[1])
+    do {
+        let t = Date()
+        try GenmaiModel.writeQuantized(from: src.appending(path: "model.safetensors"), to: out, bits: bits)
+        let size = (try FileManager.default.attributesOfItem(atPath: out.path)[.size] as? Int) ?? 0
+        print(String(format: "wrote %@ (%.0f MB) in %.1f s", out.path, Double(size) / 1e6, Date().timeIntervalSince(t)))
+    } catch {
+        fail("quantize failed: \(error)")
     }
 
 case "prepare":

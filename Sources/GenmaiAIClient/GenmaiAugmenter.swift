@@ -31,6 +31,8 @@ public final class GenmaiAugmenter: ConversionAugmenter {
     /// Finished speculative conversions, most recent last.
     var cache: [Cached] = []
     var lastSource: ConvertSource?
+    /// Returns MLX's buffer cache to the system once typing has paused for `idleReleaseDelay`.
+    var idleRelease: Task<Void, Never>?
 
     mutating func cancelAll() {
       prepare?.task.cancel()
@@ -38,6 +40,8 @@ public final class GenmaiAugmenter: ConversionAugmenter {
       speculation?.cancel()
       speculation = nil
       cache = []
+      idleRelease?.cancel()
+      idleRelease = nil
     }
 
     func cached(_ reading: String, _ context: String) -> [String]? {
@@ -97,6 +101,9 @@ public final class GenmaiAugmenter: ConversionAugmenter {
 
   /// Typing pause after which the fast speculative result is replaced by an exact conversion.
   static let refineDelay: Duration = .milliseconds(400)
+  /// Typing pause after which MLX's buffer cache is returned to the system (the next conversion allocates again,
+  /// a few ms).
+  static let idleReleaseDelay: Duration = .seconds(30)
   /// Candidates kept by a speculative conversion.
   static let speculationResults = 10
 
@@ -179,6 +186,21 @@ public final class GenmaiAugmenter: ConversionAugmenter {
     state.withLock { s in
       guard s.status == .ready else { return }
       startSpeculation(&s, reading: reading, context: context)
+      scheduleIdleRelease(&s)
+    }
+  }
+
+  private func scheduleIdleRelease(_ s: inout State) {
+    s.idleRelease?.cancel()
+    let core = self.core
+    let work = [s.prepare?.task, s.speculation?.refine].compactMap { $0 }
+    s.idleRelease = Task.detached {
+      do { try await Task.sleep(for: GenmaiAugmenter.idleReleaseDelay) } catch { return }
+      for task in work {
+        await task.value
+      }
+      guard !Task.isCancelled else { return }
+      await core.releaseCachedMemory()
     }
   }
 
@@ -377,6 +399,10 @@ public final class GenmaiAugmenter: ConversionAugmenter {
     func unload() {
       converter = nil
       incrementals = []
+    }
+
+    func releaseCachedMemory() async {
+      _ = await converter?.releaseCachedMemory()
     }
 
     private func incremental(_ context: String) throws -> GenmaiIncrementalConverter {

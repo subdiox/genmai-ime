@@ -312,6 +312,42 @@ func conversionRequest() -> ConversionRequest {
     #expect(tops(segments) == ["箸を", "渡る"])
   }
 
+  @Test func userDictionaryWordsWinOverAI() {
+    // はるきが registered as 陽稀; the AI writes the common 春樹.
+    let segments = makeSegments([("はるきが", ["陽稀が", "春樹が"]), ("きた", ["来た"])])
+    let user = segments.mutableConversionSegment(0).mutableCandidate(0)
+    user.attributes |= Attribute.userDictionary
+    user.contentValue = "陽稀"
+    let outcome = AIConversionMerger.apply(
+      ["春樹が来た"], to: segments, request: conversionRequest(), converter: ResizingConverterStub(),
+      maxCandidates: 5)
+    #expect(outcome.keptUserWords == 1)
+    #expect(outcome.aiSegments.isEmpty)
+    #expect(tops(segments) == ["陽稀が", "来た"])
+
+    // An AI text with the user's word is used.
+    let kept = makeSegments([("はるきが", ["陽稀が"]), ("きた", ["着た", "来た"])])
+    let word = kept.mutableConversionSegment(0).mutableCandidate(0)
+    word.attributes |= Attribute.userDictionary
+    word.contentValue = "陽稀"
+    let used = AIConversionMerger.apply(
+      ["陽稀が来た"], to: kept, request: conversionRequest(), converter: ResizingConverterStub(), maxCandidates: 5)
+    #expect(used.keptUserWords == 0)
+    #expect(tops(kept) == ["陽稀が", "来た"])
+  }
+
+  @Test func userDictionaryWordIsPromotedWhenMozcRanksItLower() {
+    let segments = makeSegments([("はるきが", ["春樹が", "陽稀が"]), ("きた", ["来た"])])
+    let user = segments.mutableConversionSegment(0).mutableCandidate(1)
+    user.attributes |= Attribute.userDictionary
+    user.contentValue = "陽稀"
+    let outcome = AIConversionMerger.apply(
+      ["晴樹が来た"], to: segments, request: conversionRequest(), converter: ResizingConverterStub(),
+      maxCandidates: 5)
+    #expect(outcome.keptUserWords == 1)
+    #expect(tops(segments) == ["陽稀が", "来た"])
+  }
+
   @Test func multiSegmentCandidatesAreLeftAlone() {
     let segments = makeSegments([("わたしの", ["私の"]), ("なまえ", ["名前"])])
     segments.mutableConversionSegment(0).mutableCandidate(0).convertedSegmentCount = 2
@@ -353,6 +389,11 @@ func conversionRequest() -> ConversionRequest {
     #expect(decoded.readingCheck)
     let off = try JSONDecoder().decode(AIConversionSettings.self, from: Data(#"{"reading_check": false}"#.utf8))
     #expect(!off.readingCheck)
+    #expect(d.modelVariant == .q8)
+    let bf16 = try JSONDecoder().decode(AIConversionSettings.self, from: Data(#"{"model_variant": "bf16"}"#.utf8))
+    #expect(bf16.modelVariant == .bf16)
+    let unknown = try JSONDecoder().decode(AIConversionSettings.self, from: Data(#"{"model_variant": "2bit"}"#.utf8))
+    #expect(unknown.modelVariant == .q8)
   }
 
   @Test func brokenFileFallsBackToDefaults() throws {
@@ -374,13 +415,21 @@ func conversionRequest() -> ConversionRequest {
     #expect(status == .found(dir, info: nil))
     #expect(AIModelStatus.identity(dir) != nil)
     let release = GenmaiModelReleaseTests.release("0.2.0")
-    #expect(status.needsInstall(release))
+    #expect(status.needsInstall(release, variant: .q8))
+    var info = release.info
+    info.variant = .q8
+    try info.save(to: dir)
+    #expect(AIModelStatus.check(dir) == .found(dir, info: info))
+    #expect(!AIModelStatus.check(dir).needsInstall(release, variant: .q8))
+    // another variant is chosen in the settings
+    #expect(AIModelStatus.check(dir).needsInstall(release, variant: .bf16))
+    #expect(AIModelStatus.check(dir).needsInstall(GenmaiModelReleaseTests.release("0.10.0"), variant: .q8))
+    #expect(!AIModelStatus.check(dir).needsInstall(GenmaiModelReleaseTests.release("0.1.0"), variant: .q8))
+    #expect(AIModelStatus.check(dir.appending(path: "none")).needsInstall(release, variant: .q8))
+    // genmai_model.json without a variant: bf16
     try release.info.save(to: dir)
-    #expect(AIModelStatus.check(dir) == .found(dir, info: release.info))
-    #expect(!AIModelStatus.check(dir).needsInstall(release))
-    #expect(AIModelStatus.check(dir).needsInstall(GenmaiModelReleaseTests.release("0.10.0")))
-    #expect(!AIModelStatus.check(dir).needsInstall(GenmaiModelReleaseTests.release("0.1.0")))
-    #expect(AIModelStatus.check(dir.appending(path: "none")).needsInstall(release))
+    #expect(!AIModelStatus.check(dir).needsInstall(release, variant: .bf16))
+    #expect(AIModelStatus.check(dir).needsInstall(release, variant: .q8))
   }
 }
 
@@ -406,6 +455,7 @@ func conversionRequest() -> ConversionRequest {
     [{"type":"file","oid":"a6344aa","size":1519,"path":".gitattributes"},
     {"type":"file","oid":"70bb1e6b8b32086b8bccd5dcbb6d84ef3847669e","size":921,"path":"config.json"},
     {"type":"file","oid":"0695e41","size":1238046208,"lfs":{"oid":"e1ac64258359389b0451bdc521593cba825635baa08b2650a1140678a01396f6","size":1238046208,"pointerSize":135},"path":"model.safetensors"},
+    {"type":"file","oid":"7c2e1a0","size":336000000,"lfs":{"oid":"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef","size":336000000,"pointerSize":134},"path":"model-8bit.safetensors"},
     {"type":"file","oid":"5d1b2c0","size":619034840,"lfs":{"oid":"f3caa5b616114699a79d595ff8a88b4ba33e3fffe77ad0bf5cc13dbfed314411","size":619034840,"pointerSize":134},"path":"model-bf16.safetensors"},
     {"type":"file","oid":"ac7a91b3c4480c983debf6cc9c4d3d482c350fbf","size":394106,"path":"tokenizer.json"}]
     """#.utf8)
@@ -422,20 +472,27 @@ func conversionRequest() -> ConversionRequest {
 
   @Test func filesWithChecksums() throws {
     let files = try GenmaiModelRelease.files(Self.tree)
-    #expect(files.map(\.name) == GenmaiModelRelease.fileNames)
+    #expect(
+      files.map(\.name) == ["config.json", "tokenizer.json", "model-8bit.safetensors", "model-bf16.safetensors"])
     #expect(files[0] == .init(name: "config.json", size: 921, checksum: .gitBlob("70bb1e6b8b32086b8bccd5dcbb6d84ef3847669e")))
     #expect(
-      files[2]
+      files[3]
         == .init(
           name: "model-bf16.safetensors", size: 619_034_840,
           checksum: .sha256("f3caa5b616114699a79d595ff8a88b4ba33e3fffe77ad0bf5cc13dbfed314411")))
     #expect(throws: AIModelInstallError.self) { try GenmaiModelRelease.files(Data("[]".utf8)) }
     let r = GenmaiModelRelease(
       info: GenmaiModelInfo(version: "0.1.0", repository: "subdiox/genmai", revision: "v0.1.0"), files: files)
+    #expect(r.variants == [.q8, .bf16])
     // The fp32 model.safetensors (for transformers) is not downloaded.
-    #expect(r.downloadSize == 921 + 394_106 + 619_034_840)
+    #expect(r.files(for: .bf16)?.map(\.name) == ["config.json", "tokenizer.json", "model-bf16.safetensors"])
+    #expect(r.downloadSize(for: .bf16) == 921 + 394_106 + 619_034_840)
+    #expect(r.downloadSize(for: .q8) == 921 + 394_106 + 336_000_000)
     #expect(
-      r.url(of: files[2]).absoluteString == "https://huggingface.co/subdiox/genmai/resolve/v0.1.0/model-bf16.safetensors")
+      r.url(of: files[3]).absoluteString == "https://huggingface.co/subdiox/genmai/resolve/v0.1.0/model-bf16.safetensors")
+    let bf16Only = GenmaiModelRelease(info: r.info, files: files.filter { $0.name != "model-8bit.safetensors" })
+    #expect(bf16Only.variants == [.bf16])
+    #expect(bf16Only.files(for: .q8) == nil)
   }
 
   @Test func compatibility() {

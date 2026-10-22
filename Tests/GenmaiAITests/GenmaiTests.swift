@@ -19,6 +19,9 @@ enum GenmaiTestPaths {
     static var modelAvailable: Bool {
         FileManager.default.fileExists(atPath: modelDirectory.appending(path: "model.safetensors").path)
     }
+    /// The Python reference fixtures were made with the bf16 weights; with 8-bit weights (the default install) only
+    /// the results, not the exact scores, are compared.
+    static var modelIsBF16: Bool { SharedConverter.converter?.quantizationBits == nil }
     /// Results of the Python MLX reference decoder (incremental, beams 5, bf16) on the daily set.
     static func pythonResults(_ name: String) -> URL {
         repoRoot.appending(path: "Tests/Fixtures/genmai/python_mlx_\(name).json")
@@ -147,9 +150,39 @@ struct GenmaiConverterTests {
         let r = try await c.convert("きょうははやめにかえります")
         #expect(r.count == 5)
         #expect(r.first?.text == "今日は早めに帰ります")
+        guard GenmaiTestPaths.modelIsBF16 else { return }
         // Python MLX (genmai 0.1.0, bf16): -0.02613067626953125, second 今日は早目に帰ります -4.152080535888672
         #expect(abs((r.first?.score ?? 0) - -0.02613) < 0.01)
         #expect(r.count > 1 && r[1].text == "今日は早目に帰ります")
+    }
+
+    /// MLX keeps at most `cacheLimitBytes` of freed buffers (trimmed at its next allocation), and
+    /// `releaseCachedMemory` returns them.
+    @Test func bufferCacheIsBounded() async throws {
+        let c = try converter()
+        _ = try await c.convert("きょうはいいてんきなので、こうえんまでさんぽにいってきました")
+        #expect(GenmaiConverter.memoryStats.cacheLimit == GenmaiModel.cacheLimitBytes)
+        #expect(await c.releaseCachedMemory() == 0)
+    }
+
+    /// `writeQuantized` writes 8-bit weights that load and convert like the bf16 ones (needs the bf16 install).
+    @Test(.enabled(if: GenmaiTestPaths.modelIsBF16, "needs bf16 weights to quantize"))
+    func quantizedWeightsRoundTrip() async throws {
+        let dir = FileManager.default.temporaryDirectory.appending(path: "genmai-q8-\(UUID())")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        for name in ["config.json", "tokenizer.json"] {
+            try FileManager.default.copyItem(
+                at: GenmaiTestPaths.modelDirectory.appending(path: name), to: dir.appending(path: name))
+        }
+        try GenmaiModel.writeQuantized(
+            from: GenmaiTestPaths.modelDirectory.appending(path: "model.safetensors"),
+            to: dir.appending(path: "model.safetensors"), bits: 8)
+        let q = try GenmaiConverter(directory: dir)
+        #expect(q.quantizationBits == 8)
+        #expect(q.weightBytes < 400_000_000)
+        let r = try await q.convert("きょうははやめにかえります")
+        #expect(r.first?.text == "今日は早めに帰ります")
     }
 
     @Test func contextChangesTheResult() async throws {
@@ -159,7 +192,9 @@ struct GenmaiConverterTests {
     }
 
     /// Top-1 agrees with the Python MLX reference on the daily set (bf16 near-ties may flip a few items).
-    @Test(.enabled(if: FileManager.default.fileExists(atPath: GenmaiTestPaths.pythonResults("daily").path)))
+    @Test(
+        .enabled(if: FileManager.default.fileExists(atPath: GenmaiTestPaths.pythonResults("daily").path)),
+        .enabled(if: GenmaiTestPaths.modelIsBF16, "the Python reference is bf16"))
     func dailyParityWithPython() async throws {
         let c = try converter()
         let j = try JSONSerialization.jsonObject(with: Data(contentsOf: GenmaiTestPaths.pythonResults("daily"))) as! [String: Any]

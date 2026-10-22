@@ -16,6 +16,8 @@ public struct AIConversionSettings: Codable, Equatable, Sendable {
   public var candidateCount: Int
   /// The model directory; nil = `defaultModelDirectory`.
   public var modelDirectory: String?
+  /// Which weights of a release to install (8-bit by default).
+  public var modelVariant: AIModelVariant
   /// Drops AI candidates that cannot be read as the input (`AIReadingChecker`). On by default; off only for
   /// evaluation.
   public var readingCheck: Bool
@@ -31,12 +33,13 @@ public struct AIConversionSettings: Codable, Equatable, Sendable {
   public init(
     enabled: Bool = false, timeoutMilliseconds: Int = AIConversionSettings.defaultTimeoutMilliseconds,
     candidateCount: Int = AIConversionSettings.defaultCandidateCount, modelDirectory: String? = nil,
-    readingCheck: Bool = true, debugLog: Bool = false
+    modelVariant: AIModelVariant = .default, readingCheck: Bool = true, debugLog: Bool = false
   ) {
     self.enabled = enabled
     self.timeoutMilliseconds = timeoutMilliseconds
     self.candidateCount = candidateCount
     self.modelDirectory = modelDirectory
+    self.modelVariant = modelVariant
     self.readingCheck = readingCheck
     self.debugLog = debugLog
   }
@@ -46,6 +49,7 @@ public struct AIConversionSettings: Codable, Equatable, Sendable {
     case timeoutMilliseconds = "timeout_ms"
     case candidateCount = "candidates"
     case modelDirectory = "model_directory"
+    case modelVariant = "model_variant"
     case readingCheck = "reading_check"
     case debugLog = "debug_log"
   }
@@ -61,6 +65,7 @@ public struct AIConversionSettings: Codable, Equatable, Sendable {
     if modelDirectory?.isEmpty == true {
       modelDirectory = nil
     }
+    modelVariant = (try? c.decodeIfPresent(AIModelVariant.self, forKey: .modelVariant)) ?? modelVariant
     readingCheck = try c.decodeIfPresent(Bool.self, forKey: .readingCheck) ?? readingCheck
     debugLog = try c.decodeIfPresent(Bool.self, forKey: .debugLog) ?? debugLog
   }
@@ -142,10 +147,12 @@ public enum AIModelStatus: Equatable, Sendable {
     return false
   }
 
-  /// Whether `release` is newer than what is installed (a model without release info counts as outdated).
-  public func needsInstall(_ release: GenmaiModelRelease) -> Bool {
+  /// Whether to install `release` with `variant`: it is newer than what is installed, or the installed weights are
+  /// another variant (a model without release info counts as outdated).
+  public func needsInstall(_ release: GenmaiModelRelease, variant: AIModelVariant) -> Bool {
     guard case .found(_, let info?) = self else { return true }
     return GenmaiModelRelease.compareVersions(info.version, release.info.version) == .orderedAscending
+      || info.installedVariant != variant
   }
 
   /// Identifies the installed weights (size and modification date of model.safetensors): changes when the model
