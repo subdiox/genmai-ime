@@ -388,12 +388,14 @@ func runSessionEval(_ arguments: [String]) async {
         print(
           "   AI top used \(replaced), timed out \(timedOut), errors \(aiErrors); raw genmai top-1 correct (norm) \(rawCorrect), of which lost in the session \(rawCorrectLost.count)"
         )
-        if showErrors { rawCorrectLost.forEach { print($0) } }
+        if showErrors {
+          for line in rawCorrectLost { print(line) }
+        }
         if readingCheck {
           print(
             "   reading check: dropped \(unreadable) of \(candidates) AI candidates, \(unreadableCorrect.count) of them correct"
           )
-          unreadableCorrect.forEach { print($0) }
+          for line in unreadableCorrect { print(line) }
         }
         let n = Double(count)
         print(
@@ -415,7 +417,7 @@ func runSessionEval(_ arguments: [String]) async {
             Double(m.cache) / 1e6, Double(m.peak) / 1e6))
       }
       if showErrors {
-        errors.forEach { print($0) }
+        for line in errors { print(line) }
       }
       if let outDir {
         let doc: [String: Any] = ["items": outputs, "n_best": 1, "execution_time": total]

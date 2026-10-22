@@ -191,9 +191,9 @@ extension GenmaiAugmenterTests {
   @Test(.enabled(if: ModelPaths.ossDataAvailable, "Data/genmai.data is missing"))
   func aiConversionInTheSessionLayer() async throws {
     await SharedAugmenter.augmenter.waitUntilLoaded()
-    try await SystemUtil.withTempUserProfile { _ in
-      try await ConfigHandler.withScopedHandlerForTesting {
-        try await CharacterFormManager.withScopedManagerForTesting {
+    await SystemUtil.withTempUserProfile { _ in
+      await ConfigHandler.withScopedHandlerForTesting {
+        await CharacterFormManager.withScopedManagerForTesting {
           let hook = AIConversionHook(augmenter: SharedAugmenter.augmenter, settings: SharedAugmenter.settings)
           let backend = SessionHandlerBackend(aiHook: hook)
           let client = InProcessClient.make(backend: backend)

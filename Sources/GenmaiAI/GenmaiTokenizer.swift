@@ -100,7 +100,8 @@ public struct GenmaiTokenizer: Sendable {
     var byteToChar = [Character](repeating: " ", count: 256)
     var charToByte: [Character: UInt8] = [:]
     for (b, c) in zip(bs, cs) {
-      let ch = Character(Unicode.Scalar(UInt32(c))!)
+      guard let scalar = Unicode.Scalar(UInt32(c)) else { throw LoadError.malformed("byte map \(c)") }
+      let ch = Character(scalar)
       byteToChar[b] = ch
       charToByte[ch] = UInt8(b)
     }

@@ -86,21 +86,75 @@ struct EvalItem {
   var id: String
 }
 
-func loadSet(_ path: String) throws -> [EvalItem] {
-  let data = try Data(contentsOf: URL(filePath: path))
-  if path.hasSuffix(".jsonl") {
-    return try String(decoding: data, as: UTF8.self).split(separator: "\n").map { line in
-      let r = try JSONSerialization.jsonObject(with: Data(line.utf8)) as! [String: Any]
-      return EvalItem(
-        query: r["reading"] as! String, answers: r["positives"] as! [String],
-        context: (r["left_context"] as? String) ?? "", id: "\(r["id"]!)")
+/// A JSON string or number as text (the item ids of the evaluation sets are either).
+struct JSONScalarText: Decodable, CustomStringConvertible {
+  var description: String
+
+  init(from decoder: any Decoder) throws {
+    let container = try decoder.singleValueContainer()
+    if let string = try? container.decode(String.self) {
+      description = string
+    } else if let int = try? container.decode(Int.self) {
+      description = String(int)
+    } else {
+      description = String(try container.decode(Double.self))
     }
   }
-  let xs = try JSONSerialization.jsonObject(with: data) as! [[String: Any]]
-  return xs.map { x in
-    let q = x["query"] as! String
-    return EvalItem(query: q, answers: x["answer"] as! [String], context: (x["left_context"] as? String) ?? "", id: q)
+}
+
+/// A line of an AJIMEE-style .jsonl set.
+private struct JSONLItem: Decodable {
+  var reading: String
+  var positives: [String]
+  var leftContext: String?
+  var id: JSONScalarText
+
+  enum CodingKeys: String, CodingKey {
+    case reading, positives, id
+    case leftContext = "left_context"
   }
+}
+
+/// An item of a .json set.
+private struct JSONItem: Decodable {
+  var query: String
+  var answer: [String]
+  var leftContext: String?
+
+  enum CodingKeys: String, CodingKey {
+    case query, answer
+    case leftContext = "left_context"
+  }
+}
+
+func loadSet(_ path: String) throws -> [EvalItem] {
+  let data = try Data(contentsOf: URL(filePath: path))
+  let decoder = JSONDecoder()
+  if path.hasSuffix(".jsonl") {
+    return try String(decoding: data, as: UTF8.self).split(separator: "\n").map { line in
+      let r = try decoder.decode(JSONLItem.self, from: Data(line.utf8))
+      return EvalItem(query: r.reading, answers: r.positives, context: r.leftContext ?? "", id: r.id.description)
+    }
+  }
+  return try decoder.decode([JSONItem].self, from: data).map { x in
+    EvalItem(query: x.query, answers: x.answer, context: x.leftContext ?? "", id: x.query)
+  }
+}
+
+/// The result file of `eval` (and of the Python reference): per item its n-best list.
+struct EvalResultFile: Decodable {
+  struct Output: Decodable {
+    var text: String
+    var score: Double
+  }
+
+  struct Item: Decodable {
+    var id: JSONScalarText
+    var query: String
+    var outputs: [Output]?
+  }
+
+  var items: [Item]
 }
 
 func percentile(_ xs: [Double], _ p: Double) -> Double {
@@ -197,7 +251,7 @@ case "prepare":
 
 case "convert":
   let ctx = option("--context") ?? ""
-  let beams = Int(option("--beams") ?? "5")!
+  guard let beams = Int(option("--beams") ?? "5") else { fail("--beams needs a number") }
   let c = await loadConverter()
   for reading in args {
     let t = Date()
@@ -208,7 +262,7 @@ case "convert":
 
 case "eval":
   guard let tag = option("--tag") else { fail("eval needs --tag") }
-  let beams = Int(option("--beams") ?? "5")!
+  guard let beams = Int(option("--beams") ?? "5") else { fail("--beams needs a number") }
   let outDir = URL(filePath: option("--out-dir") ?? ".")
   let incremental = flag("--incremental")
   let everyKey = flag("--every-key")
@@ -274,7 +328,7 @@ case "eval":
         String(
           format: "  background %@ while typing: %d (median %.1f ms, mean %.1f, max %.0f ms)",
           everyKey ? "conversions" : "chunk conversions", bg.count, median(bg),
-          bg.reduce(0, +) / Double(bg.count), bg.max()!))
+          bg.reduce(0, +) / Double(bg.count), bg.max() ?? 0))
     }
     let (pre, re) = await c.promptTokenStats
     let (acc, steps) = await c.draftStats
@@ -285,10 +339,10 @@ case "eval":
 
 case "compare":
   guard args.count == 2 else { fail("usage: genmai-cli compare <ours.json> <reference.json>") }
-  func items(_ p: String) throws -> [String: [[String: Any]]] {
-    let j = try JSONSerialization.jsonObject(with: Data(contentsOf: URL(filePath: p))) as! [String: Any]
-    var d: [String: [[String: Any]]] = [:]
-    for x in j["items"] as! [[String: Any]] { d["\(x["id"]!)\u{0}\(x["query"]!)"] = x["outputs"] as? [[String: Any]] }
+  func items(_ p: String) throws -> [String: [EvalResultFile.Output]] {
+    let j = try JSONDecoder().decode(EvalResultFile.self, from: Data(contentsOf: URL(filePath: p)))
+    var d: [String: [EvalResultFile.Output]] = [:]
+    for x in j.items { d["\(x.id)\u{0}\(x.query)"] = x.outputs }
     return d
   }
   let a = try items(args[0])
@@ -302,13 +356,13 @@ case "compare":
   for (k, ob) in b.sorted(by: { $0.key < $1.key }) {
     guard let oa = a[k] else { continue }
     n += 1
-    let ta = oa.map { $0["text"] as! String }
-    let tb = ob.map { $0["text"] as! String }
+    let ta = oa.map(\.text)
+    let tb = ob.map(\.text)
     if ta.first == tb.first { top1 += 1 } else { diffs.append(k) }
     if ta == tb {
       all += 1
       for (x, y) in zip(oa, ob) {
-        maxDiff = max(maxDiff, abs((x["score"] as! Double) - (y["score"] as! Double)))
+        maxDiff = max(maxDiff, abs(x.score - y.score))
       }
     }
     if Set(ta) == Set(tb) { sameSet += 1 }
@@ -320,8 +374,8 @@ case "compare":
       n, top1, Double(top1) / Double(max(n, 1)) * 100, all, Double(all) / Double(max(n, 1)) * 100, sameSet, maxDiff))
   for k in diffs.prefix(20) {
     let q = k.split(separator: "\u{0}").last.map(String.init) ?? k
-    let fa = a[k]!.prefix(2).map { "\($0["text"]!) \(String(format: "%.3f", $0["score"] as! Double))" }
-    let fb = b[k]!.prefix(2).map { "\($0["text"]!) \(String(format: "%.3f", $0["score"] as! Double))" }
+    let fa = (a[k] ?? []).prefix(2).map { "\($0.text) \(String(format: "%.3f", $0.score))" }
+    let fb = (b[k] ?? []).prefix(2).map { "\($0.text) \(String(format: "%.3f", $0.score))" }
     print("  \(q)\n    swift:  \(fa)\n    python: \(fb)")
   }
 
@@ -329,7 +383,12 @@ case "logprobs":
   // logprobs <reading> [ids...]: prints the 8 best next tokens after the prompt and after each given id
   let c = await loadConverter()
   let reading = args.removeFirst()
-  let rows = await c.debugLogProbs(reading, continuation: args.map { Int32($0)! })
+  var continuation: [Int32] = []
+  for arg in args {
+    guard let id = Int32(arg) else { fail("not a token id: \(arg)") }
+    continuation.append(id)
+  }
+  let rows = await c.debugLogProbs(reading, continuation: continuation)
   for r in rows {
     let top = r.enumerated().sorted { $0.element > $1.element }.prefix(8)
     print(top.map { String(format: "%d:%.5f", $0.offset, $0.element) }.joined(separator: " "))
