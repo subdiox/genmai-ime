@@ -25,7 +25,12 @@ public enum RendererStyleHandler {
   public static func getRendererStyle(_ theme: ColorTheme) -> RendererStyle {
     let styleTextProto = theme == .dark ? kStyleDarkTextProto : kStyleTextProto
     // CHECK(ParseFromString) in C++: the embedded text protos are known to be valid.
-    var style = try! RendererStyle(textFormatString: styleTextProto)
+    var style: RendererStyle
+    do {
+      style = try RendererStyle(textFormatString: styleTextProto)
+    } catch {
+      preconditionFailure("The embedded renderer style is invalid: \(error)")
+    }
 
     if !style.candidateStyle.hasBackgroundColor {
       setRgbaColor(&style.candidateStyle.backgroundColor, 255, 255, 255)
