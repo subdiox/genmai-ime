@@ -17,11 +17,11 @@ import Testing
 
 @testable import GenmaiCore
 
-let kChars_Aiueo = "あいうえお"
-let kChars_Mo = "も"
-let kChars_Mozuku = "もずく"
-let kChars_Mozukusu = "もずくす"
-let kChars_Momonga = "ももんが"
+let kCharsAiueo = "あいうえお"
+let kCharsMo = "も"
+let kCharsMozuku = "もずく"
+let kCharsMozukusu = "もずくす"
+let kCharsMomonga = "ももんが"
 
 func addSegmentWithSingleCandidate(_ segments: Segments, _ key: String, _ value: String) {
   let seg = segments.addSegment()

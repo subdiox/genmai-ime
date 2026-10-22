@@ -842,7 +842,7 @@ public final class SystemDictionary: DictionaryInterface, Sendable {
     if callback.onKey(key) != .traverseContinue {
       return
     }
-    if callback.onActualKey(key, key, /* num_expanded= */ 0) != .traverseContinue {
+    if callback.onActualKey(key, key, 0) != .traverseContinue {  // num_expanded = 0
       return
     }
     // Callback on each token.

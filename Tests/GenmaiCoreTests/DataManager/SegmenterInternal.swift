@@ -23,7 +23,9 @@ struct SegmenterInternal {
     for line in try lines(idFile) {
       let fields = line.split(whereSeparator: { $0 == " " || $0 == "\t" })
       if fields.count < 2 { continue }
-      let id = Int(fields[0])!
+      guard let id = Int(fields[0]) else {
+        throw StatusError.invalidArgument("invalid id: \(line)")
+      }
       pos[String(fields[1])] = id
       maxId = max(id, maxId)
     }

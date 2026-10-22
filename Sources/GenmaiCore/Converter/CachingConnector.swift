@@ -43,8 +43,9 @@ public final class CachingConnector {
   private let hasBonus: Bool
   private let particleOmissionTransitionCostBonus: Int
   private let posMatcher: PosMatcher
-  private var cacheLid = [UInt16](repeating: kInvalidLid, count: kCacheSize)
-  private var cacheCost = [Int32](repeating: 0, count: kCacheSize)
+  /// `cache_lid_` and `cache_cost_` in one word per entry (one array access
+  /// per lookup): the lid in the low 16 bits, the cost in the high 32 bits.
+  private var cache = [UInt64](repeating: UInt64(kInvalidLid), count: kCacheSize)
   private var cacheLidValue: UInt16 = kInvalidLid
   private var isRightNodeTarget = false
 
@@ -82,16 +83,16 @@ public final class CachingConnector {
     }
 
     let i = Int(lnodeRid)
-    if cacheLid[i] == rnodeLid {
-      return Int(cacheCost[i])
+    let entry = cache[i]
+    if UInt16(truncatingIfNeeded: entry) == rnodeLid {
+      return Int(Int32(truncatingIfNeeded: entry >> 32))
     }
 
     var cost = connector.getTransitionCost(lnodeRid, rnodeLid)
     if hasBonus {
       cost = applyBonus(cost, lnodeRid)
     }
-    cacheLid[i] = rnodeLid
-    cacheCost[i] = Int32(truncatingIfNeeded: cost)
+    cache[i] = UInt64(rnodeLid) | UInt64(UInt32(truncatingIfNeeded: cost)) << 32
     return cost
   }
 

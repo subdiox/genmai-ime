@@ -15,7 +15,7 @@ final class ValueDictionaryTests {
   private var image = DataView()
 
   init() throws {
-    posMatcher = SystemDictionaryTestSupport.fixture!.posMatcher
+    posMatcher = try #require(SystemDictionaryTestSupport.fixture).posMatcher
   }
 
   private func addValue(_ value: String) {

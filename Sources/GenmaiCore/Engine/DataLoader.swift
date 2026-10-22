@@ -258,9 +258,9 @@ public final class DataLoader: Sendable {
       if let index = state.requests.firstIndex(where: { $0.id == id }) {
         state.requests[index].sequenceId = state.sequenceIdCounter
       } else {
-        state.requests.append(
-          RequestData(id: id, sequenceId: state.sequenceIdCounter, request: request))
-        GenmaiLog.info("New request is registered: \(state.requests.last!)")
+        let requestData = RequestData(id: id, sequenceId: state.sequenceIdCounter, request: request)
+        state.requests.append(requestData)
+        GenmaiLog.info("New request is registered: \(requestData)")
       }
 
       // Sorts the requests so requests[0] stores the request with the highest

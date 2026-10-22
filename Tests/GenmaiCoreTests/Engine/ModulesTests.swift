@@ -21,7 +21,7 @@ struct ModulesTests {
   }
 
   @Test func buildTwiceTest() throws {
-    try SystemUtil.withTempUserProfile { _ in
+    SystemUtil.withTempUserProfile { _ in
       let builder = ModulesPresetBuilder()
 
       #expect(throws: Never.self) { try builder.build(MockDataManager()) }

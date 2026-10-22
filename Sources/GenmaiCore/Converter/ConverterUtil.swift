@@ -22,7 +22,7 @@ public enum ConverterUtil {
   public static func conversionSegmentsToResult(_ segments: [Segment])
     -> PredictionResult?
   {
-    if segments.isEmpty {
+    guard let firstSegment = segments.first else {
       return nil
     }
 
@@ -49,7 +49,7 @@ public enum ConverterUtil {
     }
 
     result.innerSegmentBoundary = builder.build(result.key, result.value)
-    result.lid = segments.first!.candidate(0).lid
+    result.lid = firstSegment.candidate(0).lid
     result.rid = lastRid
 
     return result
@@ -67,7 +67,7 @@ public enum ConverterUtil {
   public static func historySegmentsToResult(_ historySegments: [Segment])
     -> PredictionResult
   {
-    if historySegments.isEmpty {
+    guard let firstSegment = historySegments.first, let lastSegment = historySegments.last else {
       return PredictionResult()
     }
 
@@ -87,9 +87,9 @@ public enum ConverterUtil {
     }
 
     result.innerSegmentBoundary = builder.build(result.key, result.value)
-    result.lid = historySegments.first!.candidate(0).lid
-    result.rid = historySegments.last!.candidate(0).rid
-    result.cost = Int(historySegments.last!.candidate(0).cost)
+    result.lid = firstSegment.candidate(0).lid
+    result.rid = lastSegment.candidate(0).rid
+    result.cost = Int(lastSegment.candidate(0).cost)
 
     return result
   }
@@ -437,10 +437,13 @@ public enum ConverterUtil {
         // - If num_segs > 1: inserted as a multi-segment candidate.
         // - If num_segs == 1: inserted as a standard single-segment candidate.
         let pos = min(targetPos, targetSegment.candidatesSize)
-        let cand =
-          (pos == 0 && targetSegment.candidatesSize > 0)
-          ? targetSegment.pushFrontCandidate()
-          : targetSegment.insertCandidate(pos)!
+        let cand: Candidate
+        if pos == 0 && targetSegment.candidatesSize > 0 {
+          cand = targetSegment.pushFrontCandidate()
+        } else {
+          cand = Candidate()
+          targetSegment.insertCandidate(pos, cand)
+        }
         cand.key = String(combinedKey)
         cand.value = String(combinedValue)
         cand.contentKey = String(combinedContentKey)

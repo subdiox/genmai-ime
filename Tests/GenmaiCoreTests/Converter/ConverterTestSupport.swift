@@ -26,7 +26,7 @@ final class TestSuggestionFilter: SuggestionFilterProtocol, Sendable {
 }
 
 /// The parts of engine::Modules needed by ImmutableConverter and Converter.
-final class TestModules: ConverterModules, @unchecked Sendable {
+final class TestModules: ConverterModules {
   let dataManager: DataManager
   let posMatcher: PosMatcher
   let userDictionary: any UserDictionaryInterface
@@ -50,8 +50,13 @@ final class TestModules: ConverterModules, @unchecked Sendable {
     let userDictionary =
       userDictionary
       ?? {
+        // An empty user dictionary: a file that does not exist, never the user dictionary of the
+        // developer's profile (its words would add lattice nodes and break the parity tests).
         let userPosData = dataManager.getUserPosData()
-        return UserDictionary(UserPos(userPosData.tokenArray, userPosData.stringArray), posMatcher)
+        let emptyDictionaryFile = FileManager.default.temporaryDirectory
+          .appendingPathComponent("genmai-test-no-user-dictionary-\(UUID().uuidString).db").path
+        return UserDictionary(
+          UserPos(userPosData.tokenArray, userPosData.stringArray), posMatcher, emptyDictionaryFile)
       }()
     self.userDictionary = userDictionary
     if let dictionary {

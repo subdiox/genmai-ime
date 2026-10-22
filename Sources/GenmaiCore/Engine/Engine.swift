@@ -23,10 +23,10 @@ import GenmaiBase
 import GenmaiProtocol
 import Synchronization
 
-public final class Engine: EngineInterface, @unchecked Sendable {
-  // @unchecked Sendable: like the C++ Engine, the engine is driven by one
-  // (session) thread; the only state touched by another task (the loader
-  // response) is guarded by a `Mutex`.
+public final class Engine: EngineInterface, Sendable {
+  // Like the C++ Engine, the engine is driven by one (session) thread; its
+  // state and the loader response (set by the loader task) are guarded by
+  // mutexes.
 
   // MARK: - Factories
 
@@ -52,11 +52,22 @@ public final class Engine: EngineInterface, @unchecked Sendable {
 
   private let loader = DataLoader()
 
-  private var converter: Converter?
-  private var modules: Modules?
+  private struct State {
+    var converter: Converter?
+    var modules: Modules?
+    var pendingSupplementalModelRequest: Genmai_EngineReloadRequest?
+  }
+
+  private let state = Mutex(State())
   private let minimalConverter: any ConverterInterface
   private let loaderResponse = Mutex<DataLoader.Response?>(nil)
-  private var pendingSupplementalModelRequest: Genmai_EngineReloadRequest?
+
+  private var converter: Converter? { state.withLock { $0.converter } }
+
+  /// The modules of the converter (nil until initialized).
+  private var initializedModules: Modules? {
+    state.withLock { $0.converter != nil ? $0.modules : nil }
+  }
 
   private init() {
     minimalConverter = createMinimalConverter()
@@ -77,7 +88,7 @@ public final class Engine: EngineInterface, @unchecked Sendable {
 
   public func getDataVersion() -> String {
     let kDefaultDataVersion = "0.0.0"
-    guard let modules, converter != nil else {
+    guard let modules = initializedModules else {
       return kDefaultDataVersion
     }
     return modules.getDataManager().getDataVersion()
@@ -88,7 +99,7 @@ public final class Engine: EngineInterface, @unchecked Sendable {
   /// Since the POS set may differ per LM, this function returns available POS
   /// items. In practice, the POS items are rarely changed.
   public func getPosList() -> [String] {
-    if converter != nil, let modules {
+    if let modules = initializedModules {
       return modules.getUserDictionary().getPosList()
     }
     return []
@@ -97,13 +108,15 @@ public final class Engine: EngineInterface, @unchecked Sendable {
   /// The data manager of the loaded data set (nil until initialized). Not in Mozc: GenmaiClient's AI conversion
   /// hook reads the system dictionary through it (the reading check of AI candidates).
   public func getDataManager() -> DataManager? {
-    converter != nil ? modules?.getDataManager() : nil
+    initializedModules?.getDataManager()
   }
 
   /// For testing only.
   public func getModulesForTesting() -> Modules {
-    precondition(converter != nil)
-    return modules!
+    guard let modules = initializedModules else {
+      preconditionFailure("the engine is not initialized")
+    }
+    return modules
   }
 
   // MARK: - Reload / Sync / Wait
@@ -198,18 +211,19 @@ public final class Engine: EngineInterface, @unchecked Sendable {
 
   @discardableResult
   public func sendSupplementalModelReloadRequest(_ request: Genmai_EngineReloadRequest) -> Bool {
-    if converter != nil, let modules {
-      modules.getSupplementalModelInterface().loadAsync(request)
-    } else {
-      pendingSupplementalModelRequest = request
+    let modules: Modules? = state.withLock { state in
+      guard state.converter != nil, let modules = state.modules else {
+        state.pendingSupplementalModelRequest = request
+        return nil
+      }
+      return modules
     }
+    modules?.getSupplementalModelInterface().loadAsync(request)
     return true
   }
 
   public func clearOldSupplementalModels() {
-    if converter != nil, let modules {
-      modules.getSupplementalModelInterface().clearOldModels()
-    }
+    initializedModules?.getSupplementalModelInterface().clearOldModels()
   }
 
   // MARK: - Initialization
@@ -231,11 +245,14 @@ public final class Engine: EngineInterface, @unchecked Sendable {
     let converter = Converter(
       modules, immutableConverterFactory, predictorFactory, rewriterFactory)
 
-    self.converter = converter
-    self.modules = modules
-    if let pending = pendingSupplementalModelRequest {
+    let pending = state.withLock { state in
+      state.converter = converter
+      state.modules = modules
+      defer { state.pendingSupplementalModelRequest = nil }
+      return state.pendingSupplementalModelRequest
+    }
+    if let pending {
       modules.getSupplementalModelInterface().loadAsync(pending)
-      pendingSupplementalModelRequest = nil
     }
   }
 }

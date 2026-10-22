@@ -64,6 +64,14 @@ private func insertCorrectedNodes(
 @inline(__always)
 private func isNumber(_ c: UInt8) -> Bool { c >= 0x30 && c <= 0x39 }
 
+/// True if the first byte of `s` is an ASCII digit (false for "").
+@inline(__always)
+private func startsWithNumber(_ s: String) -> Bool { s.utf8.first.map(isNumber) ?? false }
+
+/// True if the last byte of `s` is an ASCII digit (false for "").
+@inline(__always)
+private func endsWithNumber(_ s: String) -> Bool { s.utf8.last.map(isNumber) ?? false }
+
 private func containsWhiteSpacesOnly(_ s: some StringProtocol) -> Bool {
   for c in s.unicodeScalars {
     switch c.value {
@@ -127,9 +135,9 @@ private func normalizeHistorySegments(_ segments: Segments) {
     // is used for the ranking tweaking based on history
     if key.utf8.count > 1 && key.bytesEqual(c.value) && key.bytesEqual(c.contentValue)
       && key.bytesEqual(c.key) && key.bytesEqual(c.contentKey)
-      && Util.getScriptType(key) == .number && isNumber(key.utf8.last!)
+      && Util.getScriptType(key) == .number && endsWithNumber(key)
     {
-      key = String(decoding: [key.utf8.last!], as: UTF8.self)  // use the last digit only
+      key = String(decoding: key.utf8.suffix(1), as: UTF8.self)  // use the last digit only
       segment.setKey(key)
       c.value = key
       c.contentValue = key
@@ -198,10 +206,10 @@ private final class FirstInnerSegmentCandidateChecker {
 
     if Util.containsScriptType(c.value, .kanji) {
       // Do not use non-kanji entry's cost. Sometimes it is too small.
-      if minCost == nil {
-        minCost = Int(c.cost)
+      if let minCost {
+        self.minCost = min(minCost, Int(c.cost))
       } else {
-        minCost = min(minCost!, Int(c.cost))
+        minCost = Int(c.cost)
       }
     }
   }
@@ -359,7 +367,7 @@ private func predictionViterbiInternalImpl(
   }
 }
 
-public final class ImmutableConverter: ImmutableConverterInterface, @unchecked Sendable {
+public final class ImmutableConverter: ImmutableConverterInterface, Sendable {
   enum InsertCandidatesType {
     case multiSegments  // Normal conversion ("私の|名前は|中野です")
     case singleSegment  // Realtime conversion ("私の名前は中野です")
@@ -423,7 +431,6 @@ public final class ImmutableConverter: ImmutableConverterInterface, @unchecked S
   }
 
   func insertDummyCandidates(_ segment: Segment, _ expandSize: Int) {
-    let topCandidate: Candidate? = segment.candidatesSize == 0 ? nil : segment.mutableCandidate(0)
     var lastCandidate: Candidate? =
       segment.candidatesSize == 0 ? nil : segment.mutableCandidate(segment.candidatesSize - 1)
 
@@ -431,12 +438,12 @@ public final class ImmutableConverter: ImmutableConverterInterface, @unchecked S
     // If functional_key() is empty, no need to make a dummy candidate.
     if segment.candidatesSize > 0 && segment.candidatesSize < expandSize
       && !segment.candidate(0).functionalKey.isEmpty
-      && Util.getScriptType(segment.candidate(0).contentKey) == .hiragana
+      && Util.getScriptType(segment.candidate(0).contentKey) == .hiragana,
+      let last = lastCandidate
     {
       // Use last_candidate as a reference of cost.
       // Use top_candidate as a refarence of lid/rid and key/value.
-      let top = topCandidate!
-      let last = lastCandidate!
+      let top = segment.mutableCandidate(0)
       let newCandidate = segment.addCandidate()
 
       newCandidate.assign(from: top)
@@ -483,9 +490,9 @@ public final class ImmutableConverter: ImmutableConverterInterface, @unchecked S
     // Insert a dummy katakana candidate.
     let katakanaValue = JapaneseUtil.hiraganaToKatakana(segment.key)
     if segment.candidatesSize > 0 && segment.candidatesSize < expandSize
-      && Util.getScriptType(katakanaValue) == .katakana
+      && Util.getScriptType(katakanaValue) == .katakana,
+      let last = lastCandidate
     {
-      let last = lastCandidate!
       let newCandidate = segment.addCandidate()
       newCandidate.key = segment.key
       newCandidate.value = katakanaValue
@@ -523,7 +530,7 @@ public final class ImmutableConverter: ImmutableConverterInterface, @unchecked S
       for compoundNode in lattice.beginNodes(pos) {
         if !compoundNode.value.isEmpty && !compoundNode.key.isEmpty
           && posMatcher.isNumber(compoundNode.lid) && !posMatcher.isNumber(compoundNode.rid)
-          && isNumber(compoundNode.value.utf8.first!) && isNumber(compoundNode.key.utf8.first!)
+          && startsWithNumber(compoundNode.value) && startsWithNumber(compoundNode.key)
         {
           let (numberValue, suffixValue) = decomposeNumberAndSuffix(compoundNode.value)
           let (numberKey, suffixKey) = decomposeNumberAndSuffix(compoundNode.key)
@@ -577,8 +584,8 @@ public final class ImmutableConverter: ImmutableConverterInterface, @unchecked S
         // Unlike ResegmentArabicNumberAndSuffix, we don't
         // check POS as words ending with Arabic numbers are pretty rare.
         if compoundNode.value.utf8.count > 1 && compoundNode.key.utf8.count > 1
-          && !isNumber(compoundNode.value.utf8.first!) && !isNumber(compoundNode.key.utf8.first!)
-          && isNumber(compoundNode.value.utf8.last!) && isNumber(compoundNode.key.utf8.last!)
+          && !startsWithNumber(compoundNode.value) && !startsWithNumber(compoundNode.key)
+          && endsWithNumber(compoundNode.value) && endsWithNumber(compoundNode.key)
         {
           let (prefixValue, numberValue) = decomposePrefixAndNumber(compoundNode.value)
           let (prefixKey, numberKey) = decomposePrefixAndNumber(compoundNode.key)
@@ -897,7 +904,7 @@ public final class ImmutableConverter: ImmutableConverterInterface, @unchecked S
     do {
       let eosNode = lattice.eosNode
 
-      leftBoundary = key.utf8.count - segments.all.last!.key.utf8.count
+      leftBoundary = key.utf8.count - (segments.all.last?.key.utf8.count ?? 0)
       // Find a valid node which connects to the rnode with minimum cost.
       var bestCost = kVeryBigCost
       var bestNode: Node? = nil
@@ -1002,7 +1009,7 @@ public final class ImmutableConverter: ImmutableConverterInterface, @unchecked S
     // multiple-segments. The result always consists of one segment.
     if isReverse || isPrediction {
       let conversionSegments = segments.conversionSegments
-      if conversionSegments.count != 1 || conversionSegments.first!.segmentType != .free {
+      if conversionSegments.count != 1 || conversionSegments.first?.segmentType != .free {
         // LOG(WARNING) << "ImmutableConverter doesn't support constrained requests";
         return false
       }
@@ -1305,7 +1312,9 @@ public final class ImmutableConverter: ImmutableConverterInterface, @unchecked S
     _ options: ConversionOptions, _ segments: Segments, _ node: Node, _ group: [UInt16],
     _ isSingleSegment: Bool
   ) -> Bool {
-    let next = node.next!
+    guard let next = node.next else {
+      preconditionFailure("a segment end node is linked to the next node")
+    }
     if next.nodeType == .eosNode {
       return true
     }
@@ -1386,10 +1395,10 @@ public final class ImmutableConverter: ImmutableConverterInterface, @unchecked S
   ) {
     // skip HIS_NODE(s)
     var prev = lattice.bosNode
-    var n = lattice.bosNode.next!
-    while n.next != nil && n.nodeType == .hisNode {
-      prev = n
-      n = n.next!
+    var n = lattice.bosNode.next
+    while let node = n, let next = node.next, node.nodeType == .hisNode {
+      prev = node
+      n = next
     }
 
     let expandSize = min(max(maxCandidatesSize, 1), 512)
@@ -1405,9 +1414,9 @@ public final class ImmutableConverter: ImmutableConverterInterface, @unchecked S
     }
 
     var beginPos = Int.max  // std::string::npos
-    var node = prev.next!
-    while node.next != nil {
-      defer { node = node.next! }
+    var current = prev.next
+    while let node = current, let next = node.next {
+      defer { current = next }
       if beginPos == Int.max {
         beginPos = Int(node.beginPos)
       }
@@ -1432,7 +1441,7 @@ public final class ImmutableConverter: ImmutableConverterInterface, @unchecked S
         nbestOptions.candidateMode |= NBestGenerator.CandidateMode.buildFromOnlyFirstInnerSegment
         nbestOptions.candidateMode |= NBestGenerator.CandidateMode.fillInnerSegmentInfo
       }
-      nbestGenerator.reset(prev, node.next!, nbestOptions)
+      nbestGenerator.reset(prev, next, nbestOptions)
       nbestGenerator.setCandidates(options, originalKey, expandSize, segment)
 
       if type == .multiSegments || type == .singleSegment {

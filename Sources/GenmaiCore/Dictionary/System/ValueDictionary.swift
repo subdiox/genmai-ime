@@ -58,7 +58,7 @@ public final class ValueDictionary: DictionaryInterface, Sendable {
     if result != .traverseContinue {
       return result
     }
-    result = callback.onActualKey(value, value, 0)  // num_expanded
+    result = callback.onActualKey(value, value, 0)  // num_expanded = 0
     if result != .traverseContinue {
       return result
     }
@@ -112,7 +112,7 @@ public final class ValueDictionary: DictionaryInterface, Sendable {
     if callback.onKey(key) != .traverseContinue {
       return
     }
-    if callback.onActualKey(key, key, 0) != .traverseContinue {  // num_expanded
+    if callback.onActualKey(key, key, 0) != .traverseContinue {  // num_expanded = 0
       return
     }
     _ = callback.onToken(key, key, Self.fillToken(suggestionOnlyWordId, key))

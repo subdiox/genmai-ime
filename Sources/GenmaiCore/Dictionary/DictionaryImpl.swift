@@ -4,9 +4,8 @@ import GenmaiBase
 
 /// `mozc::dictionary::DictionaryImpl`: the composite of the system, value and
 /// user dictionaries.
-public final class DictionaryImpl: DictionaryInterface, @unchecked Sendable {
-  // @unchecked Sendable: all stored properties are immutable references to
-  // Sendable dictionaries.
+public final class DictionaryImpl: DictionaryInterface, Sendable {
+  // All stored properties are immutable references to Sendable dictionaries.
 
   // Used to check POS IDs.
   private let posMatcher: PosMatcher

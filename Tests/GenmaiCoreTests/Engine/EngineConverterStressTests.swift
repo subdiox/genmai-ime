@@ -40,7 +40,7 @@ struct EngineConverterStressTest {
           let kInputStringLength = 32
           let input = random.utf8String(kInputStringLength, testCase.min, testCase.max)
           composer.insertCharacterPreedit(input)
-          sconverter.convertToTransliteration(composer, .halfAscii)
+          _ = sconverter.convertToTransliteration(composer, .halfAscii)
           sconverter.fillOutput(composer, &output)
           let conversion = output.preedit
           #expect(conversion.segment.first?.value == input, "\(input)")

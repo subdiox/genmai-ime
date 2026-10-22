@@ -14,7 +14,7 @@ import Synchronization
 /// task keeps the dictionary alive until it finishes, so the C++ destructor's
 /// "cancel and wait" step is not needed; `cancelReload()` exposes the cancel
 /// signal.
-public final class UserDictionary: UserDictionaryInterface, @unchecked Sendable {
+public final class UserDictionary: UserDictionaryInterface, Sendable {
   /// `UserDictionary::RequestType`.
   public enum RequestType: Sendable {
     case prefix, predictive, exact
@@ -335,8 +335,7 @@ public final class UserDictionary: UserDictionaryInterface, @unchecked Sendable 
       setTokens(TokensIndex(userPos))
     }
 
-    let tokens = TokensIndex(userPos)
-    if !tokens.load(bytes, canceledSignal) {
+    guard let tokens = TokensIndex.load(userPos, bytes, canceledSignal) else {
       return false
     }
 
@@ -373,8 +372,8 @@ extension UserDictionary {
   /// (id, raw_pos_type, key_len, value_len, key, value, comment); here they are
   /// an array of `Entry` values with the same fields and order.
   ///
-  /// Immutable after `load()` returns, so it can be shared across threads.
-  fileprivate final class TokensIndex: @unchecked Sendable {
+  /// Immutable (built by `load`), so it can be shared across threads.
+  fileprivate final class TokensIndex: Sendable {
     // 512MByte
     // We expand the limit of serialized message from 64MB(default) to 512MB.
     static let kDefaultTotalBytesLimit = 512 << 20
@@ -390,12 +389,19 @@ extension UserDictionary {
     }
 
     private let userPos: UserPos
-    private var tokens: [Entry] = []
-    private var suppressionSet = Set<UInt64>()
-    private var costPenalty = 0
+    private let tokens: [Entry]
+    private let suppressionSet: Set<UInt64>
+    private let costPenalty: Int
 
-    init(_ userPos: UserPos) {
+    convenience init(_ userPos: UserPos) {
+      self.init(userPos, tokens: [], suppressionSet: [], costPenalty: 0)
+    }
+
+    private init(_ userPos: UserPos, tokens: [Entry], suppressionSet: Set<UInt64>, costPenalty: Int) {
       self.userPos = userPos
+      self.tokens = tokens
+      self.suppressionSet = suppressionSet
+      self.costPenalty = costPenalty
     }
 
     var isEmpty: Bool { tokens.isEmpty }
@@ -505,10 +511,11 @@ extension UserDictionary {
       return token
     }
 
-    func load(_ bytes: [UInt8], _ canceledSignal: borrowing Mutex<Bool>) -> Bool {
-      assert(tokens.isEmpty)
-      assert(suppressionSet.isEmpty)
-
+    /// Reads the serialized UserDictionaryStorage; nil when it is broken.
+    static func load(
+      _ userPos: UserPos, _ bytes: [UInt8], _ canceledSignal: borrowing Mutex<Bool>
+    ) -> TokensIndex? {
+      var suppressionSet = Set<UInt64>()
       var decoder = WireDecoder(bytes)
 
       // MakeTag(UserDictionaryStorage::kDictionariesFieldNumber, LENGTH_DELIMITED)
@@ -526,30 +533,32 @@ extension UserDictionary {
         }
         if canceledSignal.withLock({ $0 }) {
           GenmaiLog.info("User dictionary loading is canceled")
-          return true
+          return TokensIndex(userPos, tokens: [], suppressionSet: suppressionSet, costPenalty: 0)
         }
         if tag == kDictionariesTag {
           // Read only the byte-length prefix of the UserDictionary submessage
           // (without skipping its payload) so subsequent readTag() calls in this
           // loop read the fields inside UserDictionary directly.
           guard decoder.readVarint32() != nil else {
-            return false
+            return nil
           }
         } else if tag == kEntriesTag {
           guard let len = decoder.readVarint32(),
             let payload = decoder.readBytes(Int(len)),
             let entry = Self.parseEntry(payload)
           else {
-            return false
+            return nil
           }
-          addEntry(entry, &seen, &serializedTokens)
+          addEntry(userPos, entry, &seen, &serializedTokens, &suppressionSet)
         } else if !decoder.skipField(tag) {
-          return false
+          return nil
         }
       }
       if !decoder.consumedEntireMessage {
-        return false
+        return nil
       }
+
+      var tokens: [Entry] = []
 
       if !serializedTokens.isEmpty {
         // Deviation: the C++ uses absl::c_sort (std::sort, not stable). Swift's
@@ -579,9 +588,9 @@ extension UserDictionary {
       // Assuming a uniform prior probability P = 1/N across N entries, the
       // self-information penalty in Mozc cost scaling (approx. 500 * (-ln P)) is
       // 500 * ln(N + 1). Using N + 1 generalizes to 0 penalty when N = 0.
-      costPenalty = Int(500.0 * Foundation.log(Double(tokens.count + 1)))
+      let costPenalty = Int(500.0 * Foundation.log(Double(tokens.count + 1)))
 
-      return true
+      return TokensIndex(userPos, tokens: tokens, suppressionSet: suppressionSet, costPenalty: costPenalty)
     }
 
     func isSuppressedEntry(_ key: String, _ value: String) -> Bool {
@@ -637,7 +646,10 @@ extension UserDictionary {
       return entry
     }
 
-    private func addEntry(_ raw: RawEntry, _ seen: inout Set<UInt64>, _ serializedTokens: inout [Entry]) {
+    private static func addEntry(
+      _ userPos: UserPos, _ raw: RawEntry, _ seen: inout Set<UInt64>, _ serializedTokens: inout [Entry],
+      _ suppressionSet: inout Set<UInt64>
+    ) {
       guard let entry = Self.makeValidEntry(raw) else {
         return
       }
@@ -687,7 +699,7 @@ extension UserDictionary {
       return entry
     }
 
-    private func stripAsciiWhitespace(_ s: String) -> String {
+    private static func stripAsciiWhitespace(_ s: String) -> String {
       func isSpace(_ b: UInt8) -> Bool {
         b == 0x20 || b == 0x09 || b == 0x0A || b == 0x0B || b == 0x0C || b == 0x0D
       }

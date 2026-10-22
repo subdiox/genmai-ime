@@ -8,6 +8,7 @@
 import GenmaiBase
 import GenmaiProtocol
 import SwiftProtobuf
+import Synchronization
 
 private let kDataSetMagicNumber: [UInt8] = [0xEF, 0x4D, 0x4F, 0x5A, 0x43, 0x0D, 0x0A]  // "\xEFMOZC\r\n"
 private let kDataSetMagicNumberOss: [UInt8] = [0xEF, 0x4D, 0x4F, 0x5A, 0x43, 0x0D, 0x0A]  // "\xEFMOZC\r\n"
@@ -37,10 +38,11 @@ private func initUserPosManagerDataFromReader(_ reader: DataSetReader) throws ->
 /// This data manager parses a data set file image and extracts each data
 /// (dictionary, LM, etc.).
 ///
-/// Thread safety: all sections are set during initialization and never
-/// mutated afterwards; the memory is a read-only mmap or an immutable owned
-/// buffer. Hence `@unchecked Sendable`. The `initFrom*` methods (protected in
-/// C++) must only be called while constructing an instance.
+/// Thread safety: the sections are guarded by a mutex; they are set during
+/// initialization (the `initFrom*` methods, protected in C++, are called while
+/// constructing an instance) and the memory is a read-only mmap or an
+/// immutable owned buffer. `@unchecked Sendable` only because an open class
+/// cannot be checked.
 open class DataManager: @unchecked Sendable {
   public static func getDataSetMagicNumber(_ type: String) -> [UInt8] {
     if type == "oss" {
@@ -122,59 +124,68 @@ open class DataManager: @unchecked Sendable {
 
   // MARK: - State
 
-  private var filename: String? = nil
-  private var mmap: Mmap? = nil
-  private var posMatcherData = DataView.empty
-  private var posIdMapData = DataView.empty
-  private var userPosTokenArrayData = DataView.empty
-  private var userPosStringArrayData = DataView.empty
-  private var connectionData = DataView.empty
-  private var dictionaryData = DataView.empty
-  private var suggestionFilterData = DataView.empty
-  private var collocationData = DataView.empty
-  private var collocationSuppressionData = DataView.empty
-  private var posGroupData = DataView.empty
-  private var boundaryData = DataView.empty
-  private var segmenterCompressedLSize = 0
-  private var segmenterCompressedRSize = 0
-  private var segmenterLTable = DataView.empty
-  private var segmenterRTable = DataView.empty
-  private var segmenterBitarray = DataView.empty
-  private var counterSuffixData = DataView.empty
-  private var suffixKeyArrayData = DataView.empty
-  private var suffixValueArrayData = DataView.empty
-  private var suffixTokenArrayData = DataView.empty
-  private var readingCorrectionValueArrayData = DataView.empty
-  private var readingCorrectionErrorArrayData = DataView.empty
-  private var readingCorrectionCorrectionArrayData = DataView.empty
-  private var symbolTokenArrayData = DataView.empty
-  private var symbolStringArrayData = DataView.empty
-  private var emoticonTokenArrayData = DataView.empty
-  private var emoticonStringArrayData = DataView.empty
-  private var emojiTokenArrayData = DataView.empty
-  private var emojiStringArrayData = DataView.empty
-  private var singleKanjiTokenArrayData = DataView.empty
-  private var singleKanjiStringArrayData = DataView.empty
-  private var singleKanjiVariantTypeData = DataView.empty
-  private var singleKanjiVariantTokenArrayData = DataView.empty
-  private var singleKanjiVariantStringArrayData = DataView.empty
-  private var singleKanjiNounPrefixTokenArrayData = DataView.empty
-  private var singleKanjiNounPrefixStringArrayData = DataView.empty
-  private var a11yDescriptionTokenArrayData = DataView.empty
-  private var a11yDescriptionStringArrayData = DataView.empty
-  private var zeroQueryTokenArrayData = DataView.empty
-  private var zeroQueryStringArrayData = DataView.empty
-  private var zeroQueryNumberTokenArrayData = DataView.empty
-  private var zeroQueryNumberStringArrayData = DataView.empty
-  private var usageBaseConjugationSuffixData = DataView.empty
-  private var usageConjugationSuffixData = DataView.empty
-  private var usageConjugationIndexData = DataView.empty
-  private var usageItemsData = DataView.empty
-  private var usageStringArrayData = DataView.empty
-  private var dataVersion = DataView.empty
-  // Note: as in the C++ code (3.35.6354), this map is never populated, so
-  // getOffsetAndSize() always returns nil.
-  private var offsetAndSize: [String: (Int, Int)] = [:]
+  /// The sections of the data set (set by the `initFrom*` methods).
+  private struct Sections: Sendable {
+
+    var filename: String? = nil
+    var mmap: Mmap? = nil
+    var posMatcherData = DataView.empty
+    var posIdMapData = DataView.empty
+    var userPosTokenArrayData = DataView.empty
+    var userPosStringArrayData = DataView.empty
+    var connectionData = DataView.empty
+    var dictionaryData = DataView.empty
+    var suggestionFilterData = DataView.empty
+    var collocationData = DataView.empty
+    var collocationSuppressionData = DataView.empty
+    var posGroupData = DataView.empty
+    var boundaryData = DataView.empty
+    var segmenterCompressedLSize = 0
+    var segmenterCompressedRSize = 0
+    var segmenterLTable = DataView.empty
+    var segmenterRTable = DataView.empty
+    var segmenterBitarray = DataView.empty
+    var counterSuffixData = DataView.empty
+    var suffixKeyArrayData = DataView.empty
+    var suffixValueArrayData = DataView.empty
+    var suffixTokenArrayData = DataView.empty
+    var readingCorrectionValueArrayData = DataView.empty
+    var readingCorrectionErrorArrayData = DataView.empty
+    var readingCorrectionCorrectionArrayData = DataView.empty
+    var symbolTokenArrayData = DataView.empty
+    var symbolStringArrayData = DataView.empty
+    var emoticonTokenArrayData = DataView.empty
+    var emoticonStringArrayData = DataView.empty
+    var emojiTokenArrayData = DataView.empty
+    var emojiStringArrayData = DataView.empty
+    var singleKanjiTokenArrayData = DataView.empty
+    var singleKanjiStringArrayData = DataView.empty
+    var singleKanjiVariantTypeData = DataView.empty
+    var singleKanjiVariantTokenArrayData = DataView.empty
+    var singleKanjiVariantStringArrayData = DataView.empty
+    var singleKanjiNounPrefixTokenArrayData = DataView.empty
+    var singleKanjiNounPrefixStringArrayData = DataView.empty
+    var a11yDescriptionTokenArrayData = DataView.empty
+    var a11yDescriptionStringArrayData = DataView.empty
+    var zeroQueryTokenArrayData = DataView.empty
+    var zeroQueryStringArrayData = DataView.empty
+    var zeroQueryNumberTokenArrayData = DataView.empty
+    var zeroQueryNumberStringArrayData = DataView.empty
+    var usageBaseConjugationSuffixData = DataView.empty
+    var usageConjugationSuffixData = DataView.empty
+    var usageConjugationIndexData = DataView.empty
+    var usageItemsData = DataView.empty
+    var usageStringArrayData = DataView.empty
+    var dataVersion = DataView.empty
+    // Note: as in the C++ code (3.35.6354), this map is never populated, so
+    // getOffsetAndSize() always returns nil.
+    var offsetAndSize: [String: (Int, Int)] = [:]
+  }
+
+  private let state = Mutex(Sections())
+
+  /// A snapshot of the sections (the getters are not on hot paths).
+  private var sections: Sections { state.withLock { $0 } }
 
   /// An uninitialized data manager (C++ protected default constructor).
   /// Subclasses call one of the `initFrom*` methods in their initializer.
@@ -214,7 +225,7 @@ open class DataManager: @unchecked Sendable {
 
   public func initFromFile(_ path: String, magic: [UInt8]) throws {
     let data = try mapFile(path)
-    filename = path
+    state.withLock { $0.filename = path }
     try initFromArray(data, magic: magic)
   }
 
@@ -223,7 +234,7 @@ open class DataManager: @unchecked Sendable {
   /// `InitFromArray(embedded_data, kMagicNumberLength)` on embedded data.
   public func initFromFile(_ path: String, magicLength: Int) throws {
     let data = try mapFile(path)
-    filename = path
+    state.withLock { $0.filename = path }
     try initFromArray(data, magicLength: magicLength)
   }
 
@@ -237,8 +248,10 @@ open class DataManager: @unchecked Sendable {
     if !reader.initialize(array, magic: magic) {
       throw StatusError.dataLoss("Binary data of size \(array.count) is broken")
     }
-    (posMatcherData, userPosTokenArrayData, userPosStringArrayData) =
-      try initUserPosManagerDataFromReader(reader)
+    let userPosManagerData = try initUserPosManagerDataFromReader(reader)
+    state.withLock { s in
+      (s.posMatcherData, s.userPosTokenArrayData, s.userPosStringArrayData) = userPosManagerData
+    }
   }
 
   public func initUserPosManagerDataFromFile(_ path: String, magic: [UInt8]) throws {
@@ -253,48 +266,55 @@ open class DataManager: @unchecked Sendable {
     } catch {
       throw StatusError.permissionDenied("Mmap failed \(error)")
     }
-    mmap = mapped
+    state.withLock { $0.mmap = mapped }
     return DataView(mapped)
   }
 
   private func initFromReader(_ reader: DataSetReader) throws {
-    (posMatcherData, userPosTokenArrayData, userPosStringArrayData) =
+    var s = state.withLock { $0 }
+    try Self.readSections(reader, &s)
+    state.withLock { [s] in $0 = s }
+  }
+
+  /// Reads the sections from `reader` into `s` (C++ `InitFromReader`).
+  private static func readSections(_ reader: DataSetReader, _ s: inout Sections) throws {
+    (s.posMatcherData, s.userPosTokenArrayData, s.userPosStringArrayData) =
       try initUserPosManagerDataFromReader(reader)
 
     if let data = reader.get("pos_id_map") {
-      posIdMapData = data
+      s.posIdMapData = data
     } else {
       // pos_id_map is not provided
-      posIdMapData = .empty
+      s.posIdMapData = .empty
     }
     guard let conn = reader.get("conn") else {
       throw StatusError.notFound("Cannot find a connection data")
     }
-    connectionData = conn
+    s.connectionData = conn
     guard let dict = reader.get("dict") else {
       throw StatusError.notFound("Cannot find a dictionary data")
     }
-    dictionaryData = dict
+    s.dictionaryData = dict
     guard let sugg = reader.get("sugg") else {
       throw StatusError.notFound("Cannot find a suggestion filter data")
     }
-    suggestionFilterData = sugg
+    s.suggestionFilterData = sugg
     guard let coll = reader.get("coll") else {
       throw StatusError.notFound("Cannot find a collocation data")
     }
-    collocationData = coll
+    s.collocationData = coll
     guard let cols = reader.get("cols") else {
       throw StatusError.notFound("Cannot find a collocation suprression data")
     }
-    collocationSuppressionData = cols
+    s.collocationSuppressionData = cols
     guard let posg = reader.get("posg") else {
       throw StatusError.notFound("Cannot find a POS group data")
     }
-    posGroupData = posg
+    s.posGroupData = posg
     guard let bdry = reader.get("bdry") else {
       throw StatusError.notFound("Cannot find a boundary data")
     }
-    boundaryData = bdry
+    s.boundaryData = bdry
     do {
       guard let memblock = reader.get("segmenter_sizeinfo") else {
         throw StatusError.notFound("Cannot find a segmenter size info")
@@ -305,49 +325,49 @@ open class DataManager: @unchecked Sendable {
       } catch {
         throw StatusError.dataLoss("Failed to parse SegmenterDataSizeInfo")
       }
-      segmenterCompressedLSize = Int(sizeinfo.compressedLsize)
-      segmenterCompressedRSize = Int(sizeinfo.compressedRsize)
+      s.segmenterCompressedLSize = Int(sizeinfo.compressedLsize)
+      s.segmenterCompressedRSize = Int(sizeinfo.compressedRsize)
     }
     guard let ltable = reader.get("segmenter_ltable") else {
       throw StatusError.notFound("Cannot find a segmenter ltable")
     }
-    segmenterLTable = ltable
+    s.segmenterLTable = ltable
     guard let rtable = reader.get("segmenter_rtable") else {
       throw StatusError.notFound("Cannot find a segmenter rtable")
     }
-    segmenterRTable = rtable
+    s.segmenterRTable = rtable
     guard let bitarray = reader.get("segmenter_bitarray") else {
       throw StatusError.notFound("Cannot find a segmenter bit-array")
     }
-    segmenterBitarray = bitarray
+    s.segmenterBitarray = bitarray
     guard let counterSuffix = reader.get("counter_suffix") else {
       throw StatusError.notFound("Cannot find a counter suffix data")
     }
-    counterSuffixData = counterSuffix
-    if !SerializedStringArray.verifyData(counterSuffixData) {
+    s.counterSuffixData = counterSuffix
+    if !SerializedStringArray.verifyData(s.counterSuffixData) {
       throw StatusError.notFound("Counter suffix string array is broken")
     }
     guard let suffixKey = reader.get("suffix_key") else {
       throw StatusError.notFound("Cannot find a suffix key array")
     }
-    suffixKeyArrayData = suffixKey
+    s.suffixKeyArrayData = suffixKey
     guard let suffixValue = reader.get("suffix_value") else {
       throw StatusError.notFound("Cannot find a suffix value array")
     }
-    suffixValueArrayData = suffixValue
+    s.suffixValueArrayData = suffixValue
     guard let suffixToken = reader.get("suffix_token") else {
       throw StatusError.notFound("Cannot find a suffix token array")
     }
-    suffixTokenArrayData = suffixToken
+    s.suffixTokenArrayData = suffixToken
     do {
       var suffixKeys = SerializedStringArray()
       var suffixValues = SerializedStringArray()
-      if !suffixKeys.initialize(suffixKeyArrayData) || !suffixValues.initialize(suffixValueArrayData)
+      if !suffixKeys.initialize(s.suffixKeyArrayData) || !suffixValues.initialize(s.suffixValueArrayData)
         || suffixKeys.size != suffixValues.size
         // Suffix token array is an array of triple (lid, rid, cost) of
         // uint32_t, so it contains N = 3 * |suffix_keys.size()| uint32_t
         // elements. Therefore, its byte length must be 4 * N bytes.
-        || suffixTokenArrayData.count != 4 * 3 * suffixKeys.size
+        || s.suffixTokenArrayData.count != 4 * 3 * suffixKeys.size
       {
         throw StatusError.dataLoss("Suffix dictionary data is broken")
       }
@@ -355,22 +375,22 @@ open class DataManager: @unchecked Sendable {
     guard let rcValue = reader.get("reading_correction_value") else {
       throw StatusError.notFound("Cannot find reading correction value array")
     }
-    readingCorrectionValueArrayData = rcValue
+    s.readingCorrectionValueArrayData = rcValue
     guard let rcError = reader.get("reading_correction_error") else {
       throw StatusError.notFound("Cannot find reading correction error array")
     }
-    readingCorrectionErrorArrayData = rcError
+    s.readingCorrectionErrorArrayData = rcError
     guard let rcCorrection = reader.get("reading_correction_correction") else {
       throw StatusError.notFound("Cannot find reading correction correction array")
     }
-    readingCorrectionCorrectionArrayData = rcCorrection
+    s.readingCorrectionCorrectionArrayData = rcCorrection
     do {
       var valueArray = SerializedStringArray()
       var errorArray = SerializedStringArray()
       var correctionArray = SerializedStringArray()
-      if !valueArray.initialize(readingCorrectionValueArrayData)
-        || !errorArray.initialize(readingCorrectionErrorArrayData)
-        || !correctionArray.initialize(readingCorrectionCorrectionArrayData)
+      if !valueArray.initialize(s.readingCorrectionValueArrayData)
+        || !errorArray.initialize(s.readingCorrectionErrorArrayData)
+        || !correctionArray.initialize(s.readingCorrectionCorrectionArrayData)
         || valueArray.size != errorArray.size || valueArray.size != correctionArray.size
       {
         throw StatusError.dataLoss("Reading correction data is broken")
@@ -379,34 +399,34 @@ open class DataManager: @unchecked Sendable {
     guard let symbolToken = reader.get("symbol_token") else {
       throw StatusError.notFound("Cannot find a symbol token array")
     }
-    symbolTokenArrayData = symbolToken
+    s.symbolTokenArrayData = symbolToken
     guard let symbolString = reader.get("symbol_string") else {
       throw StatusError.notFound("Cannot find a symbol string array or data is broken")
     }
-    symbolStringArrayData = symbolString
-    if !SerializedDictionary.verifyData(symbolTokenArrayData, symbolStringArrayData) {
+    s.symbolStringArrayData = symbolString
+    if !SerializedDictionary.verifyData(s.symbolTokenArrayData, s.symbolStringArrayData) {
       throw StatusError.dataLoss("Symbol dictionary data is broken")
     }
     guard let emoticonToken = reader.get("emoticon_token") else {
       throw StatusError.notFound("Cannot find an emoticon token array")
     }
-    emoticonTokenArrayData = emoticonToken
+    s.emoticonTokenArrayData = emoticonToken
     guard let emoticonString = reader.get("emoticon_string") else {
       throw StatusError.notFound("Cannot find an emoticon string array or data is broken")
     }
-    emoticonStringArrayData = emoticonString
-    if !SerializedDictionary.verifyData(emoticonTokenArrayData, emoticonStringArrayData) {
+    s.emoticonStringArrayData = emoticonString
+    if !SerializedDictionary.verifyData(s.emoticonTokenArrayData, s.emoticonStringArrayData) {
       throw StatusError.dataLoss("Emoticon dictionary data is broken")
     }
     guard let emojiToken = reader.get("emoji_token") else {
       throw StatusError.notFound("Cannot find an emoji token array")
     }
-    emojiTokenArrayData = emojiToken
+    s.emojiTokenArrayData = emojiToken
     guard let emojiString = reader.get("emoji_string") else {
       throw StatusError.notFound("Cannot find an emoji string array or data is broken")
     }
-    emojiStringArrayData = emojiString
-    if !SerializedStringArray.verifyData(emojiStringArrayData) {
+    s.emojiStringArrayData = emojiString
+    if !SerializedStringArray.verifyData(s.emojiStringArrayData) {
       throw StatusError.dataLoss("Emoji rewriter string array data is broken")
     }
     guard let skToken = reader.get("single_kanji_token"),
@@ -419,38 +439,38 @@ open class DataManager: @unchecked Sendable {
     else {
       throw StatusError.notFound("Cannot find single Kanji rewriter data")
     }
-    singleKanjiTokenArrayData = skToken
-    singleKanjiStringArrayData = skString
-    singleKanjiVariantTypeData = skVariantType
-    singleKanjiVariantTokenArrayData = skVariantToken
-    singleKanjiVariantStringArrayData = skVariantString
-    singleKanjiNounPrefixTokenArrayData = skNounPrefixToken
-    singleKanjiNounPrefixStringArrayData = skNounPrefixString
-    if !SerializedStringArray.verifyData(singleKanjiStringArrayData)
-      || !SerializedStringArray.verifyData(singleKanjiVariantTypeData)
-      || !SerializedStringArray.verifyData(singleKanjiVariantStringArrayData)
+    s.singleKanjiTokenArrayData = skToken
+    s.singleKanjiStringArrayData = skString
+    s.singleKanjiVariantTypeData = skVariantType
+    s.singleKanjiVariantTokenArrayData = skVariantToken
+    s.singleKanjiVariantStringArrayData = skVariantString
+    s.singleKanjiNounPrefixTokenArrayData = skNounPrefixToken
+    s.singleKanjiNounPrefixStringArrayData = skNounPrefixString
+    if !SerializedStringArray.verifyData(s.singleKanjiStringArrayData)
+      || !SerializedStringArray.verifyData(s.singleKanjiVariantTypeData)
+      || !SerializedStringArray.verifyData(s.singleKanjiVariantStringArrayData)
       || !SerializedDictionary.verifyData(
-        singleKanjiNounPrefixTokenArrayData, singleKanjiNounPrefixStringArrayData)
+        s.singleKanjiNounPrefixTokenArrayData, s.singleKanjiNounPrefixStringArrayData)
     {
       throw StatusError.dataLoss("Single Kanji data is broken")
     }
     if let data = reader.get("a11y_description_token") {
-      a11yDescriptionTokenArrayData = data
+      s.a11yDescriptionTokenArrayData = data
     } else {
       // A11y description dictionary's token array is not provided.
       // A11y description dictionary is optional, so don't fail here.
-      a11yDescriptionTokenArrayData = .empty
+      s.a11yDescriptionTokenArrayData = .empty
     }
     if let data = reader.get("a11y_description_string") {
-      a11yDescriptionStringArrayData = data
+      s.a11yDescriptionStringArrayData = data
     } else {
       // A11y description dictionary's string array is not provided.
       // A11y description dictionary is optional, so don't fail here.
-      a11yDescriptionStringArrayData = .empty
+      s.a11yDescriptionStringArrayData = .empty
     }
-    if !(a11yDescriptionTokenArrayData.isEmpty && a11yDescriptionStringArrayData.isEmpty)
+    if !(s.a11yDescriptionTokenArrayData.isEmpty && s.a11yDescriptionStringArrayData.isEmpty)
       && !SerializedDictionary.verifyData(
-        a11yDescriptionTokenArrayData, a11yDescriptionStringArrayData)
+        s.a11yDescriptionTokenArrayData, s.a11yDescriptionStringArrayData)
     {
       throw StatusError.dataLoss("A11y description dictionary data is broken")
     }
@@ -461,18 +481,18 @@ open class DataManager: @unchecked Sendable {
     else {
       throw StatusError.notFound("Cannot find zero query data")
     }
-    zeroQueryTokenArrayData = zqToken
-    zeroQueryStringArrayData = zqString
-    zeroQueryNumberTokenArrayData = zqNumberToken
-    zeroQueryNumberStringArrayData = zqNumberString
-    if !SerializedStringArray.verifyData(zeroQueryStringArrayData)
-      || !SerializedStringArray.verifyData(zeroQueryNumberStringArrayData)
+    s.zeroQueryTokenArrayData = zqToken
+    s.zeroQueryStringArrayData = zqString
+    s.zeroQueryNumberTokenArrayData = zqNumberToken
+    s.zeroQueryNumberStringArrayData = zqNumberString
+    if !SerializedStringArray.verifyData(s.zeroQueryStringArrayData)
+      || !SerializedStringArray.verifyData(s.zeroQueryNumberStringArrayData)
     {
       throw StatusError.dataLoss("Zero query data is broken")
     }
 
     if let items = reader.get("usage_item_array") {
-      usageItemsData = items
+      s.usageItemsData = items
       guard let baseConjugationSuffix = reader.get("usage_base_conjugation_suffix"),
         let conjugationSuffix = reader.get("usage_conjugation_suffix"),
         let conjugationIndex = reader.get("usage_conjugation_index"),
@@ -480,11 +500,11 @@ open class DataManager: @unchecked Sendable {
       else {
         throw StatusError.notFound("Cannot find some usage dictionary data components")
       }
-      usageBaseConjugationSuffixData = baseConjugationSuffix
-      usageConjugationSuffixData = conjugationSuffix
-      usageConjugationIndexData = conjugationIndex
-      usageStringArrayData = stringArray
-      if !SerializedStringArray.verifyData(usageStringArrayData) {
+      s.usageBaseConjugationSuffixData = baseConjugationSuffix
+      s.usageConjugationSuffixData = conjugationSuffix
+      s.usageConjugationIndexData = conjugationIndex
+      s.usageStringArrayData = stringArray
+      if !SerializedStringArray.verifyData(s.usageStringArrayData) {
         throw StatusError.dataLoss("Usage dictionary's string array is broken")
       }
     } else {
@@ -495,9 +515,9 @@ open class DataManager: @unchecked Sendable {
     guard let version = reader.get("version") else {
       throw StatusError.notFound("Cannot find data version")
     }
-    dataVersion = version
+    s.dataVersion = version
     do {
-      let versionString = dataVersion.string
+      let versionString = s.dataVersion.string
       // absl::StrSplit(data_version_, '.', absl::SkipEmpty())
       let components = versionString.utf8.split(
         separator: UInt8(ascii: "."), omittingEmptySubsequences: true
@@ -515,32 +535,32 @@ open class DataManager: @unchecked Sendable {
 
   // MARK: - Accessors
 
-  open func getFilename() -> String? { filename }
+  open func getFilename() -> String? { sections.filename }
 
   open func getPosMatcherData() -> DataSpan<UInt16> {
-    posMatcherData.span(UInt16.self)
+    sections.posMatcherData.span(UInt16.self)
   }
 
-  open func getPosIdMapData() -> DataView { posIdMapData }
+  open func getPosIdMapData() -> DataView { sections.posIdMapData }
 
   open func getUserPosData() -> (tokenArray: DataView, stringArray: DataView) {
-    (userPosTokenArrayData, userPosStringArrayData)
+    (sections.userPosTokenArrayData, sections.userPosStringArrayData)
   }
 
-  open func getConnectorData() -> DataView { connectionData }
+  open func getConnectorData() -> DataView { sections.connectionData }
 
-  open func getSystemDictionaryData() -> DataView { dictionaryData }
+  open func getSystemDictionaryData() -> DataView { sections.dictionaryData }
 
   open func getSuggestionFilterData() -> DataSpan<UInt32> {
-    suggestionFilterData.span(UInt32.self)
+    sections.suggestionFilterData.span(UInt32.self)
   }
 
   open func getCollocationData() -> (collocation: DataView, collocationSuppression: DataView) {
-    (collocationData, collocationSuppressionData)
+    (sections.collocationData, sections.collocationSuppressionData)
   }
 
   open func getPosGroupData() -> DataSpan<UInt8> {
-    posGroupData.span(UInt8.self)
+    sections.posGroupData.span(UInt8.self)
   }
 
   open func getSegmenterData() -> (
@@ -548,42 +568,42 @@ open class DataManager: @unchecked Sendable {
     bitarrayData: DataSpan<UInt8>, boundaryData: DataSpan<UInt16>
   ) {
     (
-      segmenterCompressedLSize,
-      segmenterCompressedRSize,
-      segmenterLTable.span(UInt16.self),
-      segmenterRTable.span(UInt16.self),
-      segmenterBitarray.span(UInt8.self),
-      boundaryData.span(UInt16.self)
+      sections.segmenterCompressedLSize,
+      sections.segmenterCompressedRSize,
+      sections.segmenterLTable.span(UInt16.self),
+      sections.segmenterRTable.span(UInt16.self),
+      sections.segmenterBitarray.span(UInt8.self),
+      sections.boundaryData.span(UInt16.self)
     )
   }
 
-  open func getCounterSuffixSortedArray() -> DataView { counterSuffixData }
+  open func getCounterSuffixSortedArray() -> DataView { sections.counterSuffixData }
 
   open func getSuffixDictionaryData() -> (
     keyArray: DataView, valueArray: DataView, tokenArray: DataView
   ) {
-    (suffixKeyArrayData, suffixValueArrayData, suffixTokenArrayData)
+    (sections.suffixKeyArrayData, sections.suffixValueArrayData, sections.suffixTokenArrayData)
   }
 
   open func getReadingCorrectionData() -> (
     valueArray: DataView, errorArray: DataView, correctionArray: DataView
   ) {
     (
-      readingCorrectionValueArrayData, readingCorrectionErrorArrayData,
-      readingCorrectionCorrectionArrayData
+      sections.readingCorrectionValueArrayData, sections.readingCorrectionErrorArrayData,
+      sections.readingCorrectionCorrectionArrayData
     )
   }
 
   open func getSymbolRewriterData() -> (tokenArray: DataView, stringArray: DataView) {
-    (symbolTokenArrayData, symbolStringArrayData)
+    (sections.symbolTokenArrayData, sections.symbolStringArrayData)
   }
 
   open func getEmoticonRewriterData() -> (tokenArray: DataView, stringArray: DataView) {
-    (emoticonTokenArrayData, emoticonStringArrayData)
+    (sections.emoticonTokenArrayData, sections.emoticonStringArrayData)
   }
 
   open func getEmojiRewriterData() -> (tokenArray: DataView, stringArray: DataView) {
-    (emojiTokenArrayData, emojiStringArrayData)
+    (sections.emojiTokenArrayData, sections.emojiStringArrayData)
   }
 
   open func getSingleKanjiRewriterData() -> (
@@ -592,18 +612,18 @@ open class DataManager: @unchecked Sendable {
     nounPrefixTokenArray: DataView, nounPrefixStringArray: DataView
   ) {
     (
-      singleKanjiTokenArrayData,
-      singleKanjiStringArrayData,
-      singleKanjiVariantTypeData,
-      singleKanjiVariantTokenArrayData,
-      singleKanjiVariantStringArrayData,
-      singleKanjiNounPrefixTokenArrayData,
-      singleKanjiNounPrefixStringArrayData
+      sections.singleKanjiTokenArrayData,
+      sections.singleKanjiStringArrayData,
+      sections.singleKanjiVariantTypeData,
+      sections.singleKanjiVariantTokenArrayData,
+      sections.singleKanjiVariantStringArrayData,
+      sections.singleKanjiNounPrefixTokenArrayData,
+      sections.singleKanjiNounPrefixStringArrayData
     )
   }
 
   open func getA11yDescriptionRewriterData() -> (tokenArray: DataView, stringArray: DataView) {
-    (a11yDescriptionTokenArrayData, a11yDescriptionStringArrayData)
+    (sections.a11yDescriptionTokenArrayData, sections.a11yDescriptionStringArrayData)
   }
 
   open func getZeroQueryData() -> (
@@ -611,8 +631,8 @@ open class DataManager: @unchecked Sendable {
     numberStringArray: DataView
   ) {
     (
-      zeroQueryTokenArrayData, zeroQueryStringArrayData, zeroQueryNumberTokenArrayData,
-      zeroQueryNumberStringArrayData
+      sections.zeroQueryTokenArrayData, sections.zeroQueryStringArrayData, sections.zeroQueryNumberTokenArrayData,
+      sections.zeroQueryNumberStringArrayData
     )
   }
 
@@ -621,16 +641,16 @@ open class DataManager: @unchecked Sendable {
     usageItems: DataView, stringArray: DataView
   ) {
     (
-      usageBaseConjugationSuffixData, usageConjugationSuffixData, usageConjugationIndexData,
-      usageItemsData, usageStringArrayData
+      sections.usageBaseConjugationSuffixData, sections.usageConjugationSuffixData, sections.usageConjugationIndexData,
+      sections.usageItemsData, sections.usageStringArrayData
     )
   }
 
   /// The data version string, e.g. "24.11.oss".
-  open func getDataVersion() -> String { dataVersion.string }
+  open func getDataVersion() -> String { sections.dataVersion.string }
 
   open func getOffsetAndSize(_ name: String) -> (offset: Int, size: Int)? {
-    if let v = offsetAndSize[name] {
+    if let v = sections.offsetAndSize[name] {
       return v
     }
     return nil

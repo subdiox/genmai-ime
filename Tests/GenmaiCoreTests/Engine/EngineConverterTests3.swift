@@ -134,7 +134,7 @@ struct EngineConverterTests3 {
       // Set segments
       let segments = Segments()
       F.setAiueo(segments)
-      f.composer.insertCharacterPreedit(kChars_Aiueo)
+      f.composer.insertCharacterPreedit(kCharsAiueo)
       F.fillT13Ns(segments, f.composer)
       expectStartConversion(mockConverter, segments)
 
@@ -150,7 +150,7 @@ struct EngineConverterTests3 {
     let f = F()
     let mockConverter = MockConverter()
     let converter = EngineConverter(mockConverter, f.request, f.config)
-    f.composer.insertCharacterPreedit(kChars_Aiueo)
+    f.composer.insertCharacterPreedit(kCharsAiueo)
 
     var committedSize = 0
     converter.commitHead(1, f.composer, &committedSize)
@@ -196,7 +196,7 @@ struct EngineConverterTests3 {
     F.setCommandCandidate(segments, 0, 0, .defaultCommand)
     expectStartConversion(mockConverter, segments)
 
-    f.composer.insertCharacterPreedit(kChars_Aiueo)
+    f.composer.insertCharacterPreedit(kCharsAiueo)
     #expect(converter.convert(f.composer))
 
     converter.commit(f.composer, Genmai_Commands_Context())
@@ -299,7 +299,7 @@ struct EngineConverterTests3 {
       F.setCommandCandidate(segments, 0, 0, .enableIncognitoMode)
       expectStartConversion(mockConverter, segments)
 
-      f.composer.insertCharacterPreedit(kChars_Aiueo)
+      f.composer.insertCharacterPreedit(kCharsAiueo)
       #expect(converter.convert(f.composer))
 
       converter.commit(f.composer, Genmai_Commands_Context())
@@ -325,7 +325,7 @@ struct EngineConverterTests3 {
       F.setCommandCandidate(segments, 0, 0, .disableIncognitoMode)
       expectStartConversion(mockConverter, segments)
 
-      f.composer.insertCharacterPreedit(kChars_Aiueo)
+      f.composer.insertCharacterPreedit(kCharsAiueo)
       #expect(converter.convert(f.composer))
 
       converter.commit(f.composer, Genmai_Commands_Context())
@@ -351,7 +351,7 @@ struct EngineConverterTests3 {
       F.setCommandCandidate(segments, 0, 0, .enablePresentationMode)
       expectStartConversion(mockConverter, segments)
 
-      f.composer.insertCharacterPreedit(kChars_Aiueo)
+      f.composer.insertCharacterPreedit(kCharsAiueo)
       #expect(converter.convert(f.composer))
 
       converter.commit(f.composer, Genmai_Commands_Context())
@@ -377,7 +377,7 @@ struct EngineConverterTests3 {
       F.setCommandCandidate(segments, 0, 0, .disablePresentationMode)
       expectStartConversion(mockConverter, segments)
 
-      f.composer.insertCharacterPreedit(kChars_Aiueo)
+      f.composer.insertCharacterPreedit(kCharsAiueo)
       #expect(converter.convert(f.composer))
 
       converter.commit(f.composer, Genmai_Commands_Context())
@@ -406,7 +406,7 @@ struct EngineConverterTests3 {
       expectStartConversion(mockConverter, segments)
 
       var output = Genmai_Commands_Output()
-      f.composer.insertCharacterPreedit(kChars_Aiueo)
+      f.composer.insertCharacterPreedit(kCharsAiueo)
       _ = converter.convert(f.composer)
 
       #expect(!F.isCandidateListVisible(converter))
@@ -431,9 +431,9 @@ struct EngineConverterTests3 {
     do {
       // segments doesn't have any candidates.
       let segments = Segments()
-      segments.addSegment().setKey(kChars_Aiueo)
+      segments.addSegment().setKey(kCharsAiueo)
       let c = expectStartConversion(mockConverter, segments, false)
-      f.composer.insertCharacterPreedit(kChars_Aiueo)
+      f.composer.insertCharacterPreedit(kCharsAiueo)
 
       // Falls back to composition state.
       #expect(!converter.convert(f.composer))
@@ -456,7 +456,7 @@ struct EngineConverterTests3 {
       let segments = Segments()
       F.setAiueo(segments)
       let p = expectStartPrediction(mockConverter, segments)
-      f.composer.insertCharacterPreedit(kChars_Aiueo)
+      f.composer.insertCharacterPreedit(kCharsAiueo)
 
       #expect(converter.suggest(f.composer, Genmai_Commands_Context()))
       #expect(p.count == 1)
@@ -473,7 +473,7 @@ struct EngineConverterTests3 {
       output = Genmai_Commands_Output()
 
       // segments doesn't have any candidates.
-      segments.addSegment().setKey(kChars_Aiueo)
+      segments.addSegment().setKey(kCharsAiueo)
       let c = expectStartConversion(mockConverter, segments, false)
 
       // Falls back to composition state.
@@ -548,7 +548,7 @@ struct EngineConverterTests3 {
       setAllHistory(segments)
       F.setSegments(segments, converter)
       var context = Genmai_Commands_Context()
-      context.precedingText = kChars_Aiueo
+      context.precedingText = kCharsAiueo
       converter.onStartComposition(context)
       #expect(reset.count == 0)
       converter.revert()
@@ -581,7 +581,7 @@ struct EngineConverterTests3 {
       setAllHistory(segments)
       F.setSegments(segments, converter)
       var context = Genmai_Commands_Context()
-      context.precedingText = kChars_Aiueo
+      context.precedingText = kCharsAiueo
       converter.onStartComposition(context)
       #expect(reset.count == 1)
     }
@@ -596,7 +596,7 @@ struct EngineConverterTests3 {
       setAllHistory(segments)
       F.setSegments(segments, converter)
       var context = Genmai_Commands_Context()
-      context.precedingText = kChars_Aiueo
+      context.precedingText = kCharsAiueo
       converter.onStartComposition(context)
       #expect(reset.count == 1)
       converter.revert()
@@ -833,7 +833,7 @@ struct EngineConverterTests3 {
       return true
     }
 
-    f.composer.insertCharacterPreedit(kChars_Aiueo)
+    f.composer.insertCharacterPreedit(kCharsAiueo)
     #expect(converter.convert(f.composer, context))
     #expect(counter.count == 1)
   }
@@ -856,7 +856,7 @@ struct EngineConverterTests3 {
       return true
     }
 
-    f.composer.insertCharacterPreedit(kChars_Aiueo)
+    f.composer.insertCharacterPreedit(kCharsAiueo)
     #expect(converter.predict(f.composer, context))
     #expect(counter.count == 1)
   }

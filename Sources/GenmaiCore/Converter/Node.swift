@@ -4,9 +4,9 @@
 ///
 /// A final class: C++ code links nodes by raw pointers (`prev`, `next`,
 /// `constrained_prev`) and compares them by identity. The links are
-/// `unowned(unsafe)` like the C++ raw pointers (no reference counting in the
-/// Viterbi / N-best hot loops); nodes are owned by a `NodeAllocator` (or by
-/// the caller for nodes created directly), which must outlive every link.
+/// `unowned` (no strong reference cycles; a use after the owner released a
+/// node traps); nodes are owned by a `NodeAllocator` (or by the caller for
+/// nodes created directly), which must outlive every link.
 public final class Node {
   public enum NodeType: UInt8, Sendable {
     case norNode  // normal node
@@ -32,13 +32,13 @@ public final class Node {
   /// prev and next are linking pointers to connect minimum cost path
   /// in the lattice. In other words, we can think the doubly-linked list
   /// with prev/next represents the minimum cost path.
-  public unowned(unsafe) var prev: Node? = nil
-  public unowned(unsafe) var next: Node? = nil
+  public unowned var prev: Node? = nil
+  public unowned var next: Node? = nil
 
   /// if it is not nil, transition cost
   /// from constrained_prev to current node is defined,
   /// other transition is set to be infinite
-  public unowned(unsafe) var constrainedPrev: Node? = nil
+  public unowned var constrainedPrev: Node? = nil
 
   public var rid: UInt16 = 0
   public var lid: UInt16 = 0

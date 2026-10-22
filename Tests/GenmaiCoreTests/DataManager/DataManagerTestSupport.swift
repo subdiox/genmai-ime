@@ -14,9 +14,10 @@ enum DataManagerTestSupport {
     let u = Array(s.utf8)
     var i = 0
     while i < u.count {
-      if u[i] == 0x5C, i + 3 < u.count, u[i + 1] == 0x78 {
-        let hex = String(decoding: u[(i + 2)..<(i + 4)], as: UTF8.self)
-        result.append(UInt8(hex, radix: 16)!)
+      if u[i] == 0x5C, i + 3 < u.count, u[i + 1] == 0x78,
+        let byte = UInt8(String(decoding: u[(i + 2)..<(i + 4)], as: UTF8.self), radix: 16)
+      {
+        result.append(byte)
         i += 4
       } else {
         result.append(u[i])

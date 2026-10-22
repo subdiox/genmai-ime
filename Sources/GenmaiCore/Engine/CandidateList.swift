@@ -60,15 +60,19 @@ public final class CandidateList {
     }
 
     public var subcandidateList: CandidateList {
-      precondition(subcandidateListStorage != nil)
-      return subcandidateListStorage!
+      guard let subcandidateListStorage else {
+        preconditionFailure("the entry has no subcandidate list")
+      }
+      return subcandidateListStorage
     }
 
     public mutating func mutableSubcandidateList() -> CandidateList {
-      if subcandidateListStorage == nil {
-        subcandidateListStorage = CandidateList()
+      if let subcandidateListStorage {
+        return subcandidateListStorage
       }
-      return subcandidateListStorage!
+      let list = CandidateList()
+      subcandidateListStorage = list
+      return list
     }
   }
 

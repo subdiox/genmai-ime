@@ -142,7 +142,7 @@ private final class MockRewriter: RewriterInterface {
 
 /// engine::MockSupplementalModel with IsAvailable() / PostCorrect()
 /// overridden.
-private final class TestSupplementalModel: ConverterSupplementalModel, @unchecked Sendable {
+private final class TestSupplementalModel: ConverterSupplementalModel {
   let postCorrectHandler: (ConversionRequest, inout [PredictionResult]) -> Void
   init(_ postCorrectHandler: @escaping (ConversionRequest, inout [PredictionResult]) -> Void) {
     self.postCorrectHandler = postCorrectHandler

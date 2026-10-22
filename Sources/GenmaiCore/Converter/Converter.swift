@@ -27,7 +27,7 @@ public protocol ConverterSupplementalModel: AnyObject {
 }
 
 /// engine::SupplementalModelStub (no-op).
-public final class ConverterSupplementalModelStub: ConverterSupplementalModel, @unchecked Sendable {
+public final class ConverterSupplementalModelStub: ConverterSupplementalModel, Sendable {
   public init() {}
   public func isAvailable() -> Bool { false }
   public func postCorrect(_ request: ConversionRequest, _ results: inout [PredictionResult]) {}
@@ -133,6 +133,10 @@ private func validateConversionRequestForPrediction(_ request: ConversionRequest
   }
 }
 
+/// `@unchecked Sendable`: the predictor and the rewriter (non-Sendable
+/// protocols of the prediction / rewriter layers) are set once in `init` and
+/// never reassigned; like the C++ Converter, it is driven by one (session)
+/// thread.
 public final class Converter: ConverterInterface, @unchecked Sendable {
   public typealias ImmutableConverterFactory =
     (any ConverterModules) -> any ImmutableConverterInterface
@@ -145,8 +149,9 @@ public final class Converter: ConverterInterface, @unchecked Sendable {
 
   private let modulesStorage: any ConverterModules
   private let immutableConverterStorage: any ImmutableConverterInterface
-  private var predictorStorage: (any PredictorInterface)!
-  private var rewriterStorage: (any RewriterInterface)!
+  // Set in init (the predictor factory takes `self`), in the C++ order.
+  private var predictorStorage: (any PredictorInterface)?
+  private var rewriterStorage: (any RewriterInterface)?
 
   private let posMatcher: PosMatcher
   private let userDictionary: any UserDictionaryInterface
@@ -175,8 +180,19 @@ public final class Converter: ConverterInterface, @unchecked Sendable {
     rewriterStorage = rewriterFactory(modules)
   }
 
-  public var predictor: any PredictorInterface { predictorStorage }
-  public var rewriter: any RewriterInterface { rewriterStorage }
+  public var predictor: any PredictorInterface {
+    guard let predictorStorage else {
+      preconditionFailure("the predictor is set in init")
+    }
+    return predictorStorage
+  }
+
+  public var rewriter: any RewriterInterface {
+    guard let rewriterStorage else {
+      preconditionFailure("the rewriter is set in init")
+    }
+    return rewriterStorage
+  }
   public var immutableConverter: any ImmutableConverterInterface { immutableConverterStorage }
   public var modules: any ConverterModules { modulesStorage }
 
@@ -585,7 +601,13 @@ public final class Converter: ConverterInterface, @unchecked Sendable {
           cand.innerSegmentBoundary = [result.innerSegmentBoundary[currentSegIdx]]
         }
       } else {
-        let cand = (pos == 0) ? segment.pushFrontCandidate() : segment.insertCandidate(pos)!
+        let cand: Candidate
+        if pos == 0 {
+          cand = segment.pushFrontCandidate()
+        } else {
+          cand = Candidate()
+          segment.insertCandidate(pos, cand)
+        }
         cand.key = String(innerSeg.getKey())
         cand.value = String(innerSeg.getValue())
         cand.contentKey = String(innerSeg.getContentKey())
