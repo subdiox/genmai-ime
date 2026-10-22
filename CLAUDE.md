@@ -247,8 +247,10 @@ unchanged; the hook only forwards). GenmaiCore and GenmaiSession contain no AI c
 ## GUI design (not in Mozc)
 
 The windows keep Mozc's options and dialog logic (`ConfigDialogModel`, `DictionaryToolModel`, ...) but not its
-Qt layouts: the settings window is a sidebar of panes (General / Input / Conversion / Suggestions / AI / Privacy /
-Updates) whose edits are saved automatically (`savesChangesAutomatically`, 300 ms after the last edit and on
+Qt layouts. GenmaiTool is a SwiftUI `App` with one `Window` scene per process (id = the mode, so SwiftUI keeps a
+frame per mode), so the windows get the system's chrome; startup checks (mode, run level, singleton, welcome
+marker) run in `GenmaiToolApp.init`, closing the window quits. the settings window is a sidebar of panes (General / Input / Conversion / Suggestions / AI / Privacy /
+Updates), each starting with a System Settings-like header (icon, name, summary; no toolbar title), whose edits are saved automatically (`savesChangesAutomatically`, 300 ms after the last edit and on
 close; no OK / Cancel / Apply), the candidate window a Liquid Glass panel (window background at 70 % underneath for legibility; metrics in
 `CandidateDesign`, the infolist a card layout in `InfolistDesign` instead of renderer_style.textproto), the
 dictionary tool a `NavigationSplitView` with an SF Symbols toolbar and a

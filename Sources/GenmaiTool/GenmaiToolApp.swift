@@ -2,11 +2,14 @@
 // gui/base/singleton_window_helper (3.35.6354).
 //
 // GenmaiTool (installed as Genmai.app in Genmai.app/Contents/Resources) hosts the SwiftUI dialogs of GenmaiGUI
-// (and the update dialog, not in Mozc). The mode comes from `--mode=<mode>` (or the
-// FLAGS_mode environment variable, like the C++ on macOS), the error type of the error dialog from
-// `--error_type=` / FLAGS_error_type, and the word register defaults from the environment variables set by
-// the IME. Only one window per mode and desktop runs at a time: a second instance asks the first one to come
-// to the front and exits (SingletonWindowHelper).
+// (and the update and welcome windows, not in Mozc). The mode comes from `--mode=<mode>` (or the FLAGS_mode
+// environment variable, like the C++ on macOS), the error type of the error dialog from `--error_type=` /
+// FLAGS_error_type, and the word register defaults from the environment variables set by the IME. Only one window
+// per mode and desktop runs at a time: a second instance asks the first one to come to the front and exits
+// (SingletonWindowHelper).
+//
+// Unlike Mozc's Qt tool it is a SwiftUI app: the mode's window is a `Window` scene, so the windows get the system's
+// own chrome (Liquid Glass sidebar and toolbar on macOS 26). Closing the window quits the app.
 
 import AppKit
 import GenmaiBase
@@ -50,102 +53,112 @@ extension String {
   }
 }
 
-@MainActor
-final class ToolAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
-  let options: ToolOptions
-  private var window: NSWindow?
-  private var mutex: ProcessMutex?
-  private let client = ToolSessionBackend.makeClient()
+@main
+struct GenmaiToolApp: App {
+  @NSApplicationDelegateAdaptor(ToolAppDelegate.self) private var delegate
+  private let mode: ToolMode
+  private let options: ToolOptions
 
-  init(options: ToolOptions) {
-    self.options = options
-  }
-
-  func applicationDidFinishLaunching(_ notification: Notification) {
+  init() {
+    let options = ToolOptions(arguments: CommandLine.arguments, environment: ProcessInfo.processInfo.environment)
+    if options.mode != "administration_dialog" && !RunLevel.isValidClientRunLevel() {
+      exit(-1)
+    }
     guard let mode = ToolMode(rawValue: options.mode) else {
       NSLog("GenmaiTool: Unknown mode: %@", options.mode)
-      NSApp.terminate(nil)
-      return
+      exit(0)
     }
     if mode == .welcome {
       // Once per user: the installer opens it after every installation, updates included.
       if GenmaiWelcome.wasShown() {
-        NSApp.terminate(nil)
-        return
+        exit(0)
       }
       GenmaiWelcome.markShown()
     }
-    if !acquireSingleton(mode) {
-      NSApp.terminate(nil)
-      return
+    if mode == .errorMessageDialog && ErrorMessageDialog.message(forErrorType: options.errorType) == nil {
+      exit(0)  // Show() does nothing for an unknown error type
     }
-    guard let rootView = makeRootView(mode) else {
-      NSApp.terminate(nil)
-      return
+    if !ToolSingleton.acquire(mode) {
+      exit(0)
     }
-    let hosting = NSHostingController(rootView: rootView)
-    hosting.sizingOptions = [.preferredContentSize]
-    let window = NSWindow(contentViewController: hosting)
-    switch mode {
-    case .configDialog, .dictionaryTool:
-      // The sidebar runs under the title bar, as in System Settings.
-      window.styleMask = [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView]
-      window.toolbarStyle = .unified
-    case .aboutDialog, .welcome:
-      window.styleMask = [.titled, .closable, .fullSizeContentView]
-      window.titlebarAppearsTransparent = true
-      window.titleVisibility = .hidden
-    default:
-      window.styleMask = [.titled, .closable]
-    }
-    window.title = windowTitle(mode)
-    window.delegate = self
-    if mode == .errorMessageDialog {
-      window.level = .floating  // Qt::WindowStaysOnTopHint
-    }
-    window.center()
-    self.window = window
-    window.makeKeyAndOrderFront(nil)
-    NSApp.activate()
+    self.mode = mode
+    self.options = options
   }
 
-  private func makeRootView(_ mode: ToolMode) -> AnyView? {
-    let close = CloseDialogAction { [weak self] in self?.window?.performClose(nil) }
-    let launchTool: @MainActor (String) -> Void = { mode in
-      GenmaiToolLauncher.launch(mode: mode)
+  var body: some Scene {
+    // One id per mode: SwiftUI remembers the frame per id.
+    Window(ToolWindowContent.title(mode), id: mode.rawValue) {
+      ToolWindowContent(mode: mode, options: options)
     }
-    let view: AnyView
+    .windowResizability(mode.isResizable ? .contentMinSize : .contentSize)
+    .defaultSize(mode.defaultSize)
+    .windowLevel(mode == .errorMessageDialog ? .floating : .automatic)  // Qt::WindowStaysOnTopHint
+    .defaultPosition(.center)
+  }
+}
+
+extension ToolMode {
+  /// Windows without a visible title bar (the content has its own heading).
+  var isCompact: Bool { self == .aboutDialog || self == .welcome }
+  var isResizable: Bool { self == .configDialog || self == .dictionaryTool }
+  /// The first size of the resizable windows (the others fit their content).
+  var defaultSize: CGSize {
+    switch self {
+    case .configDialog: ConfigDialogView.idealSize
+    case .dictionaryTool: CGSize(width: 860, height: 560)
+    default: CGSize(width: 400, height: 300)
+    }
+  }
+}
+
+/// The window's content for the mode, with the close action of the dialogs.
+struct ToolWindowContent: View {
+  let mode: ToolMode
+  let options: ToolOptions
+  @Environment(\.dismissWindow) private var dismissWindow
+
+  var body: some View {
+    if mode.isCompact {
+      // No title bar: the content has its own heading.
+      dialog
+        .toolbar(removing: .title)
+        .toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
+    } else {
+      dialog
+    }
+  }
+
+  private var dialog: some View {
+    content
+      .environment(\.closeDialog, CloseDialogAction { dismissWindow(id: mode.rawValue) })
+  }
+
+  @ViewBuilder private var content: some View {
+    let launchTool: @MainActor (String) -> Void = { GenmaiToolLauncher.launch(mode: $0) }
     switch mode {
     case .configDialog:
-      view = AnyView(ConfigDialogView(client: client, launchTool: launchTool))
+      ConfigDialogView(client: ToolClient.shared, launchTool: launchTool)
     case .dictionaryTool:
-      view = AnyView(DictionaryToolView(client: client))
+      DictionaryToolView(client: ToolClient.shared)
     case .wordRegisterDialog:
       let environment = ProcessInfo.processInfo.environment
-      view = AnyView(
-        WordRegisterDialogView(
-          client: client,
-          initialWord: environment[kWordRegisterEnvironmentName].flatMap { $0.isEmpty ? nil : $0 },
-          initialReading: environment[kWordRegisterEnvironmentReadingName].flatMap {
-            $0.isEmpty ? nil : $0
-          },
-          launchDictionaryTool: { launchTool(ToolMode.dictionaryTool.rawValue) }))
+      WordRegisterDialogView(
+        client: ToolClient.shared,
+        initialWord: environment[kWordRegisterEnvironmentName].flatMap { $0.isEmpty ? nil : $0 },
+        initialReading: environment[kWordRegisterEnvironmentReadingName].flatMap { $0.isEmpty ? nil : $0 },
+        launchDictionaryTool: { launchTool(ToolMode.dictionaryTool.rawValue) })
     case .aboutDialog:
-      view = AnyView(AboutDialogView())
+      AboutDialogView()
     case .errorMessageDialog:
-      guard let message = ErrorMessageDialog.message(forErrorType: options.errorType) else {
-        return nil
-      }
-      view = AnyView(ErrorMessageDialogView(message: message))
+      ErrorMessageDialogView(message: ErrorMessageDialog.message(forErrorType: options.errorType) ?? "")
     case .updateDialog:
-      view = AnyView(UpdateDialogView())
+      UpdateDialogView()
     case .welcome:
-      view = AnyView(WelcomeView(client: client) { launchTool(ToolMode.configDialog.rawValue) })
+      WelcomeView(client: ToolClient.shared) { launchTool(ToolMode.configDialog.rawValue) }
     }
-    return AnyView(view.environment(\.closeDialog, close))
   }
 
-  private func windowTitle(_ mode: ToolMode) -> String {
+  static func title(_ mode: ToolMode) -> String {
     switch mode {
     case .configDialog: tr("Settings", "[ProductName] Settings")
     case .dictionaryTool: tr("DictionaryTool", "[ProductName] Dictionary Tool")
@@ -156,9 +169,22 @@ final class ToolAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     case .welcome: WelcomeStrings.text(.windowTitle)
     }
   }
+}
 
-  /// SingletonWindowHelper: one window per "<mode>.<desktop name>".
-  private func acquireSingleton(_ mode: ToolMode) -> Bool {
+/// The client of the conversion server the dialogs talk to (one per process).
+@MainActor
+enum ToolClient {
+  static let shared = ToolSessionBackend.makeClient()
+}
+
+/// SingletonWindowHelper: one window per "<mode>.<desktop name>".
+@MainActor
+enum ToolSingleton {
+  /// Held for the lifetime of the process.
+  private static var mutex: ProcessMutex?
+
+  /// False if another instance shows this mode already (it is asked to come to the front).
+  static func acquire(_ mode: ToolMode) -> Bool {
     if mode == .errorMessageDialog {
       return true
     }
@@ -173,25 +199,30 @@ final class ToolAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     self.mutex = mutex
     DistributedNotificationCenter.default().addObserver(
       forName: kActivateNotificationName, object: name, queue: .main
-    ) { [weak self] _ in
+    ) { _ in
       MainActor.assumeIsolated {
         NSApp.activate()
-        self?.window?.makeKeyAndOrderFront(nil)
+        NSApp.windows.first { $0.isVisible }?.makeKeyAndOrderFront(nil)
       }
     }
     return true
   }
 
-  func windowWillClose(_ notification: Notification) {
-    // Let SwiftUI run onDisappear (the dictionary tool saves there), then quit.
-    window?.contentViewController = nil
-    Task { @MainActor in
-      _ = mutex?.unlock()
-      NSApp.terminate(nil)
-    }
+  static func release() {
+    _ = mutex?.unlock()
+  }
+}
+
+final class ToolAppDelegate: NSObject, NSApplicationDelegate {
+  func applicationDidFinishLaunching(_ notification: Notification) {
+    NSApp.activate()
   }
 
   func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }
+
+  func applicationWillTerminate(_ notification: Notification) {
+    MainActor.assumeIsolated { ToolSingleton.release() }
+  }
 }
 
 /// Launches another GenmaiTool mode from inside the tool (e.g. "Edit user dictionary..." in the config dialog).
@@ -207,56 +238,5 @@ enum GenmaiToolLauncher {
         NSLog("GenmaiTool: failed to launch %@: %@", mode, error.localizedDescription)
       }
     }
-  }
-}
-
-@main
-@MainActor
-enum GenmaiToolMain {
-  static func main() {
-    let options = ToolOptions(
-      arguments: CommandLine.arguments, environment: ProcessInfo.processInfo.environment)
-    if options.mode != "administration_dialog" && !RunLevel.isValidClientRunLevel() {
-      exit(-1)
-    }
-    let app = NSApplication.shared
-    let delegate = ToolAppDelegate(options: options)
-    app.delegate = delegate
-    app.setActivationPolicy(.regular)
-    app.mainMenu = makeMainMenu()
-    app.run()
-  }
-
-  /// A minimal menu so that Cmd+Q / Cmd+W / copy & paste work in the dialogs.
-  static func makeMainMenu() -> NSMenu {
-    let mainMenu = NSMenu()
-    let appItem = NSMenuItem()
-    let appMenu = NSMenu()
-    appMenu.addItem(
-      withTitle: "Quit \(kProductNameInEnglish)", action: #selector(NSApplication.terminate(_:)),
-      keyEquivalent: "q")
-    appItem.submenu = appMenu
-    mainMenu.addItem(appItem)
-
-    let editItem = NSMenuItem()
-    let editMenu = NSMenu(title: "Edit")
-    editMenu.addItem(withTitle: "Undo", action: Selector(("undo:")), keyEquivalent: "z")
-    editMenu.addItem(withTitle: "Redo", action: Selector(("redo:")), keyEquivalent: "Z")
-    editMenu.addItem(.separator())
-    editMenu.addItem(withTitle: "Cut", action: #selector(NSText.cut(_:)), keyEquivalent: "x")
-    editMenu.addItem(withTitle: "Copy", action: #selector(NSText.copy(_:)), keyEquivalent: "c")
-    editMenu.addItem(withTitle: "Paste", action: #selector(NSText.paste(_:)), keyEquivalent: "v")
-    editMenu.addItem(
-      withTitle: "Select All", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
-    editItem.submenu = editMenu
-    mainMenu.addItem(editItem)
-
-    let windowItem = NSMenuItem()
-    let windowMenu = NSMenu(title: "Window")
-    windowMenu.addItem(
-      withTitle: "Close", action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w")
-    windowItem.submenu = windowMenu
-    mainMenu.addItem(windowItem)
-    return mainMenu
   }
 }

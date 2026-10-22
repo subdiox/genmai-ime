@@ -162,6 +162,7 @@ struct AIConversionTab: View {
 
   var body: some View {
     Form {
+      SettingsPaneHeader(pane: .ai)
       Section {
         ConfigToggle(label: AIStrings.text(.enable), isOn: $model.aiValues.enabled)
         Text(verbatim: AIStrings.text(.explanation))

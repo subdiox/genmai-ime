@@ -26,6 +26,18 @@ enum SettingsPane: String, CaseIterable, Identifiable {
     }
   }
 
+  var summary: String {
+    switch self {
+    case .general: tr("Settings", "How you type, key bindings and the characters [ProductName] enters.")
+    case .input: tr("Settings", "Switching while you type, and fullwidth and halfwidth characters.")
+    case .conversion: tr("Settings", "Learning, dictionaries and special conversions.")
+    case .suggestions: tr("Settings", "The candidates shown while you type.")
+    case .ai: tr("Settings", "Conversion with the language model on this Mac.")
+    case .privacy: tr("Settings", "Pause learning and suggestions for a while.")
+    case .updates: tr("Settings", "Keep [ProductName] up to date.")
+    }
+  }
+
   var symbol: String {
     switch self {
     case .general: "gearshape.fill"
@@ -54,7 +66,7 @@ enum SettingsPane: String, CaseIterable, Identifiable {
 public struct ConfigDialogView: View {
   /// The window's ideal size; the tool's window follows it (`sizingOptions = .preferredContentSize`). It is the
   /// same for every pane so that the window does not jump when the selection changes; the panes scroll.
-  static let idealSize = CGSize(width: 760, height: 620)
+  public static let idealSize = CGSize(width: 760, height: 620)
 
   @State private var model: ConfigDialogModel
   @State private var selection: SettingsPane? = .general
@@ -80,9 +92,13 @@ public struct ConfigDialogView: View {
         SettingsSidebarRow(pane: pane)
       }
       .navigationSplitViewColumnWidth(min: 180, ideal: 200, max: 240)
+      .toolbar(removing: .sidebarToggle)
     } detail: {
       SettingsPaneView(pane: selection ?? .general, model: model)
         .navigationTitle((selection ?? .general).title)
+        // Like System Settings: no title in the toolbar (each pane starts with its own header) and no toolbar band.
+        .toolbar(removing: .title)
+        .toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
     }
     .frame(
       minWidth: 640, idealWidth: Self.idealSize.width, maxWidth: .infinity,
@@ -92,6 +108,34 @@ public struct ConfigDialogView: View {
       ConfigDialogEditorSheet(editor: editor, model: model)
     }
     .onDisappear { model.savePendingChanges() }
+  }
+}
+
+/// The top of a pane, like System Settings: the pane's icon, its name and what it is for.
+struct SettingsPaneHeader: View {
+  let pane: SettingsPane
+
+  var body: some View {
+    Section {
+      VStack(spacing: 6) {
+        Image(systemName: pane.symbol)
+          .font(.system(size: 30, weight: .semibold))
+          .foregroundStyle(.white)
+          .frame(width: 56, height: 56)
+          .background(pane.tint.gradient, in: .rect(cornerRadius: 13))
+          .accessibilityHidden(true)
+        Text(verbatim: pane.title)
+          .font(.title2.weight(.bold))
+          .accessibilityAddTraits(.isHeader)
+        Text(verbatim: pane.summary)
+          .font(.callout)
+          .foregroundStyle(.secondary)
+          .multilineTextAlignment(.center)
+          .fixedSize(horizontal: false, vertical: true)
+      }
+      .frame(maxWidth: .infinity)
+      .padding(.vertical, 8)
+    }
   }
 }
 
@@ -203,6 +247,7 @@ struct GeneralPane: View {
 
   var body: some View {
     Form {
+      SettingsPaneHeader(pane: .general)
       Section {
         ConfigPicker(
           label: settingsText("Input method"), selection: $model.values.inputModeIndex,
@@ -308,6 +353,7 @@ struct InputPane: View {
 
   var body: some View {
     Form {
+      SettingsPaneHeader(pane: .input)
       Section {
         ConfigToggle(
           label: settingsText("Switch to halfwidth automatically"),
@@ -368,6 +414,7 @@ struct ConversionPane: View {
 
   var body: some View {
     Form {
+      SettingsPaneHeader(pane: .conversion)
       Section {
         ConfigPicker(
           label: settingsText("Learn from what you type"), selection: $model.values.historyLearningLevel,
@@ -425,6 +472,7 @@ struct SuggestionsPane: View {
 
   var body: some View {
     Form {
+      SettingsPaneHeader(pane: .suggestions)
       Section {
         ConfigToggle(label: settingsText("Input history"), isOn: $model.values.useHistorySuggest)
         ConfigToggle(label: settingsText("System dictionary"), isOn: $model.values.useDictionarySuggest)
@@ -457,6 +505,7 @@ struct PrivacyPane: View {
 
   var body: some View {
     Form {
+      SettingsPaneHeader(pane: .privacy)
       Section {
         ConfigToggle(
           label: settingsText("Secret mode"),
@@ -478,6 +527,7 @@ struct UpdatesPane: View {
 
   var body: some View {
     Form {
+      SettingsPaneHeader(pane: .updates)
       UpdateSection(update: model.appUpdate)
       #if DEBUG
         // disable logging options in release builds (NDEBUG).

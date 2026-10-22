@@ -13,6 +13,14 @@ let kGenmaiJapaneseTranslations: [String: [String: String]] = [
     "AI": "AI",
     "Privacy": "プライバシー",
     "Updates": "アップデート",
+    "How you type, key bindings and the characters [ProductName] enters.":
+      "入力方式、キー操作、入力する文字の種類を設定します。",
+    "Switching while you type, and fullwidth and halfwidth characters.": "入力中の切り替えと、全角・半角の扱いを設定します。",
+    "Learning, dictionaries and special conversions.": "学習、辞書、特殊な変換を設定します。",
+    "The candidates shown while you type.": "入力中に表示する候補を設定します。",
+    "Conversion with the language model on this Mac.": "この Mac の中の言語モデルによる変換を設定します。",
+    "Pause learning and suggestions for a while.": "学習やサジェストを一時的に止めます。",
+    "Keep [ProductName] up to date.": "[ProductName] を最新の状態に保ちます。",
     // General
     "Typing": "入力",
     "Input method": "入力方式",
