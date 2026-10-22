@@ -8,8 +8,8 @@ import SwiftUI
 /// English / Japanese strings of the AI tab (Mozc's Qt translations do not have them).
 public enum AIStrings {
   public enum Key: CaseIterable, Sendable {
-    case tab, sectionAI, enable, explanation, sectionSettings, timeout, candidates, modelDirectory,
-      modelDirectoryPlaceholder, sectionModel, modelFound, modelMissing, modelVersion, modelVersionUnknown,
+    case tab, sectionAI, enable, explanation, sectionSettings, timeout, candidates, sectionModel, modelInstalled,
+      modelInstalledUnknown, modelNotInstalled,
       modelUpToDate, download, update, downloadNote, downloading, verifying, installing, cancel, installFailed,
       remove, removeConfirm, removeFailed, checkingLatest, latestFailed, retry, variant, variantQ8, variantBF16,
       variantMissing, checkAgain, saveFailed, milliseconds
@@ -24,17 +24,14 @@ public enum AIStrings {
     .sectionSettings: "Settings",
     .timeout: "Maximum wait at the conversion key",
     .candidates: "Number of AI candidates",
-    .modelDirectory: "Model folder",
-    .modelDirectoryPlaceholder: "Default",
     .sectionModel: "Model",
-    .modelFound: "Model found: %@",
-    .modelMissing: "Model not found: %@ (missing %@)",
-    .modelVersion: "Version: genmai %@ (%@)",
+    .modelInstalled: "genmai %@ (%@) is installed.",
+    .modelInstalledUnknown: "A model is installed (version unknown).",
+    .modelNotInstalled: "No model is installed.",
     .variant: "Model type",
     .variantQ8: "Standard (8-bit quantized)",
     .variantBF16: "High precision (bf16)",
     .variantMissing: "genmai %@ has no %@ weights.",
-    .modelVersionUnknown: "Version: unknown (not installed from a release)",
     .modelUpToDate: "genmai %@ is the latest version.",
     .download: "Download genmai %@",
     .update: "Update to genmai %@",
@@ -66,17 +63,14 @@ public enum AIStrings {
     .sectionSettings: "設定",
     .timeout: "変換キーでの最大待ち時間",
     .candidates: "AI 候補の数",
-    .modelDirectory: "モデルのフォルダ",
-    .modelDirectoryPlaceholder: "既定",
     .sectionModel: "モデル",
-    .modelFound: "モデルが見つかりました: %@",
-    .modelMissing: "モデルが見つかりません: %@ (%@ がありません)",
-    .modelVersion: "バージョン: genmai %1$@（%2$@）",
+    .modelInstalled: "genmai %1$@（%2$@）がインストールされています。",
+    .modelInstalledUnknown: "モデルがインストールされています（バージョン不明）。",
+    .modelNotInstalled: "モデルがインストールされていません。",
     .variant: "モデルの種類",
     .variantQ8: "標準（8bit 量子化）",
     .variantBF16: "高精度（bf16）",
     .variantMissing: "genmai %1$@ には「%2$@」がありません。",
-    .modelVersionUnknown: "バージョン: 不明 (リリースからインストールされていません)",
     .modelUpToDate: "genmai %@ は最新版です。",
     .download: "genmai %@ をダウンロード",
     .update: "genmai %@ にアップデート",
@@ -103,22 +97,19 @@ public enum AIStrings {
     return GUIUtil.replaceString(table[key] ?? english[key] ?? "")
   }
 
-  /// The model status line.
+  /// The model status line: which release and variant is installed (the folder is managed by the installer and not
+  /// shown).
   public static func modelStatus(_ status: AIModelStatus, language: GUILanguage = .current) -> String {
     switch status {
-    case .found(let url, _):
-      return String(format: text(.modelFound, language: language), url.path)
-    case .missing(let url, let files):
-      return String(format: text(.modelMissing, language: language), url.path, files.joined(separator: ", "))
+    case .found(_, let info?):
+      return String(
+        format: text(.modelInstalled, language: language), info.version,
+        variantName(info.installedVariant, language: language))
+    case .found(_, nil):
+      return text(.modelInstalledUnknown, language: language)
+    case .missing:
+      return text(.modelNotInstalled, language: language)
     }
-  }
-
-  /// The installed version line (nil when no model is found).
-  public static func modelVersion(_ status: AIModelStatus, language: GUILanguage = .current) -> String? {
-    guard case .found(_, let info) = status else { return nil }
-    guard let info else { return text(.modelVersionUnknown, language: language) }
-    return String(
-      format: text(.modelVersion, language: language), info.version, variantName(info.installedVariant, language: language))
   }
 
   public static func variantName(_ variant: AIModelVariant, language: GUILanguage = .current) -> String {
@@ -164,14 +155,6 @@ extension ConfigDialogModel {
     AIConversionSettings.candidateCountRange.map { ($0, "\($0)") }
   }
 
-  /// The model folder text field: "" = the default folder.
-  public var aiModelDirectoryText: String {
-    get { aiValues.modelDirectory ?? "" }
-    set {
-      let trimmed = newValue.trimmingCharacters(in: .whitespacesAndNewlines)
-      aiValues.modelDirectory = trimmed.isEmpty ? nil : trimmed
-    }
-  }
 }
 
 struct AIConversionTab: View {
@@ -195,13 +178,6 @@ struct AIConversionTab: View {
         ConfigPicker(
           label: AIStrings.text(.candidates), selection: $model.aiValues.candidateCount,
           items: ConfigDialogModel.aiCandidatePickerItems)
-        TextField(
-          text: $model.aiModelDirectoryText,
-          prompt: Text(verbatim: AIStrings.text(.modelDirectoryPlaceholder))
-        ) {
-          Text(verbatim: AIStrings.text(.modelDirectory))
-        }
-        .disabled(model.aiModelInstall.isRunning)
       } header: {
         Text(verbatim: AIStrings.text(.sectionSettings))
       }
@@ -238,16 +214,8 @@ struct AIModelStatusRow: View {
       Image(systemName: status.isFound ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
         .foregroundStyle(status.isFound ? .green : .orange)
         .accessibilityHidden(true)
-      VStack(alignment: .leading, spacing: 4) {
-        Text(verbatim: AIStrings.modelStatus(status))
-          .textSelection(.enabled)
-          .fixedSize(horizontal: false, vertical: true)
-        if let version = AIStrings.modelVersion(status) {
-          Text(verbatim: version)
-            .font(.callout)
-            .foregroundStyle(.secondary)
-        }
-      }
+      Text(verbatim: AIStrings.modelStatus(status))
+        .fixedSize(horizontal: false, vertical: true)
       Spacer()
       Button(AIStrings.text(.checkAgain), action: checkAgain)
     }

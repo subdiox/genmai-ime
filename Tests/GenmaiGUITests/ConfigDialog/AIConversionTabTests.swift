@@ -52,25 +52,28 @@ import Testing
     #expect(AIConversionSettings.load(from: dir.settings) == AIConversionSettings())
   }
 
-  @Test func modelDirectoryAndStatus() throws {
+  @Test func modelStatus() throws {
     let dir = TempDir()
     let model = ConfigDialogModel(client: ConfigDialogMockClient(), aiSettingsURL: dir.settings)
-    model.aiModelDirectoryText = "  \(dir.url.path)  "
-    #expect(model.aiValues.modelDirectory == dir.url.path)
+    model.aiValues.modelDirectory = dir.url.path
     #expect(!model.aiModelStatus.isFound)
-    let status = AIStrings.modelStatus(model.aiModelStatus, language: .english)
-    #expect(status.hasPrefix("Model not found: \(dir.url.path)"))
-    #expect(status.contains("model.safetensors"))
+    #expect(AIStrings.modelStatus(model.aiModelStatus, language: .english) == "No model is installed.")
     for f in AIModelStatus.requiredFiles {
       try Data().write(to: dir.url.appending(path: f))
     }
     model.refreshAIModelStatus()
     #expect(model.aiModelStatus.isFound)
     #expect(model.aiModelStatus.needsInstall(Self.release, variant: .q8))  // no genmai_model.json
-    #expect(AIStrings.modelStatus(model.aiModelStatus, language: .japanese).hasPrefix("モデルが見つかりました"))
-    model.aiModelDirectoryText = ""
-    #expect(model.aiValues.modelDirectory == nil)
-    #expect(model.aiValues.resolvedModelDirectory == AIConversionSettings.defaultModelDirectory)
+    #expect(
+      AIStrings.modelStatus(model.aiModelStatus, language: .japanese) == "モデルがインストールされています（バージョン不明）。")
+    var info = Self.release.info
+    info.variant = .q8
+    try info.save(to: dir.url)
+    model.refreshAIModelStatus()
+    // The folder is not shown: it is managed by the installer.
+    #expect(
+      AIStrings.modelStatus(model.aiModelStatus, language: .japanese)
+        == "genmai 0.2.0（標準（8bit 量子化））がインストールされています。")
   }
 
   nonisolated static let release = GenmaiModelRelease(
@@ -106,7 +109,7 @@ import Testing
     let dir = TempDir()
     let client = ConfigDialogMockClient()
     let model = ConfigDialogModel(client: client, aiSettingsURL: dir.settings)
-    model.aiModelDirectoryText = dir.url.path
+    model.aiValues.modelDirectory = dir.url.path
     model.aiModelReleaseFetcher = { Self.release }
     await model.checkLatestAIModel()
     #expect(model.aiModelStatus.needsInstall(Self.release, variant: .q8))
@@ -135,7 +138,8 @@ import Testing
     #expect(!model.aiModelStatus.needsInstall(Self.release, variant: .q8))
     #expect(client.reloadCount == 1)
     #expect(
-      AIStrings.modelVersion(model.aiModelStatus, language: .english) == "Version: genmai 0.2.0 (Standard (8-bit quantized))")
+      AIStrings.modelStatus(model.aiModelStatus, language: .english)
+        == "genmai 0.2.0 (Standard (8-bit quantized)) is installed.")
     // Choosing the other variant offers its download.
     model.aiValues.modelVariant = .bf16
     #expect(model.aiModelStatus.needsInstall(Self.release, variant: model.aiValues.modelVariant))
@@ -145,7 +149,7 @@ import Testing
     let dir = TempDir()
     let client = ConfigDialogMockClient()
     let model = ConfigDialogModel(client: client, aiSettingsURL: dir.settings)
-    model.aiModelDirectoryText = dir.url.path
+    model.aiValues.modelDirectory = dir.url.path
     model.aiModelReleaseFetcher = { Self.release }
     await model.checkLatestAIModel()
     model.aiModelInstaller = { _, _, _, _ in throw AIModelInstallError.download("model.safetensors", status: 404) }
@@ -170,7 +174,7 @@ import Testing
     let model = ConfigDialogModel(client: client, aiSettingsURL: dir.settings)
     let modelDir = dir.url.appending(path: "model")
     try FileManager.default.createDirectory(at: modelDir, withIntermediateDirectories: true)
-    model.aiModelDirectoryText = modelDir.path
+    model.aiValues.modelDirectory = modelDir.path
     for f in AIModelStatus.requiredFiles {
       try Data().write(to: modelDir.appending(path: f))
     }
@@ -200,7 +204,7 @@ import Testing
   @Test func removeIsOfferedOnlyForAnInstalledModel() {
     let dir = TempDir()
     let model = ConfigDialogModel(client: ConfigDialogMockClient(), aiSettingsURL: dir.settings)
-    model.aiModelDirectoryText = dir.url.appending(path: "none").path
+    model.aiValues.modelDirectory = dir.url.appending(path: "none").path
     model.removeAIModel()
     #expect(model.pendingMessage == nil)
   }
@@ -210,8 +214,7 @@ import Testing
     #expect(downloading.hasPrefix("Downloading… "))
     let note = AIStrings.downloadNote(Self.release, variant: .q8, language: .japanese)
     #expect(note.contains("subdiox/genmai"))
-    #expect(AIStrings.modelVersion(.missing(URL(filePath: "/x"), missingFiles: []), language: .english) == nil)
-    #expect(AIStrings.modelVersion(.found(URL(filePath: "/x"), info: nil), language: .japanese)?.contains("不明") == true)
+    #expect(AIStrings.modelStatus(.found(URL(filePath: "/x"), info: nil), language: .japanese).contains("不明"))
   }
 
   @Test func everyStringIsTranslated() {

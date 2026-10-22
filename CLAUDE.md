@@ -212,7 +212,9 @@ unchanged; the hook only forwards). GenmaiCore and GenmaiSession contain no AI c
   activation, RESET_CONTEXT or an empty preceding text. The model tends to copy the context: a wrong conversion
   committed earlier in the same field can be repeated.
 - **Settings:** `<profile>/ai_conversion.json` (`AIConversionSettings`: `enabled`, `timeout_ms`, `candidates`,
-  `model_directory`, `reading_check`, `debug_log`), edited in the settings tab "AI" and re-read on the reload notification.
+  `model_directory`, `model_variant`, `reading_check`, `debug_log`), edited in the settings tab "AI" and re-read on the
+  reload notification. `model_directory`, `reading_check` and `debug_log` have no UI (development / diagnosis);
+  the model folder is managed by the installer, so the AI tab shows only which release and variant is installed.
 - **Debug log (opt-in):** `"debug_log": true` appends one line per AI event to `<profile>/ai_debug.log` (rotated at
   8 MB): source (`ready` / `awaited` / `timeout` / `error` / `suggestion` / `refine`), reading, last 40 characters of
   context, latency, n-best and what was shown. **It contains the typed text**; turn it off after diagnosing.
