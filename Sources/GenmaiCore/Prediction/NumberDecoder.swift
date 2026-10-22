@@ -8,6 +8,7 @@
 //   NoDestructor singleton); the Trie is only read after creation.
 
 import GenmaiBase
+import Synchronization
 
 public enum NumberDecoderInternal {
   public enum EntryType: UInt8, Sendable {
@@ -134,25 +135,18 @@ public struct NumberDecoderResult: Sendable, Equatable, CustomStringConvertible 
   }
 }
 
-/// `@unchecked Sendable`: the shared entries are immutable after creation.
-public final class NumberDecoder: @unchecked Sendable {
+public final class NumberDecoder: Sendable {
   private typealias Entry = NumberDecoderInternal.Entry
   private typealias State = NumberDecoderInternal.State
 
-  private final class EntriesBox: @unchecked Sendable {
-    let trie: Trie<NumberDecoderInternal.Entry>
-    init(_ trie: Trie<NumberDecoderInternal.Entry>) { self.trie = trie }
-  }
+  // Returns a singleton enries. The trie is only read after its creation; the
+  // lock makes the shared instance `Sendable`.
+  private static let defaultEntries = Mutex(createDefaultEntries())
 
-  // Returns a singleton enries.
-  private static let defaultEntries = EntriesBox(createDefaultEntries())
-
-  private let entries: Trie<NumberDecoderInternal.Entry>
   private let kanjiNumberId: UInt16
   private let numberId: UInt16
 
   public init(_ posMatcher: PosMatcher) {
-    entries = Self.defaultEntries.trie
     kanjiNumberId = posMatcher.getKanjiNumberId()
     numberId = posMatcher.getNumberId()
   }
@@ -337,7 +331,7 @@ public final class NumberDecoder: @unchecked Sendable {
     }
     var keyByteLen = 0
     var found: Entry?
-    if !entries.longestMatch(key, &found, &keyByteLen) {
+    if !Self.defaultEntries.withLock({ $0.longestMatch(key, &found, &keyByteLen) }) {
       return
     }
     let e = found ?? Entry()

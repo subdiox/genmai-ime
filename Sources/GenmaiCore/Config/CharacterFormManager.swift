@@ -540,7 +540,7 @@ private struct CharacterFormManagerImpl {
 
 // TODO(hidehiko): Move some methods which don't depend on "config" to the
 //   mozc::Util class.
-public final class CharacterFormManager: @unchecked Sendable {
+public final class CharacterFormManager: Sendable {
   public struct NumberFormStyle: Sendable, Equatable {
     public var form: Genmai_Config_Config.CharacterForm
     public var style: NumberUtil.NumberString.Style

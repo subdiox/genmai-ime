@@ -11,7 +11,7 @@ private func m(_ keys: Genmai_Commands_KeyEvent.ModifierKey...) -> UInt32 {
   keys.reduce(0) { $0 | UInt32($1.rawValue) }
 }
 
-private func ch(_ c: Character) -> UInt32 { c.unicodeScalars.first!.value }
+private func ch(_ c: Unicode.Scalar) -> UInt32 { c.value }
 
 private func parse(_ s: String) -> KeyEvent {
   var e = KeyEvent()

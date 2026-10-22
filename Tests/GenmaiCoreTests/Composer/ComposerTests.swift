@@ -18,7 +18,7 @@ import Testing
 
 private typealias KeyEvent = Genmai_Commands_KeyEvent
 
-private func kc(_ c: String) -> UInt32 { c.unicodeScalars.first!.value }
+private func kc(_ c: Unicode.Scalar) -> UInt32 { c.value }
 
 @discardableResult
 private func insertKey(_ keyString: String, _ composer: inout Composer) -> Bool {
@@ -513,7 +513,7 @@ private let kSora = "空"
     composer.insertCharacterKeyEvent(key)
     composer.insertCommandCharacter(.stopKeyToggling)
     // auto = std::pair<std::string, absl::btree_set<std::string>>
-    let (base, expanded) = composer.getQueriesForPrediction()
+    let (base, _) = composer.getQueriesForPrediction()
 
     // Never reached here due to the crash before the fix for b/277163340.
     #expect(base == "[][]")
@@ -578,26 +578,26 @@ private let kSora = "空"
 
   @Test func getStringFunctionsInputFieldType() throws {
     struct TestData {
-      let field_type: Genmai_Commands_Context.InputFieldType
-      let ascii_expected: Bool
+      let fieldType: Genmai_Commands_Context.InputFieldType
+      let asciiExpected: Bool
     }
-    let test_data_list = [
-      TestData(field_type: .normal, ascii_expected: false),
-      TestData(field_type: .number, ascii_expected: true),
-      TestData(field_type: .password, ascii_expected: true),
-      TestData(field_type: .tel, ascii_expected: true),
+    let testDataList = [
+      TestData(fieldType: .normal, asciiExpected: false),
+      TestData(fieldType: .number, asciiExpected: true),
+      TestData(fieldType: .password, asciiExpected: true),
+      TestData(fieldType: .tel, asciiExpected: true),
     ]
 
     composer.setInputMode(.hiragana)
-    for test_data_index in 0..<test_data_list.count {
-      let test_data = test_data_list[test_data_index]
-      composer.setInputFieldType(test_data.field_type)
+    for testDataIndex in 0..<testDataList.count {
+      let testData = testDataList[testDataIndex]
+      composer.setInputFieldType(testData.fieldType)
       var key = ""
       for c in UInt8(0x20)...UInt8(0x7E) {
         key = String(UnicodeScalar(c))
         composer.editErase()
         composer.insertCharacter(key)
-        if test_data.ascii_expected {
+        if testData.asciiExpected {
           #expect(composer.getStringForPreedit() == key)
           #expect(composer.getStringForSubmission() == key)
         } else {
@@ -2254,21 +2254,21 @@ private let kSora = "空"
 
   @Test func shouldCommitHead() throws {
     struct TestData {
-      let input_text: String
-      let field_type: Genmai_Commands_Context.InputFieldType
-      let expected_return: Bool
-      let expected_commit_length: Int
+      let inputText: String
+      let fieldType: Genmai_Commands_Context.InputFieldType
+      let expectedReturn: Bool
+      let expectedCommitLength: Int
       init(
-        _ input_text: String, _ field_type: Genmai_Commands_Context.InputFieldType,
-        _ expected_return: Bool, _ expected_commit_length: Int
+        _ inputText: String, _ fieldType: Genmai_Commands_Context.InputFieldType,
+        _ expectedReturn: Bool, _ expectedCommitLength: Int
       ) {
-        self.input_text = input_text
-        self.field_type = field_type
-        self.expected_return = expected_return
-        self.expected_commit_length = expected_commit_length
+        self.inputText = inputText
+        self.fieldType = fieldType
+        self.expectedReturn = expectedReturn
+        self.expectedCommitLength = expectedCommitLength
       }
     }
-    let test_data_list = [
+    let testDataList = [
       // On NORMAL, never commit the head.
       TestData("", .normal, false, 0),
       TestData("A", .normal, false, 0),
@@ -2289,20 +2289,20 @@ private let kSora = "空"
       TestData("ABCDEFGHI", .tel, true, 9),
     ]
 
-    for i in 0..<test_data_list.count {
-      let test_data = test_data_list[i]
-      // SCOPED_TRACE(test_data.input_text)
-      // SCOPED_TRACE(test_data.field_type)
-      // SCOPED_TRACE(test_data.expected_return)
-      // SCOPED_TRACE(test_data.expected_commit_length)
+    for i in 0..<testDataList.count {
+      let testData = testDataList[i]
+      // SCOPED_TRACE(testData.inputText)
+      // SCOPED_TRACE(testData.fieldType)
+      // SCOPED_TRACE(testData.expectedReturn)
+      // SCOPED_TRACE(testData.expectedCommitLength)
       composer.reset()
-      composer.setInputFieldType(test_data.field_type)
-      composer.insertCharacter(test_data.input_text)
-      var length_to_commit = 0
-      let result = composer.shouldCommitHead(&length_to_commit)
-      if test_data.expected_return {
+      composer.setInputFieldType(testData.fieldType)
+      composer.insertCharacter(testData.inputText)
+      var lengthToCommit = 0
+      let result = composer.shouldCommitHead(&lengthToCommit)
+      if testData.expectedReturn {
         #expect(result)
-        #expect(length_to_commit == test_data.expected_commit_length)
+        #expect(lengthToCommit == testData.expectedCommitLength)
       } else {
         #expect(!result)
       }
@@ -2455,13 +2455,13 @@ private let kSora = "空"
     do {
       composer.insertCharacterPreedit(kTestStr)
       let preedit = composer.getStringForPreedit()
-      let conversion_query = composer.getQueryForConversion()
-      let prediction_query = composer.getQueryForPrediction()
+      let conversionQuery = composer.getQueryForConversion()
+      let predictionQuery = composer.getQueryForPrediction()
       // auto = std::pair<std::string, absl::btree_set<std::string>>
-      let (base, expanded) = composer.getQueriesForPrediction()
+      let (base, _) = composer.getQueriesForPrediction()
       #expect(!preedit.isEmpty)
-      #expect(!conversion_query.isEmpty)
-      #expect(!prediction_query.isEmpty)
+      #expect(!conversionQuery.isEmpty)
+      #expect(!predictionQuery.isEmpty)
       #expect(!base.isEmpty)
     }
     composer.reset()
@@ -2470,13 +2470,13 @@ private let kSora = "空"
         composer.insertCharacterPreedit(c)
       }
       let preedit = composer.getStringForPreedit()
-      let conversion_query = composer.getQueryForConversion()
-      let prediction_query = composer.getQueryForPrediction()
+      let conversionQuery = composer.getQueryForConversion()
+      let predictionQuery = composer.getQueryForPrediction()
       // auto = std::pair<std::string, absl::btree_set<std::string>>
-      let (base, expanded) = composer.getQueriesForPrediction()
+      let (base, _) = composer.getQueriesForPrediction()
       #expect(!preedit.isEmpty)
-      #expect(!conversion_query.isEmpty)
-      #expect(!prediction_query.isEmpty)
+      #expect(!conversionQuery.isEmpty)
+      #expect(!predictionQuery.isEmpty)
       #expect(!base.isEmpty)
     }
   }
@@ -2492,14 +2492,14 @@ private let kSora = "空"
 
     #expect(composer.getStringForPreedit() == "さしみ")
 
-    var raw_string = composer.getRawString()
-    #expect(raw_string == "sashimi")
+    let rawString = composer.getRawString()
+    #expect(rawString == "sashimi")
 
-    var raw_sub_string = composer.getRawSubString(0, 2)
-    #expect(raw_sub_string == "sashi")
+    var rawSubString = composer.getRawSubString(0, 2)
+    #expect(rawSubString == "sashi")
 
-    raw_sub_string = composer.getRawSubString(1, 1)
-    #expect(raw_sub_string == "shi")
+    rawSubString = composer.getRawSubString(1, 1)
+    #expect(rawSubString == "shi")
   }
 
   @Test func setPreeditTextForTestOnly() throws {
@@ -2641,35 +2641,35 @@ private let kSora = "空"
     table.addRule("い1", "", "う")
 
     let clock = ClockMock(Date(unixSeconds: 86400))
-    try Clock.withClock(clock) {
+    Clock.withClock(clock) {
 
       config.composingTimeoutThresholdMsec = 500
       composer.reset()  // The threshold should be updated to 500msec.
 
-      var timestamp_msec: Int64 = 86_400_000  // absl::ToUnixMillis(UnixEpoch() + 24h)
+      var timestampMsec: Int64 = 86_400_000  // absl::ToUnixMillis(UnixEpoch() + 24h)
 
-      var key_event = KeyEvent()
-      key_event.keyCode = kc("1")
-      key_event.timestampMsec = timestamp_msec
-      composer.insertCharacterKeyEvent(key_event)
+      var keyEvent = KeyEvent()
+      keyEvent.keyCode = kc("1")
+      keyEvent.timestampMsec = timestampMsec
+      composer.insertCharacterKeyEvent(keyEvent)
       #expect(composer.getStringForPreedit() == "あ")
 
       clock.advance(.milliseconds(100))
-      timestamp_msec += 3000  // +3.0 sec in proto.
-      key_event.timestampMsec = timestamp_msec
-      composer.insertCharacterKeyEvent(key_event)
+      timestampMsec += 3000  // +3.0 sec in proto.
+      keyEvent.timestampMsec = timestampMsec
+      composer.insertCharacterKeyEvent(keyEvent)
       #expect(composer.getStringForPreedit() == "ああ")
 
       clock.advance(.milliseconds(100))
-      timestamp_msec += 700  // +0.7 sec in proto.
-      key_event.timestampMsec = timestamp_msec
-      composer.insertCharacterKeyEvent(key_event)
+      timestampMsec += 700  // +0.7 sec in proto.
+      keyEvent.timestampMsec = timestampMsec
+      composer.insertCharacterKeyEvent(keyEvent)
       #expect(composer.getStringForPreedit() == "あああ")
 
       clock.advance(.milliseconds(300))
-      timestamp_msec += 100  // +0.7 sec in proto.
-      key_event.timestampMsec = timestamp_msec
-      composer.insertCharacterKeyEvent(key_event)
+      timestampMsec += 100  // +0.7 sec in proto.
+      keyEvent.timestampMsec = timestampMsec
+      composer.insertCharacterKeyEvent(keyEvent)
       #expect(composer.getStringForPreedit() == "ああい")
     }
   }
@@ -2876,9 +2876,9 @@ private let kSora = "空"
     #expect(right == "")
 
     // auto = std::pair<std::string, absl::btree_set<std::string>>
-    let (queries_base, queries_expanded) =
+    let (queriesBase, _) =
       composer.getQueriesForPrediction()
-    #expect(queries_base == "あn")
+    #expect(queriesBase == "あn")
 
     #expect(composer.getQueryForPrediction() == "あnn")
 
@@ -2924,9 +2924,9 @@ private let kSora = "空"
     #expect(right == "")
 
     // auto = std::pair<std::string, absl::btree_set<std::string>>
-    let (queries_base, queries_expanded) =
+    let (queriesBase, _) =
       composer.getQueriesForPrediction()
-    #expect(queries_base == "あn")
+    #expect(queriesBase == "あn")
 
     #expect(composer.getQueryForPrediction() == "あnn")
 
@@ -2952,10 +2952,10 @@ private let kSora = "空"
   @Test func updateComposition() throws {
     do {
       var command = Genmai_Commands_SessionCommand()
-      var composition_event = Genmai_Commands_SessionCommand.CompositionEvent()
-      composition_event.compositionString = "かん字"
-      composition_event.probability = 1.0
-      command.compositionEvents.append(composition_event)
+      var compositionEvent = Genmai_Commands_SessionCommand.CompositionEvent()
+      compositionEvent.compositionString = "かん字"
+      compositionEvent.probability = 1.0
+      command.compositionEvents.append(compositionEvent)
       composer.setCompositionsForHandwriting(command.compositionEvents)
     }
 
@@ -2964,14 +2964,14 @@ private let kSora = "空"
 
     do {
       var command = Genmai_Commands_SessionCommand()
-      var composition_event = Genmai_Commands_SessionCommand.CompositionEvent()
-      composition_event.compositionString = "ねこ"
-      composition_event.probability = 0.9
-      command.compositionEvents.append(composition_event)
-      composition_event = Genmai_Commands_SessionCommand.CompositionEvent()
-      composition_event.compositionString = "ね二"
-      composition_event.probability = 0.1
-      command.compositionEvents.append(composition_event)
+      var compositionEvent = Genmai_Commands_SessionCommand.CompositionEvent()
+      compositionEvent.compositionString = "ねこ"
+      compositionEvent.probability = 0.9
+      command.compositionEvents.append(compositionEvent)
+      compositionEvent = Genmai_Commands_SessionCommand.CompositionEvent()
+      compositionEvent.compositionString = "ね二"
+      compositionEvent.probability = 0.1
+      command.compositionEvents.append(compositionEvent)
       composer.setCompositionsForHandwriting(command.compositionEvents)
     }
 
@@ -3008,61 +3008,61 @@ private let kSora = "空"
 
     do {  // Queries for prediction
       // auto = std::pair<std::string, absl::btree_set<std::string>>
-      let (data_base, data_expanded) = data.getQueriesForPrediction()
-      #expect(data_base == "あア")
-      #expect(data_expanded.count == 3)
+      let (dataBase, dataExpanded) = data.getQueriesForPrediction()
+      #expect(dataBase == "あア")
+      #expect(dataExpanded.count == 3)
 
       // auto = std::pair<std::string, absl::btree_set<std::string>>
-      let (composer_base, composer_expanded) =
+      let (composerBase, composerExpanded) =
         data.getQueriesForPrediction()
-      #expect(data_base == composer_base)
-      #expect(data_expanded.count == composer_expanded.count)
+      #expect(dataBase == composerBase)
+      #expect(dataExpanded.count == composerExpanded.count)
 
-      let expected_expanded = ["k", "か", "き"]
-      #expect(data_expanded == composer_expanded)
-      #expect(data_expanded == expected_expanded)
+      let expectedExpanded = ["k", "か", "き"]
+      #expect(dataExpanded == composerExpanded)
+      #expect(dataExpanded == expectedExpanded)
     }
 
     do {  // Transliterations
-      var data_t13ns = Transliterations()
-      data.getTransliterations(&data_t13ns)
-      var composer_t13ns = Transliterations()
-      let expected_t13ns: Transliterations = [
+      var dataT13ns = Transliterations()
+      data.getTransliterations(&dataT13ns)
+      var composerT13ns = Transliterations()
+      let expectedT13ns: Transliterations = [
         "ああｋ", "アアｋ", "aak", "AAK", "aak", "Aak",
         "ａａｋ", "ＡＡＫ", "ａａｋ", "Ａａｋ", "ｱｱk",
       ]
-      composer.getTransliterations(&composer_t13ns)
-      #expect(data_t13ns.count == 11)
-      #expect(data_t13ns.count == composer_t13ns.count)
-      #expect(data_t13ns == expected_t13ns)
-      #expect(data_t13ns == composer_t13ns)
+      composer.getTransliterations(&composerT13ns)
+      #expect(dataT13ns.count == 11)
+      #expect(dataT13ns.count == composerT13ns.count)
+      #expect(dataT13ns == expectedT13ns)
+      #expect(dataT13ns == composerT13ns)
     }
 
     do {  // SubTransliterations
-      var data_t13ns = Transliterations()
-      data.getSubTransliterations(2, 1, &data_t13ns)
-      var composer_t13ns = Transliterations()
-      let expected_t13ns: Transliterations = [
+      var dataT13ns = Transliterations()
+      data.getSubTransliterations(2, 1, &dataT13ns)
+      var composerT13ns = Transliterations()
+      let expectedT13ns: Transliterations = [
         "ｋ", "ｋ", "k", "K", "k", "K", "ｋ", "Ｋ", "ｋ", "Ｋ", "k",
       ]
-      composer.getSubTransliterations(2, 1, &composer_t13ns)
-      #expect(data_t13ns.count == 11)
-      #expect(data_t13ns.count == composer_t13ns.count)
-      #expect(data_t13ns == expected_t13ns)
-      #expect(data_t13ns == composer_t13ns)
+      composer.getSubTransliterations(2, 1, &composerT13ns)
+      #expect(dataT13ns.count == 11)
+      #expect(dataT13ns.count == composerT13ns.count)
+      #expect(dataT13ns == expectedT13ns)
+      #expect(dataT13ns == composerT13ns)
     }
   }
 
   @Test func createComposerDataForHandwriting() throws {
     var command = Genmai_Commands_SessionCommand()
-    var composition_event = Genmai_Commands_SessionCommand.CompositionEvent()
-    composition_event.compositionString = "ねこ"
-    composition_event.probability = 0.9
-    command.compositionEvents.append(composition_event)
-    composition_event = Genmai_Commands_SessionCommand.CompositionEvent()
-    composition_event.compositionString = "ね二"
-    composition_event.probability = 0.1
-    command.compositionEvents.append(composition_event)
+    var compositionEvent = Genmai_Commands_SessionCommand.CompositionEvent()
+    compositionEvent.compositionString = "ねこ"
+    compositionEvent.probability = 0.9
+    command.compositionEvents.append(compositionEvent)
+    compositionEvent = Genmai_Commands_SessionCommand.CompositionEvent()
+    compositionEvent.compositionString = "ね二"
+    compositionEvent.probability = 0.1
+    command.compositionEvents.append(compositionEvent)
     composer.setCompositionsForHandwriting(command.compositionEvents)
 
     let data = composer.createComposerData()
@@ -3080,42 +3080,42 @@ private let kSora = "空"
     #expect(data.sourceText == composer.sourceText)
 
     do {  // HandwritingCompositions
-      let data_events = data.getHandwritingCompositions()
-      let composer_events = composer.getHandwritingCompositions()
-      #expect(data_events.count == 2)
-      #expect(data_events.count == composer_events.count)
-      for i in 0..<data_events.count {
-        #expect(data_events[i].compositionString == composer_events[i].compositionString)
-        #expect(data_events[i].probability == composer_events[i].probability)
+      let dataEvents = data.getHandwritingCompositions()
+      let composerEvents = composer.getHandwritingCompositions()
+      #expect(dataEvents.count == 2)
+      #expect(dataEvents.count == composerEvents.count)
+      for i in 0..<dataEvents.count {
+        #expect(dataEvents[i].compositionString == composerEvents[i].compositionString)
+        #expect(dataEvents[i].probability == composerEvents[i].probability)
       }
     }
 
     do {  // Queries for prediction
       // auto = std::pair<std::string, absl::btree_set<std::string>>
-      let (data_base, data_expanded) = data.getQueriesForPrediction()
+      let (dataBase, dataExpanded) = data.getQueriesForPrediction()
 
-      #expect(data_base == "ねこ")
-      #expect(data_expanded.count == 0)
+      #expect(dataBase == "ねこ")
+      #expect(dataExpanded.count == 0)
 
       // auto = std::pair<std::string, absl::btree_set<std::string>>
-      let (composer_base, composer_expanded) =
+      let (composerBase, composerExpanded) =
         data.getQueriesForPrediction()
-      #expect(data_base == composer_base)
-      #expect(data_expanded.count == composer_expanded.count)
-      #expect(data_expanded == composer_expanded)  // Empty
+      #expect(dataBase == composerBase)
+      #expect(dataExpanded.count == composerExpanded.count)
+      #expect(dataExpanded == composerExpanded)  // Empty
     }
   }
 
   @Test func createComposerDataForSourceText() throws {
-    let source_text = "再変換用"
-    let preedit_text = "さいへんかんよう"
-    composer.sourceText = source_text
-    composer.setPreeditTextForTestOnly(preedit_text)
+    let sourceText = "再変換用"
+    let preeditText = "さいへんかんよう"
+    composer.sourceText = sourceText
+    composer.setPreeditTextForTestOnly(preeditText)
     let data = composer.createComposerData()
     #expect(data.getInputMode() == composer.getInputMode())
     #expect(data.getStringForPreedit() == composer.getStringForPreedit())
     #expect(data.getQueryForConversion() == composer.getQueryForConversion())
-    #expect(data.getQueryForPrediction() == preedit_text)
+    #expect(data.getQueryForPrediction() == preeditText)
     #expect(data.getQueryForPrediction() == composer.getQueryForPrediction())
     #expect(data.getStringForTypeCorrection() == composer.getStringForTypeCorrection())
     #expect(data.getLength() == composer.getLength())
@@ -3123,7 +3123,7 @@ private let kSora = "空"
     #expect(data.getRawString() == composer.getRawString())
     #expect(data.getRawSubString(0, 2) == composer.getRawSubString(0, 2))
     #expect(data.getRawSubString(1, 1) == composer.getRawSubString(1, 1))
-    #expect(data.sourceText == source_text)
+    #expect(data.sourceText == sourceText)
     #expect(data.sourceText == composer.sourceText)
   }
 

@@ -6,7 +6,7 @@ import Testing
 
 @testable import GenmaiCore
 
-private final class CheckCandSizeDictionaryPredictor: PredictorInterface, @unchecked Sendable {
+private final class CheckCandSizeDictionaryPredictor: PredictorInterface {
   private let expectedCandSize: Int
 
   init(_ expectedCandSize: Int) { self.expectedCandSize = expectedCandSize }
@@ -19,7 +19,7 @@ private final class CheckCandSizeDictionaryPredictor: PredictorInterface, @unche
   func getPredictorName() -> String { "CheckCandSizeDictionaryPredictor" }
 }
 
-private final class CheckCandSizeUserHistoryPredictor: PredictorInterface, @unchecked Sendable {
+private final class CheckCandSizeUserHistoryPredictor: PredictorInterface {
   private let expectedCandSize: Int
   private let expectedCandSizeForZeroQuery: Int
 
@@ -39,7 +39,7 @@ private final class CheckCandSizeUserHistoryPredictor: PredictorInterface, @unch
   func getPredictorName() -> String { "CheckCandSizeUserHistoryPredictor" }
 }
 
-private final class NullPredictor: PredictorInterface, @unchecked Sendable {
+private final class NullPredictor: PredictorInterface {
   private let returnValue: Bool
   private(set) var predictCalled = false
 
@@ -55,7 +55,7 @@ private final class NullPredictor: PredictorInterface, @unchecked Sendable {
   func getPredictorName() -> String { "NullPredictor" }
 }
 
-private final class MockPredictor: PredictorInterface, @unchecked Sendable {
+private final class MockPredictor: PredictorInterface {
   var predictHandler: ((ConversionRequest) -> [PredictionResult])?
   var convertHandler: ((ConversionRequest) -> [PredictionResult])?
   private(set) var predictCount = 0

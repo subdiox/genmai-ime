@@ -768,8 +768,8 @@ private func part4Find(_ value: String, _ results: [PredictionResult]) -> Int? {
       let kinou = Fixture.insertEntry(predictor, "きのう", "昨日")
       let kyouwaItta = Fixture.appendEntry(predictor, "きょうはいった", "今日は言った", kinou)
       kyouwaItta.entry.suggestionFreq = 2
-      kyouwaItta.entry.innerSegmentBoundary.append(encodeLengths(12, 9, 9, 6)!)
-      kyouwaItta.entry.innerSegmentBoundary.append(encodeLengths(9, 9, 6, 6)!)
+      kyouwaItta.entry.innerSegmentBoundary.append(encodedLengths(12, 9, 9, 6))
+      kyouwaItta.entry.innerSegmentBoundary.append(encodedLengths(9, 9, 6, 6))
 
       f.request.zeroQuerySuggestion = true
       let convreqZero = f.setUpInputForSuggestionWithHistory("", "きのう", "昨日", segmentsProxy)

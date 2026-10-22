@@ -38,9 +38,7 @@ public protocol UserHistorySupplementalModel: ReadingAlignmentSupplementalModel 
 }
 
 /// engine::SupplementalModelInterface default (stub) implementation.
-public final class UserHistorySupplementalModelStub: UserHistorySupplementalModel,
-  @unchecked Sendable
-{
+public final class UserHistorySupplementalModelStub: UserHistorySupplementalModel {
   public init() {}
   public func correctComposition(_ request: ConversionRequest) -> [TypeCorrectedQuery]? { nil }
   public func getReadingAlignment(_ surface: String, _ reading: String) -> [(String, String)] { [] }
@@ -271,8 +269,8 @@ private struct BytePair: Hashable {
 }
 
 /// `mozc::prediction::UserHistoryPredictor`.
-public final class UserHistoryPredictor: PredictorInterface, @unchecked Sendable {
-  // @unchecked Sendable: the storage, the revert cache and
+public final class UserHistoryPredictor: PredictorInterface {
+  // Thread safety: the storage, the revert cache and
   // `lastCommittedEntries` are thread-safe; the rest is immutable.
 
   public typealias Entry = UserHistoryStorage.Entry
@@ -784,7 +782,7 @@ public final class UserHistoryPredictor: PredictorInterface, @unchecked Sendable
       // iterated entry; mutable lookups don't change the LRU order.)
       do {
         var fps: [UInt64] = []
-        storage.forEach { fp, _ in
+        storage.forEachEntry { fp, _ in
           fps.append(fp)
           return true
         }
@@ -1115,7 +1113,7 @@ public final class UserHistoryPredictor: PredictorInterface, @unchecked Sendable
         if mtypeJoined == .noMatch || mtypeJoined == .leftEmptyMatch {
           continue
         }
-        if latestEntry == nil || latestEntry!.lastAccessTime < tmpNextEntry.lastAccessTime {
+        if latestEntry.map({ $0.lastAccessTime < tmpNextEntry.lastAccessTime }) ?? true {
           latestEntry = tmpNextEntry
         }
         if tmpNextEntry.lastAccessTime == leftLastAccessTime {
@@ -1552,7 +1550,7 @@ public final class UserHistoryPredictor: PredictorInterface, @unchecked Sendable
           continue
         }
         let tmpEntry = tmpEntrySnapshot.entry
-        if latestEntry == nil || latestEntry!.lastAccessTime < tmpEntry.lastAccessTime {
+        if latestEntry.map({ $0.lastAccessTime < tmpEntry.lastAccessTime }) ?? true {
           latestEntry = tmpEntry
         }
         if tmpEntry.lastAccessTime == leftLastAccessTime {
@@ -1652,7 +1650,7 @@ public final class UserHistoryPredictor: PredictorInterface, @unchecked Sendable
       return []
     }
 
-    return makeResults(request, kMaxCandidatesSize, 0 /* max_prediction_char_coverage */, entryQueue)
+    return makeResults(request, kMaxCandidatesSize, 0, entryQueue)  // max_prediction_char_coverage = 0
   }
 
   /// Returns true if this predictor should return results for the input.
@@ -1782,7 +1780,7 @@ public final class UserHistoryPredictor: PredictorInterface, @unchecked Sendable
 
     let entryQueue = EntryPriorityQueue()
 
-    storage.forEach { fp, entry in
+    storage.forEachEntry { fp, entry in
       // already found enough entry_queue.
       if entryQueue.size >= maxEntryQueueSize {
         return false
@@ -1844,7 +1842,7 @@ public final class UserHistoryPredictor: PredictorInterface, @unchecked Sendable
     let requestKey = request.composer().getQueryForConversion()
     let entryQueue = EntryPriorityQueue()
 
-    storage.forEach { fp, entry in
+    storage.forEachEntry { fp, entry in
       // already found enough entry_queue.
       if entryQueue.size >= maxEntryQueueSize {
         return false
@@ -2510,7 +2508,7 @@ public final class UserHistoryPredictor: PredictorInterface, @unchecked Sendable
         // last_access_time = 0.
         insert(
           request, 0, 0, key, value, "", [], [], lastAccessTime != 0,
-          0 /* false, allow_partial_match in the C++ comment */, &revertEntries)
+          0, &revertEntries)  // false, allow_partial_match in the C++ comment
         Self.insertNextEntry(UserHistoryStorage.fingerprint(key, value), &historyEntry.entry)
       }
     } else {
@@ -2530,7 +2528,7 @@ public final class UserHistoryPredictor: PredictorInterface, @unchecked Sendable
       insert(
         request, 0, 0, learningSegments.conversionSegmentsKey,
         learningSegments.conversionSegmentsValue, "", learningSegments.innerSegmentBoundary, [],
-        learningSegments.allowPartialMatch, /* allow_partial_match */
+        learningSegments.allowPartialMatch,  // allow_partial_match
         lastAccessTime, &revertEntries)
     }
 
@@ -2598,13 +2596,13 @@ public final class UserHistoryPredictor: PredictorInterface, @unchecked Sendable
       {
         insert(
           request, 0, 0, String(closeBracketKey), String(closeBracketValue), segment.description,
-          [], [], /*allow_partial_match=*/ false, lastAccessTime, &revertEntries)
+          [], [], false, lastAccessTime, &revertEntries)  // allow_partial_match = false
       } else if hasContentKv, let closeBracketKey = Util.isOpenBracket(segment.contentKey),
         let closeBracketValue = Util.isOpenBracket(segment.contentValue)
       {
         insert(
           request, 0, 0, String(closeBracketKey), String(closeBracketValue), segment.description,
-          [], [], /*allow_partial_match=*/ false, lastAccessTime, &revertEntries)
+          [], [], false, lastAccessTime, &revertEntries)  // allow_partial_match = false
       }
 
       prevValue = segment.value

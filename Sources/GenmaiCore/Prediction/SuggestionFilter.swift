@@ -8,8 +8,8 @@
 import GenmaiBase
 import GenmaiStorage
 
-/// `@unchecked Sendable`: an immutable view of the data set.
-public final class SuggestionFilter: SuggestionFilterProtocol, @unchecked Sendable {
+/// An immutable view of the data set.
+public final class SuggestionFilter: SuggestionFilterProtocol {
   private let filter: ExistenceFilter
   private let owner: AnyObject?
 

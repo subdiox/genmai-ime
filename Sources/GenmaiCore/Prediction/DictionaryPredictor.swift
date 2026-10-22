@@ -19,7 +19,7 @@ import GenmaiBase
 import GenmaiProtocol
 import Synchronization
 
-open class DictionaryPredictor: PredictorInterface, @unchecked Sendable {
+open class DictionaryPredictor: PredictorInterface {
   private struct PrevTopState: Sendable {
     var result: PredictionResult?
     var keyLength: Int32 = 0
@@ -403,14 +403,14 @@ open class DictionaryPredictor: PredictorInterface, @unchecked Sendable {
       if isRealtimeOnly {
         let kRealtimeSize = 1
         aggregateRealtime(
-          correctedRequest, kRealtimeSize, /* insert_realtime_top_from_actual_converter= */ false,
+          correctedRequest, kRealtimeSize, false,  // insert_realtime_top_from_actual_converter = false
           &correctedResults)
       } else {
         aggregateUnigram(correctedRequest, &correctedResults)
 
         let kRealtimeSize = 2
         aggregateRealtime(
-          correctedRequest, kRealtimeSize, /* insert_realtime_top_from_actual_converter= */ false,
+          correctedRequest, kRealtimeSize, false,  // insert_realtime_top_from_actual_converter = false
           &correctedResults)
 
         if !request.isZeroQuerySuggestion() {

@@ -163,15 +163,12 @@ public final class EmojiRewriter: RewriterInterface {
   private func lookUpToken(_ key: String) -> Range<Int> {
     // Search string array for key (std::equal_range, bytewise).
     let keyBytes = Array(key.utf8)
-    func tokenKey(_ i: Int) -> UnsafeRawBufferPointer {
-      stringArray.bytes(at: Int(tokens[i].keyIndex))
-    }
     // lower_bound
     var lo = tokens.startIndex
     var count = tokens.count
     while count > 0 {
       let half = count / 2
-      if Strings.compareBytes(tokenKey(lo + half), keyBytes) < 0 {
+      if Strings.compareBytes(stringArray.bytes(at: Int(tokens[lo + half].keyIndex)), keyBytes) < 0 {
         lo += half + 1
         count -= half + 1
       } else {
@@ -183,7 +180,7 @@ public final class EmojiRewriter: RewriterInterface {
     count = tokens.endIndex - lo
     while count > 0 {
       let half = count / 2
-      if Strings.compareBytes(keyBytes, tokenKey(hi + half)) < 0 {
+      if Strings.compareBytes(keyBytes, stringArray.bytes(at: Int(tokens[hi + half].keyIndex))) < 0 {
         count = half
       } else {
         hi += half + 1

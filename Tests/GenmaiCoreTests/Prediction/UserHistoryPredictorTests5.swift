@@ -83,8 +83,8 @@ private func part5RebuildRequest(
         result.key += key
         result.value += value
         result.innerSegmentBoundary.append(
-          encodeLengths(
-            key.utf8.count, value.utf8.count, contentKey.utf8.count, contentValue.utf8.count)!)
+          encodedLengths(
+            key.utf8.count, value.utf8.count, contentKey.utf8.count, contentValue.utf8.count))
       }
 
       // 佐藤さんは京都大学を卒業した
@@ -841,8 +841,8 @@ private func part5RebuildRequest(
       segmentsProxy.addCandidate(0, "昨日は")
       segmentsProxy.mutateCandidate(0, 0) {
         $0.innerSegmentBoundary = [
-          encodeLengths(
-            "きのうは".utf8.count, "昨日は".utf8.count, "きのう".utf8.count, "昨日".utf8.count)!
+          encodedLengths(
+            "きのうは".utf8.count, "昨日は".utf8.count, "きのう".utf8.count, "昨日".utf8.count)
         ]
         $0.rid = modules.getPosMatcher().getFunctionalId()
       }

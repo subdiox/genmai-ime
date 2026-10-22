@@ -7,9 +7,9 @@ import Testing
 @testable import GenmaiCore
 
 @Suite struct EnvironmentalFilterRewriterTests {
-  private static let kKanaSupplement_6_0 = "\u{1B001}"
-  private static let kKanaSupplement_10_0 = "\u{1B002}"
-  private static let kKanaExtendedA_14_0 = "\u{1B122}"
+  private static let kKanaSupplement6Dot0 = "\u{1B001}"
+  private static let kKanaSupplement10Dot0 = "\u{1B002}"
+  private static let kKanaExtendedA14Dot0 = "\u{1B122}"
 
   private static func addSegment(_ key: String, _ value: String, _ segments: Segments) {
     segments.clear()
@@ -88,7 +88,11 @@ import Testing
     }
     strings.sort { $0.bytesLess($1) }
     func stringIndex(_ s: String) -> UInt32 {
-      UInt32(strings.firstIndex(where: { $0.bytesEqual(s) })!)
+      guard let index = strings.firstIndex(where: { $0.bytesEqual(s) }) else {
+        Issue.record("\(s) is not in the string array")
+        return 0
+      }
+      return UInt32(index)
     }
 
     // Create token array.
@@ -104,7 +108,7 @@ import Testing
     }
     var tokenBytes: [UInt8] = []
     for v in tokenArray {
-      withUnsafeBytes(of: v.littleEndian) { tokenBytes.append(contentsOf: $0) }
+      tokenBytes.appendLittleEndian(v)
     }
 
     // Create string array.
@@ -302,7 +306,7 @@ import Testing
   }
 
   @Test func candidateFilterTest() {
-    let kanaValues = [Self.kKanaSupplement_6_0, Self.kKanaSupplement_10_0, Self.kKanaExtendedA_14_0]
+    let kanaValues = [Self.kKanaSupplement6Dot0, Self.kKanaSupplement10Dot0, Self.kKanaExtendedA14Dot0]
     do {
       let conversionRequest = ConversionRequest()
 
@@ -329,7 +333,7 @@ import Testing
 
       #expect(rewriter.rewrite(conversionRequest, segments))
       #expect(segments.conversionSegment(0).candidatesSize == 1)
-      #expect(segments.conversionSegment(0).candidate(0).value == Self.kKanaSupplement_10_0)
+      #expect(segments.conversionSegment(0).candidate(0).value == Self.kKanaSupplement10Dot0)
     }
 
     do {

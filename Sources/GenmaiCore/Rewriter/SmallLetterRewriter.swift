@@ -90,8 +90,8 @@ private func convertExpressions(_ input: String) -> [UInt8]? {
         value.append(c)
       }
     case .superscriptAll:
-      if isDigit(c) {
-        value.append(contentsOf: kSuperscriptTable[c]!.utf8)
+      if isDigit(c), let digit = kSuperscriptTable[c] {
+        value.append(contentsOf: digit.utf8)
         state = .superscriptDigit
       } else if let s = kSuperscriptTable[c] {
         value.append(contentsOf: s.utf8)
@@ -102,8 +102,8 @@ private func convertExpressions(_ input: String) -> [UInt8]? {
         state = .defaultState
       }
     case .subscriptAll:
-      if isDigit(c) {
-        value.append(contentsOf: kSubscriptTable[c]!.utf8)
+      if isDigit(c), let digit = kSubscriptTable[c] {
+        value.append(contentsOf: digit.utf8)
         state = .subscriptDigit
       } else if let s = kSubscriptTable[c] {
         value.append(contentsOf: s.utf8)
@@ -114,8 +114,8 @@ private func convertExpressions(_ input: String) -> [UInt8]? {
         state = .defaultState
       }
     case .superscriptDigit:
-      if isDigit(c) {
-        value.append(contentsOf: kSuperscriptTable[c]!.utf8)
+      if isDigit(c), let digit = kSuperscriptTable[c] {
+        value.append(contentsOf: digit.utf8)
       } else if c == caret {
         state = .superscriptAll
       } else if c == underscore {
@@ -125,8 +125,8 @@ private func convertExpressions(_ input: String) -> [UInt8]? {
         state = .defaultState
       }
     case .subscriptDigit:
-      if isDigit(c) {
-        value.append(contentsOf: kSubscriptTable[c]!.utf8)
+      if isDigit(c), let digit = kSubscriptTable[c] {
+        value.append(contentsOf: digit.utf8)
       } else if c == caret {
         state = .superscriptAll
       } else if c == underscore {
@@ -159,7 +159,7 @@ private func addCandidate(
     index = segment.candidatesSize
   }
 
-  let candidate = segment.insertCandidate(index)!
+  guard let candidate = segment.insertCandidate(index) else { return }
 
   candidate.key = key
   candidate.contentKey = key

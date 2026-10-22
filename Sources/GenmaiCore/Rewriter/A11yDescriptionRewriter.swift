@@ -135,7 +135,11 @@ public final class A11yDescriptionRewriter: RewriterInterface {
       buf += "ハンカクカタカナ "
     case .halfWidthKatakanaSmallLetter:
       buf += "ハンカクカタカナコモジ "
-      codepoint = halfWidthSmallKatakanaToLargeKatakana[codepoint]!
+      // `.at()` in C++: every half-width small letter has an entry.
+      guard let large = halfWidthSmallKatakanaToLargeKatakana[codepoint] else {
+        preconditionFailure("A11yDescriptionRewriter: no large katakana for U+\(String(codepoint, radix: 16))")
+      }
+      codepoint = large
     case .prolongedSoundMark:
       buf += "チョウオン "
     case .halfAlphabetLower:
@@ -166,10 +170,13 @@ public final class A11yDescriptionRewriter: RewriterInterface {
         currentType = getCharacterType(codepoint)
         if currentType == .others {
           let key = Util.codepointToUtf8(codepoint)
-          let range = descriptionMap!.equalRange(key)
-          if !range.isEmpty {
-            // Add a punctuation for better Talkback result.
-            buf += "。" + descriptionMap![range.lowerBound].value
+          // The rewriter is only available with a description map (see capability()).
+          if let descriptionMap {
+            let range = descriptionMap.equalRange(key)
+            if !range.isEmpty {
+              // Add a punctuation for better Talkback result.
+              buf += "。" + descriptionMap[range.lowerBound].value
+            }
           }
           continue
         }

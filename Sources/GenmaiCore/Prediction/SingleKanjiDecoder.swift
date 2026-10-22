@@ -6,7 +6,7 @@
 import GenmaiBase
 import GenmaiProtocol
 
-open class SingleKanjiDecoder: @unchecked Sendable {
+open class SingleKanjiDecoder {
   private let singleKanjiDictionary: SingleKanjiDictionary
   private let generalSymbolId: UInt16
 

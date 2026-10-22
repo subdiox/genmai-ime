@@ -7,13 +7,14 @@
 //   pointers, so identity is kept.
 // - `Table` is a final class shared by reference (std::shared_ptr<const Table>
 //   in C++). It is mutated only while it is being built; afterwards it is used
-//   read-only, hence `@unchecked Sendable`.
+//   read-only. Its state is kept in a `Mutex` so that it is `Sendable`.
 // - TableManager's cache key is a struct of the four values that C++ hashes
 //   with absl::HashOf.
 
 import Foundation
 import GenmaiBase
 import GenmaiProtocol
+import Synchronization
 
 /// This is a bitmap representing Entry's additional attributes.
 public struct TableAttributes: OptionSet, Sendable, Hashable, CustomStringConvertible {
@@ -37,7 +38,7 @@ public struct TableAttributes: OptionSet, Sendable, Hashable, CustomStringConver
   public var description: String { String(rawValue) }
 }
 
-public final class Entry: @unchecked Sendable {
+public final class Entry: Sendable {
   public let input: String
   public let result: String
   public let pending: String
@@ -138,20 +139,118 @@ private func lowerAscii(_ input: some StringProtocol) -> String {
   return s
 }
 
-public final class Table: @unchecked Sendable {
-  private let entries = Trie<Entry>()
-  private var specialKeyMap = SpecialKeyMap()
+/// The mutable state of a `Table`, guarded by its lock.
+private struct TableState {
+  let entries = Trie<Entry>()
+  var specialKeyMap = SpecialKeyMap()
+  /// If false, input alphabet characters are normalized to lower
+  /// characters.  The default value is false.
+  var caseSensitive = false
+
+  /// Return true if adding the input-pending pair makes a loop of
+  /// conversion rules.
+  func isLoopingEntry(_ input: some StringProtocol, _ pending: some StringProtocol) -> Bool {
+    if input.isEmpty || pending.isEmpty {
+      return false
+    }
+
+    var key = String(pending)
+    repeat {
+      // If input is a prefix of key, it should be looping.
+      // (ex. input="a", pending="abc").
+      if key.hasBytePrefix(input) {
+        return true
+      }
+
+      var keyLength = 0
+      var fixed = false
+      guard let entry = lookUpPrefix(key, &keyLength, &fixed) else {
+        return false
+      }
+      key = entry.pending + ComposerBytes.substr(key, keyLength)
+    } while !key.isEmpty
+
+    return false
+  }
+
+  /// Adds one rule (`AddRuleWithAttributes` without the `NEW_CHUNK` companion
+  /// rule, which the caller adds first).
+  mutating func addRule(
+    _ escapedInput: some StringProtocol, _ output: some StringProtocol,
+    _ escapedPending: some StringProtocol, _ attributes: TableAttributes
+  ) -> Entry? {
+    let kMaxSize = 300
+    if escapedInput.utf8.count >= kMaxSize || output.utf8.count >= kMaxSize
+      || escapedPending.utf8.count >= kMaxSize
+    {
+      GenmaiLog.error("Invalid input/output/pending")
+      return nil
+    }
+
+    let input = specialKeyMap.register(escapedInput)
+    let pending = specialKeyMap.register(escapedPending)
+    if isLoopingEntry(input, pending) {
+      GenmaiLog.warning(
+        "Entry \(input) \(output) \(pending) is removed, since the rule is looping")
+      return nil
+    }
+
+    let entry = Entry(input, String(output), pending, attributes)
+    entries.addEntry(input, entry)
+
+    // Check if the input has a large capital character.
+    // Invisible character is exception.
+    if !caseSensitive {
+      let trimedInput = deleteSpecialKeys(input)
+      for scalar in trimedInput.unicodeScalars {
+        let codepoint = scalar.value
+        if 0x41 <= codepoint && codepoint <= 0x5A {  // 'A' <= codepoint <= 'Z'
+          caseSensitive = true
+          break
+        }
+      }
+    }
+    return entry
+  }
+
+  /// `keyLength` is in bytes.
+  func lookUpPrefix(_ input: some StringProtocol, _ keyLength: inout Int, _ fixed: inout Bool)
+    -> Entry?
+  {
+    var entry: Entry? = nil
+    if caseSensitive {
+      _ = entries.lookUpPrefix(input, &entry, &keyLength, &fixed)
+    } else {
+      _ = entries.lookUpPrefix(lowerAscii(input), &entry, &keyLength, &fixed)
+    }
+    return entry
+  }
+}
+
+public final class Table: Sendable {
+  private let state: Mutex<TableState>
 
   /// If false, input alphabet characters are normalized to lower
   /// characters.  The default value is false.
-  public var caseSensitive = false
+  public var caseSensitive: Bool {
+    get { state.withLock { $0.caseSensitive } }
+    set { state.withLock { $0.caseSensitive = newValue } }
+  }
 
   public init() {
+    var initial = TableState()
     // Add predefined special keys.
-    _ = specialKeyMap.register("{?}")  // toggle
-    _ = specialKeyMap.register("{*}")  // internal state
-    _ = specialKeyMap.register("{<}")  // rewind
-    _ = specialKeyMap.register("{!}")  // timeout
+    _ = initial.specialKeyMap.register("{?}")  // toggle
+    _ = initial.specialKeyMap.register("{*}")  // internal state
+    _ = initial.specialKeyMap.register("{<}")  // rewind
+    _ = initial.specialKeyMap.register("{!}")  // timeout
+    state = Mutex(initial)
+  }
+
+  /// `entry == nullptr || (entry->result() == result && entry->pending().empty())`.
+  private static func isMissingOrSimpleRule(_ entry: Entry?, _ result: String) -> Bool {
+    guard let entry else { return true }
+    return entry.result == result && entry.pending.isEmpty
   }
 
   @discardableResult
@@ -236,7 +335,7 @@ public final class Table: @unchecked Sendable {
 
     // Comma / Kuten
     entry = lookUp(",")
-    if entry == nil || (entry!.result == kKuten && entry!.pending.isEmpty) {
+    if Self.isMissingOrSimpleRule(entry, kKuten) {
       if punctuationMethod == .commaPeriod || punctuationMethod == .commaKuten {
         addRule(",", kComma, "")
       } else {
@@ -246,7 +345,7 @@ public final class Table: @unchecked Sendable {
 
     // Period / Touten
     entry = lookUp(".")
-    if entry == nil || (entry!.result == kTouten && entry!.pending.isEmpty) {
+    if Self.isMissingOrSimpleRule(entry, kTouten) {
       if punctuationMethod == .commaPeriod || punctuationMethod == .toutenPeriod {
         addRule(".", kPeriod, "")
       } else {
@@ -259,7 +358,7 @@ public final class Table: @unchecked Sendable {
 
     // Slash / Middle dot
     entry = lookUp("/")
-    if entry == nil || (entry!.result == kMiddleDot && entry!.pending.isEmpty) {
+    if Self.isMissingOrSimpleRule(entry, kMiddleDot) {
       if symbolMethod == .squareBracketSlash || symbolMethod == .cornerBracketSlash {
         addRule("/", kSlash, "")
       } else {
@@ -269,7 +368,7 @@ public final class Table: @unchecked Sendable {
 
     // Square open bracket / Corner open bracket
     entry = lookUp("[")
-    if entry == nil || (entry!.result == kCornerOpen && entry!.pending.isEmpty) {
+    if Self.isMissingOrSimpleRule(entry, kCornerOpen) {
       if symbolMethod == .cornerBracketMiddleDot || symbolMethod == .cornerBracketSlash {
         addRule("[", kCornerOpen, "")
       } else {
@@ -279,7 +378,7 @@ public final class Table: @unchecked Sendable {
 
     // Square close bracket / Corner close bracket
     entry = lookUp("]")
-    if entry == nil || (entry!.result == kCornerClose && entry!.pending.isEmpty) {
+    if Self.isMissingOrSimpleRule(entry, kCornerClose) {
       if symbolMethod == .cornerBracketMiddleDot || symbolMethod == .cornerBracketSlash {
         addRule("]", kCornerClose, "")
       } else {
@@ -298,27 +397,10 @@ public final class Table: @unchecked Sendable {
   /// Return true if adding the input-pending pair makes a loop of
   /// conversion rules.
   public func isLoopingEntry(_ input: some StringProtocol, _ pending: some StringProtocol) -> Bool {
-    if input.isEmpty || pending.isEmpty {
-      return false
-    }
-
-    var key = String(pending)
-    repeat {
-      // If input is a prefix of key, it should be looping.
-      // (ex. input="a", pending="abc").
-      if key.hasBytePrefix(input) {
-        return true
-      }
-
-      var keyLength = 0
-      var fixed = false
-      guard let entry = lookUpPrefix(key, &keyLength, &fixed) else {
-        return false
-      }
-      key = entry.pending + ComposerBytes.substr(key, keyLength)
-    } while !key.isEmpty
-
-    return false
+    // (The lock's region checking needs `Sendable` arguments.)
+    let input = String(input)
+    let pending = String(pending)
+    return state.withLock { $0.isLoopingEntry(input, pending) }
   }
 
   @discardableResult
@@ -340,38 +422,10 @@ public final class Table: @unchecked Sendable {
       addRuleWithAttributes(additionalInput, output, escapedPending, .noTableAttribute)
     }
 
-    let kMaxSize = 300
-    if escapedInput.utf8.count >= kMaxSize || output.utf8.count >= kMaxSize
-      || escapedPending.utf8.count >= kMaxSize
-    {
-      GenmaiLog.error("Invalid input/output/pending")
-      return nil
-    }
-
-    let input = specialKeyMap.register(escapedInput)
-    let pending = specialKeyMap.register(escapedPending)
-    if isLoopingEntry(input, pending) {
-      GenmaiLog.warning(
-        "Entry \(input) \(output) \(pending) is removed, since the rule is looping")
-      return nil
-    }
-
-    let entry = Entry(input, String(output), pending, attributes)
-    entries.addEntry(input, entry)
-
-    // Check if the input has a large capital character.
-    // Invisible character is exception.
-    if !caseSensitive {
-      let trimedInput = deleteSpecialKeys(input)
-      for scalar in trimedInput.unicodeScalars {
-        let codepoint = scalar.value
-        if 0x41 <= codepoint && codepoint <= 0x5A {  // 'A' <= codepoint <= 'Z'
-          caseSensitive = true
-          break
-        }
-      }
-    }
-    return entry
+    let escapedInput = String(escapedInput)
+    let output = String(output)
+    let escapedPending = String(escapedPending)
+    return state.withLock { $0.addRule(escapedInput, output, escapedPending, attributes) }
   }
 
   public func deleteRule(_ input: some StringProtocol) {
@@ -383,7 +437,8 @@ public final class Table: @unchecked Sendable {
     //     - This method is not used.
     //     - This method has no tests.
     //     - This method is private scope.
-    entries.deleteEntry(input)
+    let input = String(input)
+    state.withLock { _ = $0.entries.deleteEntry(input) }
   }
 
   @discardableResult
@@ -426,10 +481,13 @@ public final class Table: @unchecked Sendable {
   }
 
   public func lookUp(_ input: some StringProtocol) -> Entry? {
-    if caseSensitive {
-      return entries.lookUp(input)
-    } else {
-      return entries.lookUp(lowerAscii(input))
+    let input = String(input)
+    return state.withLock { state in
+      if state.caseSensitive {
+        return state.entries.lookUp(input)
+      } else {
+        return state.entries.lookUp(lowerAscii(input))
+      }
     }
   }
 
@@ -437,29 +495,30 @@ public final class Table: @unchecked Sendable {
   public func lookUpPrefix(_ input: some StringProtocol, _ keyLength: inout Int, _ fixed: inout Bool)
     -> Entry?
   {
-    var entry: Entry? = nil
-    if caseSensitive {
-      _ = entries.lookUpPrefix(input, &entry, &keyLength, &fixed)
-    } else {
-      _ = entries.lookUpPrefix(lowerAscii(input), &entry, &keyLength, &fixed)
-    }
-    return entry
+    let input = String(input)
+    return state.withLock { $0.lookUpPrefix(input, &keyLength, &fixed) }
   }
 
   public func lookUpPredictiveAll(_ input: some StringProtocol, _ results: inout [Entry]) {
-    if caseSensitive {
-      entries.lookUpPredictiveAll(input, &results)
-    } else {
-      entries.lookUpPredictiveAll(lowerAscii(input), &results)
+    let input = String(input)
+    state.withLock { state in
+      if state.caseSensitive {
+        state.entries.lookUpPredictiveAll(input, &results)
+      } else {
+        state.entries.lookUpPredictiveAll(lowerAscii(input), &results)
+      }
     }
   }
 
   // TODO(komatsu): Delete this function.
   public func hasSubRules(_ input: some StringProtocol) -> Bool {
-    if caseSensitive {
-      return entries.hasSubTrie(input)
-    } else {
-      return entries.hasSubTrie(lowerAscii(input))
+    let input = String(input)
+    return state.withLock { state in
+      if state.caseSensitive {
+        return state.entries.hasSubTrie(input)
+      } else {
+        return state.entries.hasSubTrie(lowerAscii(input))
+      }
     }
   }
 
@@ -486,20 +545,20 @@ public final class Table: @unchecked Sendable {
   /// Parses special key strings escaped with the pair of "{" and "}"
   /// and returns the parsed string.
   public func parseSpecialKey(_ input: some StringProtocol) -> String {
-    specialKeyMap.parse(input)
+    state.withLock { $0.specialKeyMap.parse(input) }
   }
 
   /// Return the default table.
   public static func getDefaultTable() -> Table {
-    sharedDefaultTable
+    sharedDefault
   }
 
   /// Return the default shared table.
   public static func getSharedDefaultTable() -> Table {
-    sharedDefaultTable
+    sharedDefault
   }
 
-  private static let sharedDefaultTable = Table()
+  private static let sharedDefault = Table()
 }
 
 public final class TableManager {

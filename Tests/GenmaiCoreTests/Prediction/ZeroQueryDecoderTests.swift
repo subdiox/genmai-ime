@@ -23,8 +23,12 @@ private func encodeBoundary(_ keyLen: UInt8, _ valueLen: UInt8) -> UInt32 {
 /// absl::FromCivil(absl::CivilSecond(y, m, d, h, 0, 0), absl::UTCTimeZone()).
 private func utcDate(_ y: Int, _ m: Int, _ d: Int, _ h: Int) -> Date {
   var calendar = Calendar(identifier: .gregorian)
-  calendar.timeZone = TimeZone(identifier: "UTC")!
-  return calendar.date(from: DateComponents(year: y, month: m, day: d, hour: h))!
+  calendar.timeZone = .gmt
+  guard let date = calendar.date(from: DateComponents(year: y, month: m, day: d, hour: h)) else {
+    Issue.record("invalid date \(y)-\(m)-\(d) \(h):00")
+    return Date(timeIntervalSince1970: 0)
+  }
+  return date
 }
 
 private let kTestZeroQueryTokenArray: [UInt8] = DataManagerTestSupport.cBytes(

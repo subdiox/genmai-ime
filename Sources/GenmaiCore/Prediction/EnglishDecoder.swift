@@ -2,7 +2,7 @@
 
 import GenmaiBase
 
-public final class EnglishDecoder: @unchecked Sendable {
+public final class EnglishDecoder {
   private let modules: any PredictionModules
   private let dictionary: any DictionaryInterface
   private let zipCodeId: UInt16

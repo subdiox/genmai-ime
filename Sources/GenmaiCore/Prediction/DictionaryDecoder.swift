@@ -40,7 +40,7 @@ final class PredictiveBigramLookupCallback: PredictiveLookupCallback {
   }
 }
 
-public final class DictionaryDecoder: @unchecked Sendable {
+public final class DictionaryDecoder {
   private let modules: any PredictionModules
   private let dictionary: any DictionaryInterface
   private let kanjiNumberId: UInt16

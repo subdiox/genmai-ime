@@ -9,17 +9,17 @@ import Testing
 
 @testable import GenmaiCore
 
-private let U = Attribute.unigram
-private let B = Attribute.bigram
-private let R = Attribute.realtimeConversion
-private let RT = Attribute.realtimeTop
-private let P = Attribute.partiallyKeyConsumed
-private let S = Attribute.suffixDictionary
-private let TC = Attribute.typingCorrection
-private let SK = Attribute.singleKanji
-private let NONE = Token.Attribute.none
-private let SPELL = Token.Attribute.spellingCorrection
-private let USERDIC = Token.Attribute.userDictionary
+private let kUnigram = Attribute.unigram
+private let kBigram = Attribute.bigram
+private let kRealtime = Attribute.realtimeConversion
+private let kRealtimeTop = Attribute.realtimeTop
+private let kPartial = Attribute.partiallyKeyConsumed
+private let kSuffix = Attribute.suffixDictionary
+private let kTypingCorrection = Attribute.typingCorrection
+private let kSingleKanji = Attribute.singleKanji
+private let kNoAttribute = Token.Attribute.none
+private let kSpellingCorrection = Token.Attribute.spellingCorrection
+private let kUserDictionary = Token.Attribute.userDictionary
 
 @Suite(
   .enabled(if: predictionMockDataAvailable, "mock_genmai.data is missing"), .scopedConfigEnvironment)
@@ -63,9 +63,9 @@ struct DictionaryPredictorTest {
 
     do {
       var results = [
-        DPT.createResult4("ばっく", "バッグ", U, SPELL),
-        DPT.createResult4("ばっぐ", "バッグ", U, NONE),
-        DPT.createResult4("ばっく", "バッく", U, NONE),
+        DPT.createResult4("ばっく", "バッグ", kUnigram, kSpellingCorrection),
+        DPT.createResult4("ばっぐ", "バッグ", kUnigram, kNoAttribute),
+        DPT.createResult4("ばっく", "バッく", kUnigram, kNoAttribute),
       ]
       DictionaryPredictor.removeMissSpelledCandidates(reqLen1, &results)
 
@@ -73,27 +73,27 @@ struct DictionaryPredictorTest {
       #expect(results[0].removed)
       #expect(!results[1].removed)
       #expect(results[2].removed)
-      #expect(results[0].getPredictionTypesForTesting() == U)
-      #expect(results[1].getPredictionTypesForTesting() == U)
-      #expect(results[2].getPredictionTypesForTesting() == U)
+      #expect(results[0].getPredictionTypesForTesting() == kUnigram)
+      #expect(results[1].getPredictionTypesForTesting() == kUnigram)
+      #expect(results[2].getPredictionTypesForTesting() == kUnigram)
     }
     do {
       var results = [
-        DPT.createResult4("ばっく", "バッグ", U, SPELL),
-        DPT.createResult4("てすと", "テスト", U, NONE),
+        DPT.createResult4("ばっく", "バッグ", kUnigram, kSpellingCorrection),
+        DPT.createResult4("てすと", "テスト", kUnigram, kNoAttribute),
       ]
       DictionaryPredictor.removeMissSpelledCandidates(reqLen1, &results)
 
       try #require(results.count == 2)
       #expect(!results[0].removed)
       #expect(!results[1].removed)
-      #expect(results[0].getPredictionTypesForTesting() == U)
-      #expect(results[1].getPredictionTypesForTesting() == U)
+      #expect(results[0].getPredictionTypesForTesting() == kUnigram)
+      #expect(results[1].getPredictionTypesForTesting() == kUnigram)
     }
     do {
       var results = [
-        DPT.createResult4("ばっく", "バッグ", U, SPELL),
-        DPT.createResult4("ばっく", "バック", U, NONE),
+        DPT.createResult4("ばっく", "バッグ", kUnigram, kSpellingCorrection),
+        DPT.createResult4("ばっく", "バック", kUnigram, kNoAttribute),
       ]
       DictionaryPredictor.removeMissSpelledCandidates(reqLen1, &results)
 
@@ -103,16 +103,16 @@ struct DictionaryPredictorTest {
     }
     do {
       var results = [
-        DPT.createResult4("ばっく", "バッグ", U, SPELL),
-        DPT.createResult4("ばっく", "バック", U, NONE),
+        DPT.createResult4("ばっく", "バッグ", kUnigram, kSpellingCorrection),
+        DPT.createResult4("ばっく", "バック", kUnigram, kNoAttribute),
       ]
       DictionaryPredictor.removeMissSpelledCandidates(reqLen3, &results)
 
       try #require(results.count == 2)
       #expect(!results[0].removed)
       #expect(results[1].removed)
-      #expect(results[0].getPredictionTypesForTesting() == U)
-      #expect(results[1].getPredictionTypesForTesting() == U)
+      #expect(results[0].getPredictionTypesForTesting() == kUnigram)
+      #expect(results[1].getPredictionTypesForTesting() == kUnigram)
     }
   }
 
@@ -128,10 +128,10 @@ struct DictionaryPredictorTest {
         result.lid = UInt16(lid)
         let c1 = connector.getTransitionCost(UInt16(rid), result.lid)
         let c2 = connector.getTransitionCost(0, result.lid)
-        result.attributes = S
+        result.attributes = kSuffix
         #expect(dp.predictor.getLMCost(result, rid) == c1 + result.wcost)
 
-        result.attributes = R
+        result.attributes = kRealtime
         #expect(dp.predictor.getLMCost(result, rid) == min(c1, c2) + result.wcost)
       }
     }
@@ -141,9 +141,9 @@ struct DictionaryPredictorTest {
     let dp = try MockDataAndPredictor()
 
     var results = [
-      DPT.createResult4("てすと", "てすと", U, NONE),
-      DPT.createResult4("てすと", "テスト", U, NONE),
-      DPT.createResult4("てすとてすと", "テストテスト", U, NONE),
+      DPT.createResult4("てすと", "てすと", kUnigram, kNoAttribute),
+      DPT.createResult4("てすと", "テスト", kUnigram, kNoAttribute),
+      DPT.createResult4("てすとてすと", "テストテスト", kUnigram, kNoAttribute),
     ]
 
     let convreq = f.createConversionRequest(.prediction, "てすと")
@@ -166,7 +166,7 @@ struct DictionaryPredictorTest {
     do {
       // Cost of words in user dictionary should be decreased.
       let kOriginalWordCost = 10000
-      var results = [DPT.createResult5(kAikaHiragana, kAikaKanji, kOriginalWordCost, U, USERDIC)]
+      var results = [DPT.createResult5(kAikaHiragana, kAikaKanji, kOriginalWordCost, kUnigram, kUserDictionary)]
 
       let convreq = f.createConversionRequest(.prediction, kAikaHiragana)
       dp.predictor.setPredictionCostForMixedConversion(convreq, &results)
@@ -180,7 +180,7 @@ struct DictionaryPredictorTest {
     do {
       // Cost of words in user dictionary should not be decreased to below 1.
       let kOriginalWordCost = 10
-      var results = [DPT.createResult5(kAikaHiragana, kAikaKanji, kOriginalWordCost, U, USERDIC)]
+      var results = [DPT.createResult5(kAikaHiragana, kAikaKanji, kOriginalWordCost, kUnigram, kUserDictionary)]
 
       let convreq = f.createConversionRequest(.prediction, kAikaHiragana)
       dp.predictor.setPredictionCostForMixedConversion(convreq, &results)
@@ -194,7 +194,7 @@ struct DictionaryPredictorTest {
     do {
       // Cost of general symbols should not be decreased.
       let kOriginalWordCost = 10000
-      var results = [DPT.createResult5(kAikaHiragana, kAikaKanji, kOriginalWordCost, U, USERDIC)]
+      var results = [DPT.createResult5(kAikaHiragana, kAikaKanji, kOriginalWordCost, kUnigram, kUserDictionary)]
       try #require(results.count == 1)
       results[0].lid = dp.posMatcher.getGeneralSymbolId()
       results[0].rid = results[0].lid
@@ -210,7 +210,7 @@ struct DictionaryPredictorTest {
     do {
       // Cost of words not in user dictionary should not be decreased.
       let kOriginalWordCost = 10000
-      var results = [DPT.createResult5(kAikaHiragana, kAikaKanji, kOriginalWordCost, U, NONE)]
+      var results = [DPT.createResult5(kAikaHiragana, kAikaKanji, kOriginalWordCost, kUnigram, kNoAttribute)]
 
       let convreq = f.createConversionRequest(.prediction, kAikaHiragana)
       dp.predictor.setPredictionCostForMixedConversion(convreq, &results)
@@ -225,8 +225,8 @@ struct DictionaryPredictorTest {
     let dp = try MockDataAndPredictor()
     dp.aggregator.aggregateResultsForDesktopHandler = { _ in
       [
-        DPT.createResult5("あぼがど", "アボカド", 500, U, SPELL),
-        DPT.createResult5("あぼがど", "アボガド", 500, U, NONE),
+        DPT.createResult5("あぼがど", "アボカド", 500, kUnigram, kSpellingCorrection),
+        DPT.createResult5("あぼがど", "アボガド", 500, kUnigram, kNoAttribute),
       ]
     }
 
@@ -240,8 +240,8 @@ struct DictionaryPredictorTest {
     let dp = try MockDataAndPredictor()
     dp.aggregator.aggregateResultsForDesktopHandler = { _ in
       [
-        DPT.createResult5("あぼがど", "アボカド", 500, U, SPELL),
-        DPT.createResult5("あぼがど", "アボガド", 500, U, NONE),
+        DPT.createResult5("あぼがど", "アボカド", 500, kUnigram, kSpellingCorrection),
+        DPT.createResult5("あぼがど", "アボガド", 500, kUnigram, kNoAttribute),
       ]
     }
 
@@ -255,13 +255,13 @@ struct DictionaryPredictorTest {
     let dp = try MockDataAndPredictor()
     dp.aggregator.aggregateResultsForMixedConversionHandler = { _ in
       [
-        DPT.createResult5("", "", 500, B, NONE),
-        DPT.createResult5("いん", "院", 600, B, NONE),
-        DPT.createResult5("せい", "生", 600, B, NONE),
-        DPT.createResult5("やきゅう", "野球", 1000, B, NONE),
-        DPT.createResult5("じゅけん", "受験", 1000, B, NONE),
-        DPT.createResult5("にゅうし", "入試", 1000, B, NONE),
-        DPT.createResult5("にゅうしせんたー", "入試センター", 2000, B, NONE),
+        DPT.createResult5("", "", 500, kBigram, kNoAttribute),
+        DPT.createResult5("いん", "院", 600, kBigram, kNoAttribute),
+        DPT.createResult5("せい", "生", 600, kBigram, kNoAttribute),
+        DPT.createResult5("やきゅう", "野球", 1000, kBigram, kNoAttribute),
+        DPT.createResult5("じゅけん", "受験", 1000, kBigram, kNoAttribute),
+        DPT.createResult5("にゅうし", "入試", 1000, kBigram, kNoAttribute),
+        DPT.createResult5("にゅうしせんたー", "入試センター", 2000, kBigram, kNoAttribute),
       ]
     }
 
@@ -280,10 +280,10 @@ struct DictionaryPredictorTest {
     let dp = try MockDataAndPredictor()
     dp.aggregator.aggregateResultsForMixedConversionHandler = { _ in
       [
-        DPT.createResult5("にゅうし", "入試", 3000, B, NONE),
-        DPT.createResult5("にゅうしせんたー", "入試センター", 4000, B, NONE),
-        DPT.createResult5("にゅうしせんたーしけんたいさく", "入試センター試験対策", 5000, B, NONE),
-        DPT.createResult5("にゅうし", "乳歯", 2000, U, NONE),
+        DPT.createResult5("にゅうし", "入試", 3000, kBigram, kNoAttribute),
+        DPT.createResult5("にゅうしせんたー", "入試センター", 4000, kBigram, kNoAttribute),
+        DPT.createResult5("にゅうしせんたーしけんたいさく", "入試センター試験対策", 5000, kBigram, kNoAttribute),
+        DPT.createResult5("にゅうし", "乳歯", 2000, kUnigram, kNoAttribute),
       ]
     }
 
@@ -318,7 +318,7 @@ struct DictionaryPredictorTest {
 
     do {
       // PREFIX: consumed_key_size
-      var result = DPT.createResult5("てす", "てす", 50, P, NONE)
+      var result = DPT.createResult5("てす", "てす", 50, kPartial, kNoAttribute)
       result.consumedKeySize = UInt32(Util.charsLen("てす"))
 
       let c = try #require(getTopResult(result))
@@ -328,7 +328,7 @@ struct DictionaryPredictorTest {
     }
     do {
       // REALTIME_TOP
-      let result = DPT.createResult5("てすと", "リアルタイムトップ", 100, RT | R, NONE)
+      let result = DPT.createResult5("てすと", "リアルタイムトップ", 100, kRealtimeTop | kRealtime, kNoAttribute)
 
       let c = try #require(getTopResult(result))
       #expect(c.value == "リアルタイムトップ")
@@ -336,7 +336,7 @@ struct DictionaryPredictorTest {
     }
     do {
       // REALTIME: inner_segment_boundary
-      var result = DPT.createResult5("てすと", "リアルタイム", 100, R, NONE)
+      var result = DPT.createResult5("てすと", "リアルタイム", 100, kRealtime, kNoAttribute)
       result.innerSegmentBoundary = buildInnerSegmentBoundary(
         [
           ("てす".utf8.count, "リアル".utf8.count, "て".utf8.count, "リア".utf8.count),
@@ -349,7 +349,7 @@ struct DictionaryPredictorTest {
     }
     do {
       // SPELLING_CORRECTION
-      let result = DPT.createResult5("てすと", "SPELLING_CORRECTION", 300, U, SPELL)
+      let result = DPT.createResult5("てすと", "SPELLING_CORRECTION", 300, kUnigram, kSpellingCorrection)
 
       let c = try #require(getTopResult(result))
       #expect(c.value == "SPELLING_CORRECTION")
@@ -357,7 +357,7 @@ struct DictionaryPredictorTest {
     }
     do {
       // TYPING_CORRECTION
-      let result = DPT.createResult5("てすと", "TYPING_CORRECTION", 300, TC, NONE)
+      let result = DPT.createResult5("てすと", "TYPING_CORRECTION", 300, kTypingCorrection, kNoAttribute)
 
       let c = try #require(getTopResult(result))
       #expect(c.value == "TYPING_CORRECTION")
@@ -365,7 +365,7 @@ struct DictionaryPredictorTest {
     }
     do {
       // USER_DICTIONARY
-      let result = DPT.createResult5("てすと", "ユーザー辞書", 300, U, USERDIC)
+      let result = DPT.createResult5("てすと", "ユーザー辞書", 300, kUnigram, kUserDictionary)
 
       let c = try #require(getTopResult(result))
       #expect(c.value == "ユーザー辞書")
@@ -375,7 +375,7 @@ struct DictionaryPredictorTest {
     }
     do {
       // removed
-      var result = DPT.createResult5("てすと", "REMOVED", 300, B, NONE)
+      var result = DPT.createResult5("てすと", "REMOVED", 300, kBigram, kNoAttribute)
       result.removed = true
 
       #expect(getTopResult(result) == nil)
@@ -386,14 +386,14 @@ struct DictionaryPredictorTest {
     let dp = try MockDataAndPredictor()
 
     var results = [
-      DPT.createResult4("a0", "A0", R, NONE),
-      DPT.createResult4("a1", "A1", R, NONE),
-      DPT.createResult4("a2", "A2", R, NONE),
-      DPT.createResult4("a3", "A3", R, NONE),
-      DPT.createResult4("a0", "A0", S, NONE),
-      DPT.createResult4("a1", "A1", S, NONE),
-      DPT.createResult4("a2", "A2", S, NONE),
-      DPT.createResult4("a3", "A3", S, NONE),
+      DPT.createResult4("a0", "A0", kRealtime, kNoAttribute),
+      DPT.createResult4("a1", "A1", kRealtime, kNoAttribute),
+      DPT.createResult4("a2", "A2", kRealtime, kNoAttribute),
+      DPT.createResult4("a3", "A3", kRealtime, kNoAttribute),
+      DPT.createResult4("a0", "A0", kSuffix, kNoAttribute),
+      DPT.createResult4("a1", "A1", kSuffix, kNoAttribute),
+      DPT.createResult4("a2", "A2", kSuffix, kNoAttribute),
+      DPT.createResult4("a3", "A3", kSuffix, kNoAttribute),
     ]
 
     results.shuffle()
@@ -418,7 +418,7 @@ struct DictionaryPredictorTest {
       results[i].value = String(UnicodeScalar(UInt8(ascii: "A") + UInt8(i)))
       results[i].wcost = i
       results[i].cost = i + 1000
-      results[i].setTypesAndTokenAttributes(R, NONE)
+      results[i].setTypesAndTokenAttributes(kRealtime, kNoAttribute)
     }
     results.shuffle()
 
@@ -443,7 +443,7 @@ struct DictionaryPredictorTest {
       results[i].key = String(UnicodeScalar(UInt8(ascii: "a") + UInt8(i)))
       results[i].value = String(UnicodeScalar(UInt8(ascii: "A") + UInt8(i)))
       results[i].wcost = i
-      results[i].setTypesAndTokenAttributes(R, NONE)
+      results[i].setTypesAndTokenAttributes(kRealtime, kNoAttribute)
       if i < kLowCostCandidateSize {
         results[i].cost = i + 1000
       } else {
@@ -471,8 +471,8 @@ struct DictionaryPredictorTest {
 
     dp.aggregator.aggregateResultsForMixedConversionHandler = { _ in
       [
-        DPT.createResult5("ふぃるたーたいしょう", "フィルター対象", 100, U, NONE),
-        DPT.createResult5("ふぃるたーたいしょう", "フィルター大将", 200, U, NONE),
+        DPT.createResult5("ふぃるたーたいしょう", "フィルター対象", 100, kUnigram, kNoAttribute),
+        DPT.createResult5("ふぃるたーたいしょう", "フィルター大将", 200, kUnigram, kNoAttribute),
       ]
     }
 
@@ -499,8 +499,8 @@ struct DictionaryPredictorTest {
 
     dp.aggregator.aggregateResultsForDesktopHandler = { _ in
       [
-        DPT.createResult5("ふぃるたーたいしょう", "フィルター対象", 100, U, NONE),
-        DPT.createResult5("ふぃるたーたいしょう", "フィルター大将", 200, U, NONE),
+        DPT.createResult5("ふぃるたーたいしょう", "フィルター対象", 100, kUnigram, kNoAttribute),
+        DPT.createResult5("ふぃるたーたいしょう", "フィルター大将", 200, kUnigram, kNoAttribute),
       ]
     }
 
@@ -516,9 +516,9 @@ struct DictionaryPredictorTest {
     var aggregated: [PredictionResult] = []
     for i in 0..<30 {
       // Exact entries
-      aggregated.append(DPT.createResult5("てすと", "\(i)テストE", 5000 + i, U, NONE))
+      aggregated.append(DPT.createResult5("てすと", "\(i)テストE", 5000 + i, kUnigram, kNoAttribute))
       // Predictive entries
-      aggregated.append(DPT.createResult5("てすとて", "\(i)テストP", 100 + i, U, NONE))
+      aggregated.append(DPT.createResult5("てすとて", "\(i)テストP", 100 + i, kUnigram, kNoAttribute))
     }
     dp.aggregator.aggregateResultsForMixedConversionHandler = { _ in aggregated }
 
@@ -545,11 +545,11 @@ struct DictionaryPredictorTest {
     var aggregated: [PredictionResult] = []
     for i in 0..<10 {
       // Exact entries
-      aggregated.append(DPT.createResult5("かん字", "\(i)漢字E", 5000 + i, U, NONE))
+      aggregated.append(DPT.createResult5("かん字", "\(i)漢字E", 5000 + i, kUnigram, kNoAttribute))
     }
     for i in 0..<10 {
       // Keys can be longer than the segment key
-      aggregated.append(DPT.createResult5("かんじよみ", "\(i)漢字E", 5000 + i, U, NONE))
+      aggregated.append(DPT.createResult5("かんじよみ", "\(i)漢字E", 5000 + i, kUnigram, kNoAttribute))
     }
     dp.aggregator.aggregateResultsForMixedConversionHandler = { _ in aggregated }
 
@@ -567,7 +567,7 @@ struct DictionaryPredictorTest {
     // Entries for zero query
     var aggregated: [PredictionResult] = []
     for i in 0..<10 {
-      aggregated.append(DPT.createResult5("てすと", "\(i)テストS", 100, S, NONE))
+      aggregated.append(DPT.createResult5("てすと", "\(i)テストS", 100, kSuffix, kNoAttribute))
     }
     dp.aggregator.aggregateResultsForMixedConversionHandler = { _ in aggregated }
 
@@ -587,18 +587,18 @@ struct DictionaryPredictorTest {
       _ key: String, _ value: String, _ wcost: Int, _ types: PredictionTypes,
       _ b: (Int, Int, Int, Int)
     ) {
-      var r = DPT.createResult5(key, value, wcost, types, NONE)
+      var r = DPT.createResult5(key, value, wcost, types, kNoAttribute)
       DPT.pushBackInnerSegmentBoundary(b.0, b.1, b.2, b.3, &r)
       aggregated.append(r)
     }
-    add("かった", "買った", 300, RT | R, (9, 9, 9, 9))
-    add("かった", "飼った", 1000, R, (9, 9, 9, 9))
-    add("かつた", "勝田", 1001, R, (9, 6, 9, 6))
-    add("かつた", "勝太", 1002, R, (9, 6, 9, 6))
-    add("かつた", "鹿田", 1003, R, (9, 6, 9, 6))
-    add("かつた", "かつた", 1004, R, (9, 9, 9, 9))
-    add("かった", "刈った", 1005, R, (9, 9, 9, 9))
-    add("かった", "勝った", 1006, R, (9, 9, 9, 9))
+    add("かった", "買った", 300, kRealtimeTop | kRealtime, (9, 9, 9, 9))
+    add("かった", "飼った", 1000, kRealtime, (9, 9, 9, 9))
+    add("かつた", "勝田", 1001, kRealtime, (9, 6, 9, 6))
+    add("かつた", "勝太", 1002, kRealtime, (9, 6, 9, 6))
+    add("かつた", "鹿田", 1003, kRealtime, (9, 6, 9, 6))
+    add("かつた", "かつた", 1004, kRealtime, (9, 9, 9, 9))
+    add("かった", "刈った", 1005, kRealtime, (9, 9, 9, 9))
+    add("かった", "勝った", 1006, kRealtime, (9, 9, 9, 9))
     dp.aggregator.aggregateResultsForMixedConversionHandler = { _ in aggregated }
 
     let convreq = f.createConversionRequest(.prediction, "かつた")
@@ -616,13 +616,13 @@ struct DictionaryPredictorTest {
       _ key: String, _ value: String, _ wcost: Int, _ types: PredictionTypes,
       _ b: (Int, Int, Int, Int)
     ) {
-      var r = DPT.createResult5(key, value, wcost, types, NONE)
+      var r = DPT.createResult5(key, value, wcost, types, kNoAttribute)
       DPT.pushBackInnerSegmentBoundary(b.0, b.1, b.2, b.3, &r)
       aggregated.append(r)
     }
-    add("かった", "買った", 1002, RT | R, (9, 9, 9, 9))
-    add("かった", "飼った", 1000, R, (9, 9, 9, 9))
-    add("かつた", "勝田", 1001, R, (9, 6, 9, 6))
+    add("かった", "買った", 1002, kRealtimeTop | kRealtime, (9, 9, 9, 9))
+    add("かった", "飼った", 1000, kRealtime, (9, 9, 9, 9))
+    add("かつた", "勝田", 1001, kRealtime, (9, 6, 9, 6))
     dp.aggregator.aggregateResultsForMixedConversionHandler = { _ in aggregated }
 
     let convreq = f.createConversionRequest(.prediction, "かった")
@@ -636,25 +636,25 @@ struct DictionaryPredictorTest {
     RequestTestUtil.fillMobileRequest(&f.request)
 
     var aggregated = [
-      DPT.createResult5("さか", "坂", 400, R, NONE),
-      DPT.createResult5("さが", "佐賀", 500, R, NONE),
-      DPT.createResult5("さか", "咲か", 2000, U, NONE),
-      DPT.createResult5("さか", "阪", 2500, U, NONE),
-      DPT.createResult5("さか", "サカ", 10000, U, NONE),
-      DPT.createResult5("さがす", "探す", 300, U, NONE),
-      DPT.createResult5("さがし", "探し", 3000, U, NONE),
-      DPT.createResult5("さかい", "堺", 800, U, NONE),
-      DPT.createResult5("さか", "坂", 9000, U, NONE),
-      DPT.createResult5("さか", "逆", 0, SK, NONE),
-      DPT.createResult5("さか", "坂", 1, SK, NONE),
-      DPT.createResult5("さか", "酒", 2, SK, NONE),
-      DPT.createResult5("さか", "栄", 3, SK, NONE),
-      DPT.createResult5("さか", "盛", 4, SK, NONE),
-      DPT.createResult5("さ", "差", 1000, SK, NONE),
-      DPT.createResult5("さ", "佐", 1001, SK, NONE),
+      DPT.createResult5("さか", "坂", 400, kRealtime, kNoAttribute),
+      DPT.createResult5("さが", "佐賀", 500, kRealtime, kNoAttribute),
+      DPT.createResult5("さか", "咲か", 2000, kUnigram, kNoAttribute),
+      DPT.createResult5("さか", "阪", 2500, kUnigram, kNoAttribute),
+      DPT.createResult5("さか", "サカ", 10000, kUnigram, kNoAttribute),
+      DPT.createResult5("さがす", "探す", 300, kUnigram, kNoAttribute),
+      DPT.createResult5("さがし", "探し", 3000, kUnigram, kNoAttribute),
+      DPT.createResult5("さかい", "堺", 800, kUnigram, kNoAttribute),
+      DPT.createResult5("さか", "坂", 9000, kUnigram, kNoAttribute),
+      DPT.createResult5("さか", "逆", 0, kSingleKanji, kNoAttribute),
+      DPT.createResult5("さか", "坂", 1, kSingleKanji, kNoAttribute),
+      DPT.createResult5("さか", "酒", 2, kSingleKanji, kNoAttribute),
+      DPT.createResult5("さか", "栄", 3, kSingleKanji, kNoAttribute),
+      DPT.createResult5("さか", "盛", 4, kSingleKanji, kNoAttribute),
+      DPT.createResult5("さ", "差", 1000, kSingleKanji, kNoAttribute),
+      DPT.createResult5("さ", "佐", 1001, kSingleKanji, kNoAttribute),
     ]
     for i in aggregated.indices {
-      if aggregated[i].attributes == SK {
+      if aggregated[i].attributes == kSingleKanji {
         aggregated[i].lid = dp.posMatcher.getGeneralSymbolId()
         aggregated[i].rid = dp.posMatcher.getGeneralSymbolId()
       } else {
@@ -682,16 +682,16 @@ struct DictionaryPredictorTest {
     RequestTestUtil.fillMobileRequest(&f.request)
 
     var aggregated = [
-      DPT.createResult5("ああ", "ああ", 5000, U, NONE),
-      DPT.createResult5("ああ", "アア", 4500, U, NONE),
-      DPT.createResult5("ああ", "吁", 0, SK, NONE),
-      DPT.createResult5("ああ", "咨", 1, SK, NONE),
-      DPT.createResult5("ああ", "噫", 2, SK, NONE),
-      DPT.createResult5("あ", "亜", 1000, SK, NONE),
-      DPT.createResult5("あ", "亞", 1001, SK, NONE),
+      DPT.createResult5("ああ", "ああ", 5000, kUnigram, kNoAttribute),
+      DPT.createResult5("ああ", "アア", 4500, kUnigram, kNoAttribute),
+      DPT.createResult5("ああ", "吁", 0, kSingleKanji, kNoAttribute),
+      DPT.createResult5("ああ", "咨", 1, kSingleKanji, kNoAttribute),
+      DPT.createResult5("ああ", "噫", 2, kSingleKanji, kNoAttribute),
+      DPT.createResult5("あ", "亜", 1000, kSingleKanji, kNoAttribute),
+      DPT.createResult5("あ", "亞", 1001, kSingleKanji, kNoAttribute),
     ]
     for i in aggregated.indices {
-      if aggregated[i].attributes == SK {
+      if aggregated[i].attributes == kSingleKanji {
         aggregated[i].lid = dp.posMatcher.getGeneralSymbolId()
         aggregated[i].rid = dp.posMatcher.getGeneralSymbolId()
       } else {
@@ -717,10 +717,10 @@ struct DictionaryPredictorTest {
     let kSize = 5
     var results: [PredictionResult] = []
     for i in 0..<kSize {
-      results.append(DPT.createResult6("test", "value\(i)", 0, i, R, NONE))
-      results.append(DPT.createResult6("test", "value\(i)", 0, kSize + i, P, NONE))
-      results.append(DPT.createResult6("test", "value\(i)", 0, 2 * kSize + i, TC, NONE))
-      results.append(DPT.createResult6("test", "value\(i)", 0, 3 * kSize + i, U, NONE))
+      results.append(DPT.createResult6("test", "value\(i)", 0, i, kRealtime, kNoAttribute))
+      results.append(DPT.createResult6("test", "value\(i)", 0, kSize + i, kPartial, kNoAttribute))
+      results.append(DPT.createResult6("test", "value\(i)", 0, 2 * kSize + i, kTypingCorrection, kNoAttribute))
+      results.append(DPT.createResult6("test", "value\(i)", 0, 3 * kSize + i, kUnigram, kNoAttribute))
     }
 
     let convreq = f.createConversionRequest(.prediction, "test")
@@ -735,13 +735,13 @@ struct DictionaryPredictorTest {
     RequestTestUtil.fillMobileRequest(&f.request)
 
     var results = [
-      DPT.createResult6("tc_key0", "tc_value0", 0, 0, TC, NONE),
-      DPT.createResult6("tc_key0", "tc_value1", 0, 1, TC, NONE),
-      DPT.createResult6("tc_key0", "tc_value2", 0, 2, TC, NONE),
-      DPT.createResult6("tc_key1", "tc_value3", 0, 3, TC, NONE),
-      DPT.createResult6("tc_key1", "tc_value4", 0, 4, TC, NONE),
-      DPT.createResult6("tc_key1", "tc_value5", 0, 5, TC, NONE),
-      DPT.createResult6("tc_key1", "tc_value6", 0, 6, TC, NONE),
+      DPT.createResult6("tc_key0", "tc_value0", 0, 0, kTypingCorrection, kNoAttribute),
+      DPT.createResult6("tc_key0", "tc_value1", 0, 1, kTypingCorrection, kNoAttribute),
+      DPT.createResult6("tc_key0", "tc_value2", 0, 2, kTypingCorrection, kNoAttribute),
+      DPT.createResult6("tc_key1", "tc_value3", 0, 3, kTypingCorrection, kNoAttribute),
+      DPT.createResult6("tc_key1", "tc_value4", 0, 4, kTypingCorrection, kNoAttribute),
+      DPT.createResult6("tc_key1", "tc_value5", 0, 5, kTypingCorrection, kNoAttribute),
+      DPT.createResult6("tc_key1", "tc_value6", 0, 6, kTypingCorrection, kNoAttribute),
     ]
 
     let convreq = f.createConversionRequest(.prediction, "original_key")
@@ -759,13 +759,13 @@ struct DictionaryPredictorTest {
     RequestTestUtil.fillMobileRequest(&f.request)
 
     var results = [
-      DPT.createResult6("test", "テストＡ", 0, 10, U, NONE),
-      DPT.createResult6("test", "テストＢ", 0, 100, U, NONE),
-      DPT.createResult6("test", "テスト０００", 0, 1, U, NONE),
-      DPT.createResult6("test", "テスト００", 0, 1, U, NONE),
-      DPT.createResult6("test", "テスト１０", 0, 1, U, NONE),
-      DPT.createResult6("test", "テスト０", 0, 1, U, NONE),
-      DPT.createResult6("test", "テスト１", 0, 1, U, NONE),
+      DPT.createResult6("test", "テストＡ", 0, 10, kUnigram, kNoAttribute),
+      DPT.createResult6("test", "テストＢ", 0, 100, kUnigram, kNoAttribute),
+      DPT.createResult6("test", "テスト０００", 0, 1, kUnigram, kNoAttribute),
+      DPT.createResult6("test", "テスト００", 0, 1, kUnigram, kNoAttribute),
+      DPT.createResult6("test", "テスト１０", 0, 1, kUnigram, kNoAttribute),
+      DPT.createResult6("test", "テスト０", 0, 1, kUnigram, kNoAttribute),
+      DPT.createResult6("test", "テスト１", 0, 1, kUnigram, kNoAttribute),
     ]
     let convreq = f.createConversionRequest(.prediction, "test")
     results = dp.predictor.rerankAndFilterResults(convreq, results)
@@ -785,8 +785,8 @@ struct DictionaryPredictorTest {
 
     dp.aggregator.aggregateResultsForDesktopHandler = { _ in
       [
-        DPT.createResult5("あいう", "会いう", 100, RT | R, NONE),
-        DPT.createResult5("あいうえ", "会いうえ", 1000, R, NONE),
+        DPT.createResult5("あいう", "会いう", 100, kRealtimeTop | kRealtime, kNoAttribute),
+        DPT.createResult5("あいうえ", "会いうえ", 1000, kRealtime, kNoAttribute),
       ]
     }
 
@@ -816,10 +816,10 @@ struct DictionaryPredictorTest {
 
     dp.aggregator.aggregateResultsForDesktopHandler = { _ in
       [
-        DPT.createResult6("こ", "子", 0, 10, P, NONE),
-        DPT.createResult6("こーひー", "コーヒー", 0, 100, U, NONE),
-        DPT.createResult6("こーひー", "珈琲", 0, 200, U, NONE),
-        DPT.createResult6("こーひー", "coffee", 0, 300, U, NONE),
+        DPT.createResult6("こ", "子", 0, 10, kPartial, kNoAttribute),
+        DPT.createResult6("こーひー", "コーヒー", 0, 100, kUnigram, kNoAttribute),
+        DPT.createResult6("こーひー", "珈琲", 0, 200, kUnigram, kNoAttribute),
+        DPT.createResult6("こーひー", "coffee", 0, 300, kUnigram, kNoAttribute),
       ]
     }
 
@@ -866,9 +866,9 @@ struct DictionaryPredictorTest {
     let dp = try MockDataAndPredictor(supplementalModel)
     dp.aggregator.aggregateResultsForDesktopHandler = { _ in
       [
-        DPT.createResult5("こーひー", "コーヒー", 500, U, NONE),
-        DPT.createResult5("こーひー", "珈琲", 600, U, NONE),
-        DPT.createResult5("こーひー", "coffee", 700, U, NONE),
+        DPT.createResult5("こーひー", "コーヒー", 500, kUnigram, kNoAttribute),
+        DPT.createResult5("こーひー", "珈琲", 600, kUnigram, kNoAttribute),
+        DPT.createResult5("こーひー", "coffee", 700, kUnigram, kNoAttribute),
       ]
     }
 
@@ -895,8 +895,8 @@ struct DictionaryPredictorTest {
 
     dp.aggregator.aggregateResultsForDesktopHandler = { _ in
       [
-        DPT.createResult5("かんじ", "かん字", 0, U, NONE),
-        DPT.createResult5("かんじ", "漢字", 500, U, NONE),
+        DPT.createResult5("かんじ", "かん字", 0, kUnigram, kNoAttribute),
+        DPT.createResult5("かんじ", "漢字", 500, kUnigram, kNoAttribute),
       ]
     }
 
@@ -914,8 +914,8 @@ struct DictionaryPredictorTest {
 
     dp.aggregator.aggregateResultsForDesktopHandler = { _ in
       [
-        DPT.createResult5("かんじ", "かん字", 0, U, NONE),
-        DPT.createResult5("かんじ", "漢字", 500, U, NONE),
+        DPT.createResult5("かんじ", "かん字", 0, kUnigram, kNoAttribute),
+        DPT.createResult5("かんじ", "漢字", 500, kUnigram, kNoAttribute),
       ]
     }
 
@@ -928,16 +928,16 @@ struct DictionaryPredictorTest {
     let peer = dp.predictor
 
     // Result for しがこ (Initialize the prev_top).
-    let initTop = DPT.createResult4("しがこ", "志賀湖", U, NONE)
+    let initTop = DPT.createResult4("しがこ", "志賀湖", kUnigram, kNoAttribute)
 
     // Result for しがこう
-    var preTop = DPT.createResult4("しがこうげん", "志賀高原", U, NONE)
+    var preTop = DPT.createResult4("しがこうげん", "志賀高原", kUnigram, kNoAttribute)
 
     // Result for しがこうげ. Inconsistent with prev top.
-    var curTop = DPT.createResult4("しがこうげ", "子が原", U, NONE)
+    var curTop = DPT.createResult4("しがこうげ", "子が原", kUnigram, kNoAttribute)
 
     // Result for しがこうげ, but already consistent with the prev_top.
-    var curAlreadyConsintentTop = DPT.createResult4("しがこうげんすきー", "志賀高原スキー", U, NONE)
+    var curAlreadyConsintentTop = DPT.createResult4("しがこうげんすきー", "志賀高原スキー", kUnigram, kNoAttribute)
 
     preTop.cost = 1000
     curTop.cost = 500
@@ -973,7 +973,7 @@ struct DictionaryPredictorTest {
       #expect(peer.maybeGetPreviousTopResult(initTop, createRequest("しが")) == nil)
       #expect(peer.maybeGetPreviousTopResult(preTop, createRequest("しがこう")) == nil)
       var curTopPrefix = curTop
-      curTopPrefix.attributes |= P
+      curTopPrefix.attributes |= kPartial
       #expect(peer.maybeGetPreviousTopResult(curTopPrefix, createRequest("しがこうげ")) == nil)
     }
 
@@ -1011,7 +1011,7 @@ struct DictionaryPredictorTest {
       #expect(peer.maybeGetPreviousTopResult(curTop, createRequest("しがこう")) == nil)
 
       // Zero-query suggestion -> not inserted and resets state.
-      var nwpTop = DPT.createResult4("", "高原", Attribute.supplementalModel, NONE)
+      var nwpTop = DPT.createResult4("", "高原", Attribute.supplementalModel, kNoAttribute)
       nwpTop.cost = 500
       #expect(peer.maybeGetPreviousTopResult(nwpTop, createRequest("")) == nil)
       #expect(peer.maybeGetPreviousTopResult(preTop, createRequest("")) == nil)
@@ -1031,7 +1031,7 @@ struct DictionaryPredictorTest {
       try #require(results1.count == 1)
       #expect(results1[0].value == "志賀高原")
 
-      var removedTop = DPT.createResult4("しが", "滋賀", B, NONE)
+      var removedTop = DPT.createResult4("しが", "滋賀", kBigram, kNoAttribute)
       removedTop.cost = 1
       removedTop.removed = true
 
@@ -1071,7 +1071,7 @@ struct DictionaryPredictorTest {
 
       // "あいうえおかきく" (longer key) -> the stale 志賀高原 is never promoted
       // for an unrelated key.
-      var otherTop = DPT.createResult4("あいう", "愛鵜", U, NONE)
+      var otherTop = DPT.createResult4("あいう", "愛鵜", kUnigram, kNoAttribute)
       otherTop.cost = 500
       var results4 = [otherTop]
       results4 = peer.rerankAndFilterResults(createRequest("あいうえおかきく"), results4)
@@ -1091,7 +1091,7 @@ struct DictionaryPredictorTest {
       var result = PredictionResult()
       result.key = "てすと"
       result.value = "テスト"
-      result.attributes = S
+      result.attributes = kSuffix
       result.cost = 1000
       result.lid = dp.posMatcher.getGeneralNounId()
       result.rid = dp.posMatcher.getGeneralNounId()

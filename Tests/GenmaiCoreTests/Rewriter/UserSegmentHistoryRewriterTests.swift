@@ -881,7 +881,7 @@ struct UserSegmentHistoryRewriterTests {
       do {
         let convreq = f.createConversionRequest()
         initSegments(segments, 1)
-        let candidate = segments.mutableSegment(0).insertCandidate(2)!
+        let candidate = segments.mutableSegment(0).insertNewCandidate(2)
         candidate.value = "("
         candidate.contentValue = "("
         candidate.contentKey = "("
@@ -892,7 +892,7 @@ struct UserSegmentHistoryRewriterTests {
       do {
         let convreq = f.createConversionRequest()
         initSegments(segments, 1)
-        let candidate = segments.mutableSegment(0).insertCandidate(2)!
+        let candidate = segments.mutableSegment(0).insertNewCandidate(2)
         candidate.value = ")"
         candidate.contentValue = ")"
         candidate.contentKey = ")"
@@ -916,7 +916,7 @@ struct UserSegmentHistoryRewriterTests {
         let convreq = f.createConversionRequest()
         initSegments(segments, 1)
         segments.mutableSegment(0).setKey(key)
-        let candidate = segments.mutableSegment(0).insertCandidate(2)!
+        let candidate = segments.mutableSegment(0).insertNewCandidate(2)
         candidate.value = value
         candidate.contentValue = value
         candidate.contentKey = key
@@ -928,11 +928,11 @@ struct UserSegmentHistoryRewriterTests {
         let convreq = f.createConversionRequest()
         initSegments(segments, 1)
         segments.mutableSegment(0).setKey("key1")
-        var candidate = segments.mutableSegment(0).insertCandidate(2)!
+        var candidate = segments.mutableSegment(0).insertNewCandidate(2)
         candidate.value = "value2"
         candidate.contentValue = "value2"
         candidate.contentKey = "key2"
-        candidate = segments.mutableSegment(0).insertCandidate(3)!
+        candidate = segments.mutableSegment(0).insertNewCandidate(3)
         candidate.value = "value1"
         candidate.contentValue = "value1"
         candidate.contentKey = "key1"
@@ -957,7 +957,7 @@ struct UserSegmentHistoryRewriterTests {
     segments.clear()
     segments.addSegment()
     segments.mutableSegment(0).setKey(key)
-    let candidate = segments.mutableSegment(0).insertCandidate(0)!
+    let candidate = segments.mutableSegment(0).insertNewCandidate(0)
     candidate.value = value
     candidate.contentValue = contentValue ?? value
     candidate.contentKey = key
@@ -975,7 +975,7 @@ struct UserSegmentHistoryRewriterTests {
   /// Sets up a single number segment `key` with a plain candidate.
   private static func setUpNumberSegment(_ f: Fixture, _ segments: Segments, _ key: String) {
     segments.mutableSegment(0).setKey(key)
-    let candidate = segments.mutableSegment(0).insertCandidate(0)!
+    let candidate = segments.mutableSegment(0).insertNewCandidate(0)
     candidate.value = key
     candidate.contentValue = key
     candidate.contentKey = key
@@ -1238,7 +1238,7 @@ struct UserSegmentHistoryRewriterTests {
         segments.clear()
         segments.addSegment()
         segments.mutableSegment(0).setKey("1234")
-        let candidate = segments.mutableSegment(0).insertCandidate(0)!
+        let candidate = segments.mutableSegment(0).insertNewCandidate(0)
         candidate.value = "1,234"
         candidate.contentValue = "1,234"
         candidate.contentKey = "1234"

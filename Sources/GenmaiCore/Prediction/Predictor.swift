@@ -10,7 +10,7 @@
 
 import GenmaiBase
 
-public final class Predictor: PredictorInterface, @unchecked Sendable {
+public final class Predictor: PredictorInterface {
   private static let kPredictionSizeForDesktop = 100
 
   // On mixed conversion mode PREDICTION (including PARTIAL_PREDICTION) behaves

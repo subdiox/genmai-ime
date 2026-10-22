@@ -431,7 +431,7 @@ public enum UserDictionaryImporter {
     let buffer = mmap.buffer
     let size = min(kMaxCheckSize, buffer.count)
     return withExtendedLifetime(mmap) {
-      guessEncodingType(UnsafeRawBufferPointer(rebasing: buffer[0..<size]))
+      guessEncodingType(buffer[0..<size])
     }
   }
 }

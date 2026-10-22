@@ -11,8 +11,18 @@ import Testing
 
 @testable import GenmaiCore
 
+extension Segment {
+  /// `insert_candidate(i)` for a valid (non-negative) index: inserts a new
+  /// candidate and returns it.
+  func insertNewCandidate(_ i: Int) -> Candidate {
+    let candidate = Candidate()
+    insertCandidate(i, candidate)
+    return candidate
+  }
+}
+
 /// engine::Modules for the rewriter tests.
-final class RewriterTestModules: RewriterModules, @unchecked Sendable {
+final class RewriterTestModules: RewriterModules {
   let base: TestModules
   let singleKanjiDictionary: SingleKanjiDictionary
 

@@ -35,7 +35,7 @@ private func addCandidate(
     index = segment.candidatesSize
   }
 
-  let candidate = segment.insertCandidate(index)!
+  guard let candidate = segment.insertCandidate(index) else { return }
 
   candidate.key = key
   candidate.contentKey = key

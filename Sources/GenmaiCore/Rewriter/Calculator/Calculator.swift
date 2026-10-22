@@ -148,7 +148,7 @@ public final class Calculator: Sendable {
       }
 
       // Read alphabetical function name token
-      if isAlpha(rest.first!) {
+      if let first = rest.first, isAlpha(first) {
         var funcLen = 0
         while funcLen < rest.count && isAlpha(rest[rest.startIndex + funcLen]) {
           funcLen += 1

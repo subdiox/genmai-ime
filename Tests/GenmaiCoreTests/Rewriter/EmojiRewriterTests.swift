@@ -97,7 +97,13 @@ private func makeTestEmojiRewriterData() -> (tokenArray: DataView, stringArray: 
   for (index, s) in strings.enumerated() {
     unique[Array(s.utf8)] = index
   }
-  func index(_ s: String) -> UInt32 { UInt32(unique[Array(s.utf8)]!) }
+  func index(_ s: String) -> UInt32 {
+    guard let index = unique[Array(s.utf8)] else {
+      Issue.record("\(s) is not in the string array")
+      return 0
+    }
+    return UInt32(index)
+  }
 
   // Create token array.
   var tokenArray: [UInt32] = []
@@ -112,7 +118,7 @@ private func makeTestEmojiRewriterData() -> (tokenArray: DataView, stringArray: 
   }
   var tokenBytes: [UInt8] = []
   for v in tokenArray {
-    withUnsafeBytes(of: v.littleEndian) { tokenBytes.append(contentsOf: $0) }
+    tokenBytes.appendLittleEndian(v)
   }
 
   // Create string array.
