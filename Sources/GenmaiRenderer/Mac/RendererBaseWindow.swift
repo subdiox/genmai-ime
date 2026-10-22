@@ -24,13 +24,6 @@ public class RendererBaseWindow {
     NSView(frame: NSRect(x: 0, y: 0, width: 1, height: 1))
   }
 
-  /// The window background (NSColor.whiteColor in the C++; the style's background with dark styles).
-  var backgroundColor: NSColor { .white }
-
-  /// The content view draws its own (rounded, translucent) background: the panel is clear and its shadow follows
-  /// the content.
-  var isTransparent: Bool { false }
-
   func initWindow() {
     if window != nil {
       return
@@ -43,13 +36,11 @@ public class RendererBaseWindow {
     panel.displaysWhenScreenProfileChanges = true
     panel.isFloatingPanel = true
     panel.worksWhenModal = true
-    if isTransparent {
-      panel.backgroundColor = .clear
-      panel.isOpaque = false
-      panel.hasShadow = true
-    } else {
-      panel.backgroundColor = backgroundColor
-    }
+    // The content view draws its own rounded, translucent background: the panel is clear and its shadow follows
+    // the content.
+    panel.backgroundColor = .clear
+    panel.isOpaque = false
+    panel.hasShadow = true
     panel.isReleasedWhenClosed = false
     panel.level = windowLevel
     panel.hidesOnDeactivate = false
@@ -73,9 +64,7 @@ public class RendererBaseWindow {
       initWindow()
     }
     window?.orderFront(nil)
-    if isTransparent {
-      window?.invalidateShadow()
-    }
+    window?.invalidateShadow()
   }
 
   public var isVisible: Bool { window?.isVisible ?? false }
@@ -92,9 +81,7 @@ public class RendererBaseWindow {
     var rect = window.frame
     rect.size = NSSize(width: width, height: height)
     window.setFrame(rect, display: false)
-    if isTransparent {
-      window.invalidateShadow()
-    }
+    window.invalidateShadow()
   }
 
   /// Sets the position and the size at once (no intermediate frame on screen).
@@ -102,9 +89,7 @@ public class RendererBaseWindow {
     guard let window else { return }
     if window.frame != rect {
       window.setFrame(rect, display: false)
-      if isTransparent {
-        window.invalidateShadow()
-      }
+      window.invalidateShadow()
     }
   }
 
@@ -112,12 +97,6 @@ public class RendererBaseWindow {
     if windowLevel != level {
       windowLevel = level
       window?.level = level
-    }
-  }
-
-  func updateBackgroundColor() {
-    if !isTransparent {
-      window?.backgroundColor = backgroundColor
     }
   }
 }

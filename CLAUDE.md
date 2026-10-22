@@ -227,7 +227,9 @@ unchanged; the hook only forwards). GenmaiCore and GenmaiSession contain no AI c
 The windows keep Mozc's options and dialog logic (`ConfigDialogModel`, `DictionaryToolModel`, ...) but not its
 Qt layouts: the settings window is a sidebar of panes (General / Input / Conversion / Suggestions / AI / Privacy /
 Updates) whose edits are saved automatically (`savesChangesAutomatically`, 300 ms after the last edit and on
-close; no OK / Cancel / Apply), the dictionary tool a `NavigationSplitView` with an SF Symbols toolbar and a
+close; no OK / Cancel / Apply), the candidate window a Liquid Glass panel (window background at 70 % underneath for legibility; metrics in
+`CandidateDesign`, the infolist a card layout in `InfolistDesign` instead of renderer_style.textproto), the
+dictionary tool a `NavigationSplitView` with an SF Symbols toolbar and a
 search field, the About window a centered icon / version / links layout. Wording that differs from Mozc's
 translations lives in `Base/GenmaiStrings.swift` (looked up by `tr` before Mozc's) or in a per-window strings
 table; use "…" and "ユーザー".

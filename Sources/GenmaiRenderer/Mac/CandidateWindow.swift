@@ -1,5 +1,5 @@
 // Port of mozc/src/renderer/mac/CandidateWindow.{h,mm} (3.35.6354). The panel is transparent: CandidateView
-// draws its own rounded, translucent background and the window server shadow follows it.
+// draws its own rounded glass background and the window server shadow follows it.
 
 import AppKit
 import GenmaiProtocol
@@ -13,8 +13,6 @@ public final class CandidateWindow: RendererBaseWindow {
   override func makeContentView() -> NSView {
     FirstMouseHostingView(rootView: CandidateView(model: model))
   }
-
-  override var isTransparent: Bool { true }
 
   public func setSendCommandInterface(_ sendCommandInterface: (any SendCommandInterface)?) {
     model.commandSender = sendCommandInterface

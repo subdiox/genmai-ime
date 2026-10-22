@@ -1,6 +1,8 @@
-// The candidate window view. Based on mozc/src/renderer/mac/CandidateView.{h,mm} (3.35.6354), but with its own
-// look instead of Mozc's: a rounded, translucent panel (the system popover material), an accent-colored
-// selection, subdued shortcut numbers and descriptions, and an "AI" badge for candidates of the AI conversion.
+// The candidate window view. Based on mozc/src/renderer/mac/CandidateView.{h,mm} (3.35.6354), but with Genmai's
+// own look instead of Mozc's: a Liquid Glass panel (the popover material before macOS 26) with generous spacing,
+// an accent-colored rounded selection, subdued shortcut numbers and descriptions, an "AI" badge for candidates of
+// the AI conversion, a book icon on candidates with usage examples (the infolist), a slim overlay scroll
+// indicator and a quiet footer.
 //
 // The geometry still comes from TableLayout (as in -updateLayout), so CandidateController can place the window
 // (candidate column under the preedit, cascading window next to the focused row) the same way. Only the metrics
@@ -29,24 +31,30 @@ public let kNumberOfColumns = ColumnType.allCases.count
 /// Metrics and fonts of the candidate window.
 public enum CandidateDesign {
   /// Space between the window edge and the rows.
-  public static let windowPadding = 5
+  public static let windowPadding = 6
   /// Padding inside a row (all sides).
-  public static let rowPadding = 4
-  public static let minimumRowContentHeight = 18
+  public static let rowPadding = 5
+  public static let minimumRowContentHeight = 20
   public static let shortcutLeading: CGFloat = 4
-  public static let gap = 8
-  public static let candidateTrailing: CGFloat = 14
+  public static let gap = 10
+  public static let candidateTrailing: CGFloat = 16
   public static let descriptionTrailing: CGFloat = 4
   /// Minimum width of the candidate + description columns.
-  public static let minimumContentWidth = 96
-  public static let scrollBarWidth = 9
-  public static let footerHeight = 22
-  public static let footerSpacing: CGFloat = 8
-  public static let cornerRadius: CGFloat = 10
-  public static let rowCornerRadius: CGFloat = 6
+  public static let minimumContentWidth = 120
+  /// The column of the scroll indicator (a slim capsule).
+  public static let scrollBarWidth = 8
+  public static let footerHeight = 26
+  public static let footerSpacing: CGFloat = 12
+  public static let cornerRadius: CGFloat = 14
+  /// Opacity of the window background under the glass panel.
+  public static let panelOpacity: Double = 0.7
+  public static let rowCornerRadius: CGFloat = 8
+  /// Room for the book icon of candidates with usage examples (added to the description column).
+  public static let informationIconWidth: CGFloat = 16
+  public static let informationIconSize: CGFloat = 10
 
-  public static let candidateFontSize: CGFloat = 15
-  public static let shortcutFontSize: CGFloat = 11
+  public static let candidateFontSize: CGFloat = 16
+  public static let shortcutFontSize: CGFloat = 12
   public static let descriptionFontSize: CGFloat = 11
   public static let footerFontSize: CGFloat = 11
 
@@ -217,6 +225,7 @@ public final class CandidateViewModel {
     }
     tableLayout.ensureCellSize(ColumnType.gap1.rawValue, Size(CandidateDesign.gap, 0))
 
+    let hasInformation = window.candidate.contains { $0.hasInformationID }
     for candidate in window.candidate {
       let shortcut = candidate.annotation.shortcut
       if !shortcut.isEmpty {
@@ -230,7 +239,7 @@ public final class CandidateViewModel {
         value.isEmpty ? 0 : width(value, size: CandidateDesign.candidateFontSize) + CandidateDesign.candidateTrailing
       tableLayout.ensureCellSize(ColumnType.candidate.rawValue, Size(Int(valueWidth), Int(valueHeight)))
       let description = CandidateDescription(candidate.annotation.description_p)
-      let w = descriptionWidth(description)
+      let w = descriptionWidth(description) + (hasInformation ? CandidateDesign.informationIconWidth : 0)
       if w > 0 {
         tableLayout.ensureCellSize(
           ColumnType.description.rawValue, Size(Int(w + CandidateDesign.descriptionTrailing), 0))
@@ -247,7 +256,7 @@ public final class CandidateViewModel {
 
   private func footerIndexString(_ window: CandidateWindowMessage) -> String {
     // +1 to 1-origin from 0-origin.
-    "\(Int(window.focusedIndex) + 1)/\(window.size)"
+    "\(Int(window.focusedIndex) + 1) / \(window.size)"
   }
 
   // MARK: - Drawing data
@@ -364,14 +373,23 @@ public struct CandidateView: View {
   }
 }
 
-/// The rounded, translucent panel behind the candidate and infolist windows.
+/// The rounded panel behind the candidate and infolist windows: Liquid Glass on macOS 26 and later, the popover
+/// material before.
 struct CandidatePanelBackground: ViewModifier {
   func body(content: Content) -> some View {
     let shape = RoundedRectangle(cornerRadius: CandidateDesign.cornerRadius, style: .continuous)
-    content
-      .background { VisualEffectBackground() }
-      .overlay(shape.strokeBorder(.separator, lineWidth: 0.5))
-      .clipShape(shape)
+    if #available(macOS 26, *) {
+      // Glass alone lets busy text behind the panel show through; the window background underneath keeps the
+      // candidates legible while the edges stay glassy.
+      content
+        .background(Color(nsColor: .windowBackgroundColor).opacity(CandidateDesign.panelOpacity), in: shape)
+        .glassEffect(.regular, in: shape)
+    } else {
+      content
+        .background { VisualEffectBackground() }
+        .overlay(shape.strokeBorder(.separator, lineWidth: 0.5))
+        .clipShape(shape)
+    }
   }
 }
 
@@ -417,9 +435,16 @@ struct CandidateRowView: View {
         }
       }
       if row.hasInformation {
-        let rect = MacViewUtil.toNSRect(row.rowRect)
-        PlacedRect(rect: CGRect(x: rect.maxX - 7, y: rect.midY - 2, width: 4, height: 4)) {
-          Circle().fill(isFocused ? Color.white.opacity(0.8) : Color.accentColor)
+        let rect = row.descriptionRect
+        PlacedRect(
+          rect: CGRect(
+            x: rect.maxX - CandidateDesign.informationIconWidth, y: rect.minY,
+            width: CandidateDesign.informationIconWidth, height: rect.height)
+        ) {
+          Image(systemName: "book.closed.fill")
+            .font(.system(size: CandidateDesign.informationIconSize, weight: .medium))
+            .foregroundStyle(isFocused ? Color.white.opacity(0.85) : Color.secondary)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .trailing)
         }
       }
     }
@@ -488,8 +513,8 @@ struct CandidateScrollBarView: View {
 
   var body: some View {
     let indicator = MacViewUtil.toNSRect(scrollBar.indicatorRect)
-    // A thin capsule centered in the scroll bar column, inset from the top and bottom.
-    PlacedRect(rect: indicator.insetBy(dx: 3, dy: 2)) {
+    // A slim capsule centered in the scroll bar column, inset from the top and bottom.
+    PlacedRect(rect: indicator.insetBy(dx: 2.5, dy: 3)) {
       Capsule().fill(.tertiary)
     }
     .accessibilityHidden(true)
@@ -503,6 +528,7 @@ struct CandidateFooterView: View {
     PlacedRect(rect: footer.rect) {
       VStack(spacing: 0) {
         Divider()
+          .padding(.horizontal, CGFloat(CandidateDesign.rowPadding))
         HStack(spacing: CandidateDesign.footerSpacing) {
           if !footer.label.isEmpty {
             Text(verbatim: footer.label).lineLimit(1)

@@ -2,7 +2,6 @@
 
 import AppKit
 import GenmaiProtocol
-import SwiftUI
 
 public enum MacViewUtil {
   public static func toNSPoint(_ point: Point) -> NSPoint { NSPoint(x: point.x, y: point.y) }
@@ -16,19 +15,10 @@ public enum MacViewUtil {
 
   public static func toRect(_ nsrect: NSRect) -> Rect { Rect(toPoint(nsrect.origin), toSize(nsrect.size)) }
 
-  /// Adds the left and right paddings of `style` to `size`.
-  public static func applyTheme(_ size: NSSize, _ style: RendererStyle.TextStyle) -> NSSize {
-    NSSize(
-      width: size.width + CGFloat(style.leftPadding) + CGFloat(style.rightPadding), height: size.height)
-  }
-
   public static func toNSColor(_ color: RendererStyle.RGBAColor) -> NSColor {
     NSColor(
       calibratedRed: color.r / 255.0, green: color.g / 255.0, blue: color.b / 255.0, alpha: color.a)
   }
-
-  /// SwiftUI counterpart of toNSColor.
-  public static func toColor(_ color: RendererStyle.RGBAColor) -> Color { Color(nsColor: toNSColor(color)) }
 
   /// The font of `style`: `font_name` if set, otherwise the message font.
   public static func toNSFont(_ style: RendererStyle.TextStyle) -> NSFont {

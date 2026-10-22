@@ -21,11 +21,8 @@ public final class InfolistWindow: RendererBaseWindow {
     FirstMouseHostingView(rootView: InfolistView(model: model))
   }
 
-  override var isTransparent: Bool { true }
-
   public func setStyle(_ style: RendererStyle) {
     model.setStyle(style)
-    updateBackgroundColor()
   }
 
   public func setCandidateWindow(_ candidateWindow: CandidateWindowMessage) {

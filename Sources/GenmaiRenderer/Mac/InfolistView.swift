@@ -1,40 +1,53 @@
-// Port of mozc/src/renderer/mac/InfolistView.{h,mm} (3.35.6354).
-//
-// -drawView: is split into the layout pass (`InfolistViewModel.updateLayout()`, which produces
-// `InfolistRenderData`) and the SwiftUI `InfolistView` that draws it.
+// The infolist window's view (usage examples of the focused candidate). Based on
+// mozc/src/renderer/mac/InfolistView.{h,mm} (3.35.6354), with Genmai's own card layout instead of the colors and
+// metrics of renderer_style.textproto: the layout pass (`InfolistViewModel.updateLayout()`) measures the texts and
+// produces `InfolistRenderData`, which the SwiftUI `InfolistView` draws.
 
 import AppKit
 import GenmaiProtocol
 import Observation
 import SwiftUI
 
-/// A multi-line text drawn with -drawWithRect:options:NSStringDrawingUsesLineFragmentOrigin.
+/// A multi-line text placed at `rect` (top-left origin).
 public struct BoxedText: Equatable, Sendable {
   public var text: String
   public var rect: CGRect
-  public var style: RendererStyle.TextStyle
+  public var fontSize: CGFloat
+}
+
+/// Metrics of the infolist panel.
+public enum InfolistDesign {
+  public static let width: CGFloat = 300
+  /// Space between the window edge and the content.
+  public static let padding: CGFloat = 8
+  public static let captionHeight: CGFloat = 24
+  public static let captionFontSize: CGFloat = 11
+  /// Padding inside an entry.
+  public static let entryPadding: CGFloat = 8
+  public static let entrySpacing: CGFloat = 2
+  public static let titleFontSize: CGFloat = 13
+  public static let descriptionFontSize: CGFloat = 12
+  public static let titleSpacing: CGFloat = 2
+
+  static func textStyle(size: CGFloat) -> RendererStyle.TextStyle {
+    var style = RendererStyle.TextStyle()
+    style.fontSize = size
+    return style
+  }
 }
 
 public struct InfolistRowData: Equatable, Sendable, Identifiable {
   public var id: Int { row }
   public var row: Int
   public var isFocused: Bool
-  /// The focused row rect (filled + stroked) when `isFocused`.
-  public var focusedRect: CGRect?
-  /// Title / description backgrounds when not focused.
-  public var backgrounds: [Background]
+  /// The entry's background (highlighted when focused).
+  public var rect: CGRect
   public var title: BoxedText
   public var description: BoxedText
-
-  public struct Background: Equatable, Sendable {
-    public var rect: CGRect
-    public var color: RendererStyle.RGBAColor
-  }
 }
 
 public struct InfolistRenderData: Equatable, Sendable {
   public var size: CGSize = .zero
-  public var captionBackground: CGRect?
   public var caption: BoxedText?
   public var rows: [InfolistRowData] = []
 
@@ -45,6 +58,7 @@ public struct InfolistRenderData: Equatable, Sendable {
 @Observable
 public final class InfolistViewModel {
   public private(set) var candidateWindow = CandidateWindowMessage()
+  /// Only the caption ("用例") comes from the renderer style.
   public private(set) var style: RendererStyle
   public private(set) var renderData = InfolistRenderData()
   @ObservationIgnored private let measurer: any TextMeasuring
@@ -63,116 +77,67 @@ public final class InfolistViewModel {
     self.candidateWindow = candidateWindow
   }
 
-  /// -updateLayout: computes the size (and, unlike the C++ which recomputes in -drawRect:, keeps the
-  /// geometry for drawing).
+  /// Computes the size and the geometry for drawing.
   @discardableResult
   public func updateLayout() -> CGSize {
-    renderData = drawView()
+    renderData = layout()
     return renderData.size
   }
 
-  private func drawRow(_ row: Int, ypos: CGFloat) -> (InfolistRowData, CGFloat) {
-    let infostyle = style.infolistStyle
-    let usages = candidateWindow.usages
-    let titleStyle = infostyle.titleStyle
-    let descStyle = infostyle.descriptionStyle
-    let titleWidth =
-      Int(infostyle.windowWidth) - Int(titleStyle.leftPadding) - Int(titleStyle.rightPadding)
-      - Int(infostyle.windowBorder) * 2 - Int(infostyle.rowRectPadding) * 2
-    let descWidth =
-      Int(infostyle.windowWidth) - Int(descStyle.leftPadding) - Int(descStyle.rightPadding)
-      - Int(infostyle.windowBorder) * 2 - Int(infostyle.rowRectPadding) * 2
-    let info = usages.information[row]
-
-    let titleSize = measurer.boundingSize(
-      of: info.title, style: titleStyle, width: CGFloat(titleWidth))
-    let descSize = measurer.boundingSize(
-      of: info.description_p, style: descStyle, width: CGFloat(descWidth))
-    let rowRectPadding = CGFloat(infostyle.rowRectPadding)
-    let windowBorder = CGFloat(infostyle.windowBorder)
-    let windowWidth = CGFloat(infostyle.windowWidth)
-    let height = titleSize.height + descSize.height + rowRectPadding * 2
-
-    let titleRect = CGRect(
-      x: windowBorder + rowRectPadding + CGFloat(titleStyle.leftPadding), y: ypos + rowRectPadding,
-      width: titleSize.width, height: titleSize.height)
-    let descRect = CGRect(
-      x: windowBorder + rowRectPadding + CGFloat(descStyle.leftPadding),
-      y: ypos + rowRectPadding + titleSize.height, width: descSize.width, height: descSize.height)
-
-    let isFocused = usages.hasFocusedIndex && row == Int(usages.focusedIndex)
-    var focusedRect: CGRect?
-    var backgrounds: [InfolistRowData.Background] = []
-    if isFocused {
-      focusedRect = CGRect(
-        x: windowBorder, y: ypos, width: windowWidth - windowBorder * 2,
-        height: titleSize.height + descSize.height + rowRectPadding * 2)
-    } else {
-      if titleStyle.hasBackgroundColor {
-        backgrounds.append(
-          .init(
-            rect: CGRect(
-              x: windowBorder, y: ypos, width: windowWidth - windowBorder * 2,
-              height: titleSize.height + rowRectPadding),
-            color: titleStyle.backgroundColor))
-      }
-      if descStyle.hasBackgroundColor {
-        backgrounds.append(
-          .init(
-            rect: CGRect(
-              x: windowBorder, y: ypos + titleSize.height + rowRectPadding,
-              width: windowWidth - windowBorder * 2, height: descSize.height + rowRectPadding),
-            color: descStyle.backgroundColor))
-      }
-    }
-    let data = InfolistRowData(
-      row: row, isFocused: isFocused, focusedRect: focusedRect, backgrounds: backgrounds,
-      title: BoxedText(
-        text: info.title, rect: CGRect(origin: titleRect.origin, size: CGSize(width: CGFloat(titleWidth), height: titleRect.height)),
-        style: titleStyle),
-      description: BoxedText(
-        text: info.description_p, rect: CGRect(origin: descRect.origin, size: CGSize(width: CGFloat(descWidth), height: descRect.height)),
-        style: descStyle))
-    return (data, height)
+  private func textSize(_ text: String, size: CGFloat, width: CGFloat) -> CGSize {
+    let measured = measurer.boundingSize(of: text, style: InfolistDesign.textStyle(size: size), width: width)
+    return CGSize(width: measured.width.rounded(.up), height: measured.height.rounded(.up))
   }
 
-  private func drawView() -> InfolistRenderData {
+  private func layout() -> InfolistRenderData {
     var data = InfolistRenderData()
     guard candidateWindow.hasUsages else {
       return data
     }
-    let infostyle = style.infolistStyle
+    let d = InfolistDesign.self
     let usages = candidateWindow.usages
-    let windowBorder = CGFloat(infostyle.windowBorder)
-    let windowWidth = CGFloat(infostyle.windowWidth)
-
-    var ypos = windowBorder
-
-    if infostyle.hasCaptionString {
-      let captionStyle = infostyle.captionStyle
-      let captionHeight = CGFloat(infostyle.captionHeight)
-      data.captionBackground = CGRect(
-        x: windowBorder, y: ypos, width: windowWidth - windowBorder * 2, height: captionHeight)
+    let entryWidth = d.width - d.padding * 2
+    let textWidth = entryWidth - d.entryPadding * 2
+    var y = d.padding
+    let caption = style.infolistStyle.captionString
+    if !caption.isEmpty {
       data.caption = BoxedText(
-        text: infostyle.captionString,
-        rect: CGRect(
-          x: windowBorder + CGFloat(infostyle.captionPadding) + CGFloat(captionStyle.leftPadding),
-          y: ypos + CGFloat(infostyle.captionPadding), width: windowWidth - windowBorder * 2,
-          height: captionHeight),
-        style: captionStyle)
+        text: caption,
+        rect: CGRect(x: d.padding + d.entryPadding, y: y, width: textWidth, height: d.captionHeight),
+        fontSize: d.captionFontSize)
+      y += d.captionHeight
     }
-    ypos += CGFloat(infostyle.captionHeight)
-    for i in usages.information.indices {
-      let (row, height) = drawRow(i, ypos: ypos)
-      data.rows.append(row)
-      ypos += height
+    for (row, info) in usages.information.enumerated() {
+      if row > 0 {
+        y += d.entrySpacing
+      }
+      let titleHeight = textSize(info.title, size: d.titleFontSize, width: textWidth).height
+      let descriptionHeight = textSize(info.description_p, size: d.descriptionFontSize, width: textWidth).height
+      let x = d.padding + d.entryPadding
+      let titleY = y + d.entryPadding
+      let descriptionY = titleY + titleHeight + d.titleSpacing
+      let height = d.entryPadding * 2 + titleHeight + d.titleSpacing + descriptionHeight
+      data.rows.append(
+        InfolistRowData(
+          row: row, isFocused: usages.hasFocusedIndex && row == Int(usages.focusedIndex),
+          rect: CGRect(x: d.padding, y: y, width: entryWidth, height: height),
+          title: BoxedText(
+            text: info.title, rect: CGRect(x: x, y: titleY, width: textWidth, height: titleHeight),
+            fontSize: d.titleFontSize),
+          description: BoxedText(
+            text: info.description_p,
+            rect: CGRect(x: x, y: descriptionY, width: textWidth, height: descriptionHeight),
+            fontSize: d.descriptionFontSize)))
+      y += height
     }
-    ypos += windowBorder
-    data.size = CGSize(width: windowWidth, height: ypos)
+    y += d.padding
+    data.size = CGSize(width: d.width, height: y)
     return data
   }
 }
 
+/// The usage examples of the focused candidate, next to the candidate window: a caption and one card per entry,
+/// the focused entry highlighted.
 public struct InfolistView: View {
   let model: InfolistViewModel
 
@@ -182,19 +147,12 @@ public struct InfolistView: View {
 
   public var body: some View {
     let data = model.renderData
-    let infostyle = model.style.infolistStyle
     ZStack(alignment: .topLeading) {
-      if let background = data.captionBackground {
-        PlacedRect(rect: background) {
-          Rectangle().fill(MacViewUtil.toColor(infostyle.captionBackgroundColor))
-        }
-      }
       if let caption = data.caption {
-        BoxedTextView(boxed: caption)
-          .accessibilityAddTraits(.isHeader)
+        InfolistCaptionView(caption: caption)
       }
       ForEach(data.rows) { row in
-        InfolistRowView(row: row, infostyle: infostyle)
+        InfolistRowView(row: row)
       }
     }
     .frame(width: data.size.width, height: data.size.height, alignment: .topLeading)
@@ -203,44 +161,51 @@ public struct InfolistView: View {
   }
 }
 
+struct InfolistCaptionView: View {
+  let caption: BoxedText
+
+  var body: some View {
+    PlacedRect(rect: caption.rect) {
+      Label {
+        Text(verbatim: caption.text)
+      } icon: {
+        Image(systemName: "book.closed.fill")
+      }
+      .font(.system(size: caption.fontSize, weight: .semibold))
+      .foregroundStyle(.secondary)
+      .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+    }
+    .accessibilityAddTraits(.isHeader)
+  }
+}
+
 struct InfolistRowView: View {
   let row: InfolistRowData
-  let infostyle: RendererStyle.InfolistStyle
 
   var body: some View {
     ZStack(alignment: .topLeading) {
-      if let focusedRect = row.focusedRect {
-        PlacedRect(rect: focusedRect) {
-          Rectangle()
-            .fill(MacViewUtil.toColor(infostyle.focusedBackgroundColor))
-            .overlay(
-              Rectangle().strokeBorder(
-                MacViewUtil.toColor(infostyle.focusedBorderColor), lineWidth: 1))
+      if row.isFocused {
+        PlacedRect(rect: row.rect) {
+          RoundedRectangle(cornerRadius: CandidateDesign.rowCornerRadius, style: .continuous)
+            .fill(Color.accentColor.opacity(0.18))
         }
       }
-      ForEach(row.backgrounds.indices, id: \.self) { i in
-        PlacedRect(rect: row.backgrounds[i].rect) {
-          Rectangle().fill(MacViewUtil.toColor(row.backgrounds[i].color))
-        }
-      }
-      BoxedTextView(boxed: row.title)
-      BoxedTextView(boxed: row.description)
+      BoxedTextView(boxed: row.title, weight: .semibold, style: .primary)
+      BoxedTextView(boxed: row.description, weight: .regular, style: .secondary)
     }
     .accessibilityElement(children: .combine)
   }
 }
 
-/// `-[NSAttributedString drawWithRect:options:NSStringDrawingUsesLineFragmentOrigin]`.
 struct BoxedTextView: View {
   let boxed: BoxedText
+  let weight: Font.Weight
+  let style: HierarchicalShapeStyle
 
   var body: some View {
     Text(verbatim: boxed.text)
-      .font(Font(MacViewUtil.toNSFont(boxed.style)))
-      .foregroundStyle(
-        boxed.style.hasForegroundColor
-          ? MacViewUtil.toColor(boxed.style.foregroundColor) : Color(nsColor: .black)
-      )
+      .font(.system(size: boxed.fontSize, weight: weight))
+      .foregroundStyle(style)
       .fixedSize(horizontal: false, vertical: true)
       .frame(width: boxed.rect.width, alignment: .topLeading)
       .offset(x: boxed.rect.minX, y: boxed.rect.minY)

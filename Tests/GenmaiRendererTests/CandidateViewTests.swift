@@ -66,32 +66,32 @@ func makeCandidateWindow() -> CandidateWindowMessage {
     model.setCandidateWindow(makeCandidateWindow())
     let size = model.updateLayout()
 
-    // Columns: shortcut 4 + 10, gap 8, candidate max("[う]") 30 + 14, description "D" 10 + 4 extended so that
-    // candidate + description reach the 96 px minimum -> 14 + 8 + 44 + 52 = 118.
-    // width = 5 * 2 (window padding) + 4 * 2 (row padding) + 118 + 9 (scroll bar) = 145.
-    // height = 10 + 3 rows * (18 + 8) + footer 22 = 110.
-    #expect(size == Size(145, 110))
+    // Columns: shortcut 4 + 10, gap 10, candidate max("[う]") 30 + 16, description "D" 10 + book icon 16 + 4
+    // extended so that candidate + description reach the 120 px minimum -> 14 + 10 + 46 + 74 = 144.
+    // width = 6 * 2 (window padding) + 5 * 2 (row padding) + 144 + 8 (scroll bar) = 174.
+    // height = 12 + 3 rows * (20 + 10) + footer 26 = 128.
+    #expect(size == Size(174, 128))
     #expect(model.focusedRow == 0)
     let data = model.renderData
     #expect(data.rows.count == 3)
-    #expect(data.rows[1].rowRect == Rect(5, 31, 126, 26))
+    #expect(data.rows[1].rowRect == Rect(6, 36, 154, 30))
     // Candidate text with prefix / suffix.
     #expect(data.rows.map(\.value) == ["あ", "いい", "[う]"])
     #expect(data.rows.map(\.shortcut) == ["1", "2", "3"])
     #expect(data.rows[0].description == CandidateDescription("D"))
-    #expect(data.rows[0].candidateRect == CGRect(x: 31, y: 9, width: 44, height: 18))
-    #expect(data.rows[0].shortcutRect == CGRect(x: 13, y: 9, width: 10, height: 18))
-    #expect(data.rows[0].descriptionRect == CGRect(x: 75, y: 9, width: 52, height: 18))
+    #expect(data.rows[0].candidateRect == CGRect(x: 35, y: 11, width: 46, height: 20))
+    #expect(data.rows[0].shortcutRect == CGRect(x: 15, y: 11, width: 10, height: 20))
+    #expect(data.rows[0].descriptionRect == CGRect(x: 81, y: 11, width: 74, height: 20))
     #expect(data.rows[0].hasInformation)
     #expect(!data.rows[1].hasInformation)
     // Scroll bar since 3 < 10 candidates.
-    #expect(data.scrollBar?.barRect == Rect(131, 5, 9, 78))
+    #expect(data.scrollBar?.barRect == Rect(160, 6, 8, 90))
     let footer = try! #require(data.footer)
-    #expect(footer.rect == CGRect(x: 5, y: 83, width: 135, height: 22))
+    #expect(footer.rect == CGRect(x: 6, y: 96, width: 162, height: 26))
     #expect(footer.label == "L")
-    #expect(footer.index == "1/10")
+    #expect(footer.index == "1 / 10")
     // The candidate column (aligned under the preedit by CandidateController).
-    #expect(model.tableLayout.getColumnRect(ColumnType.candidate.rawValue).left == 31)
+    #expect(model.tableLayout.getColumnRect(ColumnType.candidate.rawValue).left == 35)
   }
 
   @Test func noScrollBarWhenAllCandidatesShown() {
@@ -103,7 +103,7 @@ func makeCandidateWindow() -> CandidateWindowMessage {
     let size = model.updateLayout()
     #expect(model.renderData.scrollBar == nil)
     #expect(model.renderData.footer == nil)
-    #expect(size == Size(136, 88))
+    #expect(size == Size(166, 102))
   }
 
   @Test func aiDescription() {
@@ -119,10 +119,10 @@ func makeCandidateWindow() -> CandidateWindowMessage {
     window.candidate[1].annotation.description_p = "AI"
     model.setCandidateWindow(window)
     let size = model.updateLayout()
-    // Badge: padding 5 * 2 + icon 10 + spacing 2 + "AI" 20 = 42 (+ 4 trailing) -> description column 46;
-    // candidate + description = 90 < 96 -> 52.
+    // Badge: padding 5 * 2 + icon 10 + spacing 2 + "AI" 20 = 42, + book icon 16 + 4 trailing -> description
+    // column 62; candidate + description = 108 < 120 -> 74.
     #expect(model.aiBadgeWidth == 42)
-    #expect(size == Size(136, 88))
+    #expect(size == Size(166, 102))
     #expect(model.renderData.rows[1].description.isAI)
   }
 
@@ -155,7 +155,7 @@ func makeCandidateWindow() -> CandidateWindowMessage {
     model.setCandidateWindow(window)
     model.updateLayout()
     #expect(model.focusedRow == 1)
-    #expect(model.renderData.footer?.index == "11/10")
+    #expect(model.renderData.footer?.index == "11 / 10")
   }
 }
 
@@ -179,15 +179,16 @@ extension CandidateDescription {
     window.usages.focusedIndex = 1
     model.setCandidateWindow(window)
     let size = model.updateLayout()
-    // caption 20 + 2 rows * (title 17 + desc 14 * 2 lines (300 - 15 - 2 - 4 = 279 px) + 4) + borders 2.
-    #expect(size == CGSize(width: 300, height: 20 + 2 * (17 + 28 + 4) + 2))
+    // Text width 300 - 8 * 2 - 8 * 2 = 268: title 15, description 300 px -> 2 lines * 14 = 28.
+    // Entry 8 + 15 + 2 + 28 + 8 = 61; caption 24; 8 + 24 + 61 + 2 + 61 + 8 = 164.
+    #expect(size == CGSize(width: 300, height: 164))
     let data = model.renderData
     #expect(data.caption?.text == "用例")
-    #expect(data.rows[0].isFocused == false)
-    #expect(data.rows[1].isFocused == true)
-    #expect(data.rows[1].focusedRect == CGRect(x: 1, y: 1 + 20 + 49, width: 298, height: 49))
-    #expect(data.rows[0].title.rect.origin == CGPoint(x: 1 + 2 + 5, y: 1 + 20 + 2))
-    #expect(data.rows[0].description.rect.origin == CGPoint(x: 1 + 2 + 15, y: 1 + 20 + 2 + 17))
+    #expect(data.rows.map(\.isFocused) == [false, true])
+    #expect(data.rows[0].rect == CGRect(x: 8, y: 32, width: 284, height: 61))
+    #expect(data.rows[1].rect == CGRect(x: 8, y: 95, width: 284, height: 61))
+    #expect(data.rows[0].title.rect == CGRect(x: 16, y: 40, width: 268, height: 15))
+    #expect(data.rows[0].description.rect == CGRect(x: 16, y: 57, width: 268, height: 28))
   }
 
   @Test func noUsages() {
