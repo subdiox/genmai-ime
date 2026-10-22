@@ -61,10 +61,11 @@ Settings and learning data live in `~/Library/Application Support/Genmai`.
 
 ### AI conversion
 
-The model is not part of the app. In the settings (tab "AI"), click **Download genmai 0.2.0**: it downloads the
-model from Hugging Face ([subdiox/genmai](https://huggingface.co/subdiox/genmai), 1.2 GB, checked against its
-sha256), converts it (0.6 GB on disk) and installs it into `~/Library/Application Support/Genmai/model`. When a
-newer model is released with a new version of genmai, the same place offers **Update**. From the command line:
+The model is not part of the app. The settings (tab "AI") look up the latest model release on Hugging Face
+([subdiox/genmai](https://huggingface.co/subdiox/genmai)) and offer **Download**: it downloads the model (1.2 GB,
+checked against the checksums Hugging Face lists), converts it (0.6 GB on disk) and installs it into
+`~/Library/Application Support/Genmai/model`. When a newer model is released, the same place offers **Update**;
+**Remove Model…** deletes it. From the command line:
 
 ```sh
 Tools/prepare_genmai_model.sh      # = genmai-cli install

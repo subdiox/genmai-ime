@@ -1,9 +1,9 @@
 #!/bin/zsh
 # Installs the genmai AI conversion model from the command line, like the "Download" button in the settings (tab
-# "AI"): `genmai-cli install` downloads the pinned release (GenmaiModelRelease.current: Hugging Face subdiox/genmai,
-# fp32 safetensors, 1.2 GB), checks its sha256, converts it to the runtime layout GenmaiAI loads (bf16, Conv1D
-# weights transposed to (out, in), ~0.6 GB; metadata format=genmai-bf16-out-in) and installs it with config.json,
-# tokenizer.json and genmai_model.json. With --source, a local HF model directory (e.g. a checkpoint that is not a
+# "AI"): `genmai-cli install` downloads the newest release this IME can run (the highest vX.Y.Z tag of Hugging
+# Face subdiox/genmai; fp32 safetensors, 1.2 GB), checks the checksums Hugging Face lists, converts it to the runtime
+# layout GenmaiAI loads (bf16, Conv1D weights transposed to (out, in), ~0.6 GB; metadata format=genmai-bf16-out-in)
+# and installs it with config.json, tokenizer.json and genmai_model.json. With --source, a local HF model directory (e.g. a checkpoint that is not a
 # release) is converted instead (`genmai-cli prepare`; no genmai_model.json).
 #
 # Usage: Tools/prepare_genmai_model.sh [--source <HF model dir>] [destination dir]

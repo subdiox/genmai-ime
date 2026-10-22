@@ -142,10 +142,10 @@ public enum AIModelStatus: Equatable, Sendable {
     return false
   }
 
-  /// Whether `release` differs from what is installed (a model without release info counts as outdated).
-  public func needsInstall(_ release: GenmaiModelRelease = .current) -> Bool {
-    if case .found(_, let info) = self { return info != release.info }
-    return true
+  /// Whether `release` is newer than what is installed (a model without release info counts as outdated).
+  public func needsInstall(_ release: GenmaiModelRelease) -> Bool {
+    guard case .found(_, let info?) = self else { return true }
+    return GenmaiModelRelease.compareVersions(info.version, release.info.version) == .orderedAscending
   }
 
   /// Identifies the installed weights (size and modification date of model.safetensors): changes when the model

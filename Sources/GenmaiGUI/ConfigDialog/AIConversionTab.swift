@@ -11,7 +11,7 @@ public enum AIStrings {
     case tab, sectionAI, enable, explanation, sectionSettings, timeout, candidates, modelDirectory,
       modelDirectoryPlaceholder, sectionModel, modelFound, modelMissing, modelVersion, modelVersionUnknown,
       modelUpToDate, download, update, downloadNote, downloading, verifying, converting, cancel, installFailed,
-      remove, removeConfirm, removeFailed,
+      remove, removeConfirm, removeFailed, checkingLatest, latestFailed, retry,
       checkAgain, saveFailed, milliseconds
   }
 
@@ -41,6 +41,9 @@ public enum AIStrings {
     .converting: "Installing…",
     .cancel: "Cancel",
     .installFailed: "Could not install the model: %@",
+    .checkingLatest: "Checking for the latest model…",
+    .latestFailed: "Could not check for the latest model: %@",
+    .retry: "Retry",
     .remove: "Remove Model…",
     .removeConfirm:
       "Remove the AI model from %@? AI conversion stops working until you download the model again (the settings are kept).",
@@ -76,6 +79,9 @@ public enum AIStrings {
     .converting: "インストール中…",
     .cancel: "キャンセル",
     .installFailed: "モデルをインストールできませんでした: %@",
+    .checkingLatest: "最新のモデルを確認中…",
+    .latestFailed: "最新のモデルを確認できませんでした: %@",
+    .retry: "再試行",
     .remove: "モデルを削除…",
     .removeConfirm: "%@ から AI モデルを削除しますか? もう一度ダウンロードするまで AI 変換は使えなくなります (設定はそのまま残ります)。",
     .removeFailed: "モデルを削除できませんでした: %@",
@@ -119,7 +125,7 @@ public enum AIStrings {
   }
 
   /// The explanation under the download button.
-  public static func downloadNote(_ release: GenmaiModelRelease = .current, language: GUILanguage = .current) -> String {
+  public static func downloadNote(_ release: GenmaiModelRelease, language: GUILanguage = .current) -> String {
     // The converted weights are half the size of the downloaded fp32 file.
     String(
       format: text(.downloadNote, language: language), bytes(release.downloadSize), release.info.repository,
@@ -185,13 +191,17 @@ struct AIConversionTab: View {
       }
       .disabled(!model.aiValues.enabled)
       Section {
-        AIModelStatusRow(status: model.aiModelStatus) { model.refreshAIModelStatus() }
+        AIModelStatusRow(status: model.aiModelStatus) {
+          model.refreshAIModelStatus()
+          Task { await model.checkLatestAIModel(force: true) }
+        }
         AIModelInstallRow(model: model)
       } header: {
         Text(verbatim: AIStrings.text(.sectionModel))
       }
     }
     .formStyle(.grouped)
+    .task { await model.checkLatestAIModel() }
   }
 }
 
@@ -220,12 +230,11 @@ struct AIModelStatusRow: View {
   }
 }
 
-/// Download / update of the model from Hugging Face, with its progress.
+/// Download / update of the newest model release from Hugging Face, with its progress.
 struct AIModelInstallRow: View {
   let model: ConfigDialogModel
 
   var body: some View {
-    let release = GenmaiModelRelease.current
     switch model.aiModelInstall {
     case .running(let phase):
       HStack {
@@ -242,6 +251,48 @@ struct AIModelInstallRow: View {
         Button(AIStrings.text(.cancel)) { model.cancelAIModelInstall() }
       }
     case .idle, .failed:
+      AIModelLatestRow(model: model)
+      if case .failed(let message) = model.aiModelInstall {
+        Text(verbatim: String(format: AIStrings.text(.installFailed), message))
+          .font(.callout)
+          .foregroundStyle(.red)
+          .textSelection(.enabled)
+          .fixedSize(horizontal: false, vertical: true)
+      }
+      if model.aiModelStatus.isFound {
+        Button(AIStrings.text(.remove), role: .destructive) { model.removeAIModel() }
+      }
+    }
+  }
+}
+
+/// What the newest release is and whether to download it.
+struct AIModelLatestRow: View {
+  let model: ConfigDialogModel
+
+  var body: some View {
+    switch model.aiModelLatest {
+    case .unknown, .checking:
+      HStack(spacing: 8) {
+        ProgressView()
+          .controlSize(.small)
+        Text(verbatim: AIStrings.text(.checkingLatest))
+          .font(.callout)
+          .foregroundStyle(.secondary)
+      }
+    case .failed(let message):
+      HStack(alignment: .firstTextBaseline) {
+        Text(verbatim: String(format: AIStrings.text(.latestFailed), message))
+          .font(.callout)
+          .foregroundStyle(.secondary)
+          .textSelection(.enabled)
+          .fixedSize(horizontal: false, vertical: true)
+        Spacer()
+        Button(AIStrings.text(.retry)) {
+          Task { await model.checkLatestAIModel(force: true) }
+        }
+      }
+    case .available(let release):
       if model.aiModelStatus.needsInstall(release) {
         VStack(alignment: .leading, spacing: 6) {
           Button(String(format: AIStrings.text(model.aiModelStatus.isFound ? .update : .download), release.info.version)) {
@@ -251,21 +302,11 @@ struct AIModelInstallRow: View {
             .font(.callout)
             .foregroundStyle(.secondary)
             .fixedSize(horizontal: false, vertical: true)
-          if case .failed(let message) = model.aiModelInstall {
-            Text(verbatim: String(format: AIStrings.text(.installFailed), message))
-              .font(.callout)
-              .foregroundStyle(.red)
-              .textSelection(.enabled)
-              .fixedSize(horizontal: false, vertical: true)
-          }
         }
       } else {
         Text(verbatim: String(format: AIStrings.text(.modelUpToDate), release.info.version))
           .font(.callout)
           .foregroundStyle(.secondary)
-      }
-      if model.aiModelStatus.isFound {
-        Button(AIStrings.text(.remove), role: .destructive) { model.removeAIModel() }
       }
     }
   }

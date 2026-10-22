@@ -372,16 +372,92 @@ func conversionRequest() -> ConversionRequest {
     }
     let status = AIModelStatus.check(dir)
     #expect(status == .found(dir, info: nil))
-    #expect(status.needsInstall())
     #expect(AIModelStatus.identity(dir) != nil)
-    try GenmaiModelRelease.current.info.save(to: dir)
-    #expect(AIModelStatus.check(dir) == .found(dir, info: GenmaiModelRelease.current.info))
-    #expect(!AIModelStatus.check(dir).needsInstall())
-    #expect(AIModelStatus.check(dir.appending(path: "none")).needsInstall())
+    let release = GenmaiModelReleaseTests.release("0.2.0")
+    #expect(status.needsInstall(release))
+    try release.info.save(to: dir)
+    #expect(AIModelStatus.check(dir) == .found(dir, info: release.info))
+    #expect(!AIModelStatus.check(dir).needsInstall(release))
+    #expect(AIModelStatus.check(dir).needsInstall(GenmaiModelReleaseTests.release("0.10.0")))
+    #expect(!AIModelStatus.check(dir).needsInstall(GenmaiModelReleaseTests.release("0.1.0")))
+    #expect(AIModelStatus.check(dir.appending(path: "none")).needsInstall(release))
   }
 }
 
 // MARK: - Model installation
+
+@Suite struct GenmaiModelReleaseTests {
+  static func release(_ version: String) -> GenmaiModelRelease {
+    GenmaiModelRelease(
+      info: GenmaiModelInfo(version: version, repository: GenmaiModelRelease.repository, revision: "v\(version)"),
+      files: [])
+  }
+
+  /// Excerpts of the Hugging Face API answers for subdiox/genmai.
+  static let refs = Data(
+    #"""
+    {"tags":[{"name":"v0.1.0","ref":"refs/tags/v0.1.0","targetCommit":"876391d"},
+    {"name":"v0.10.0","ref":"refs/tags/v0.10.0","targetCommit":"0"},{"name":"experiment","ref":"refs/tags/experiment"},
+    {"name":"v0.2.0","ref":"refs/tags/v0.2.0","targetCommit":"aea042a"}],
+    "branches":[{"name":"main","ref":"refs/heads/main","targetCommit":"08efa5c"}],"converts":[]}
+    """#.utf8)
+  static let tree = Data(
+    #"""
+    [{"type":"file","oid":"a6344aa","size":1519,"path":".gitattributes"},
+    {"type":"file","oid":"70bb1e6b8b32086b8bccd5dcbb6d84ef3847669e","size":921,"path":"config.json"},
+    {"type":"file","oid":"0695e41","size":1238046208,"lfs":{"oid":"e1ac64258359389b0451bdc521593cba825635baa08b2650a1140678a01396f6","size":1238046208,"pointerSize":135},"path":"model.safetensors"},
+    {"type":"file","oid":"ac7a91b3c4480c983debf6cc9c4d3d482c350fbf","size":394106,"path":"tokenizer.json"}]
+    """#.utf8)
+
+  @Test func releaseTagsNewestFirst() throws {
+    let tags = try GenmaiModelRelease.releaseTags(Self.refs)
+    #expect(tags.map(\.tag) == ["v0.10.0", "v0.2.0", "v0.1.0"])
+    #expect(tags.map(\.version) == ["0.10.0", "0.2.0", "0.1.0"])
+    #expect(GenmaiModelRelease.version(ofTag: "1.2") == nil)
+    #expect(GenmaiModelRelease.version(ofTag: "2.0.1") == "2.0.1")
+    #expect(GenmaiModelRelease.compareVersions("0.9.9", "0.10.0") == .orderedAscending)
+    #expect(GenmaiModelRelease.compareVersions("1.0.0", "1.0.0") == .orderedSame)
+  }
+
+  @Test func filesWithChecksums() throws {
+    let files = try GenmaiModelRelease.files(Self.tree)
+    #expect(files.map(\.name) == GenmaiModelRelease.fileNames)
+    #expect(files[0] == .init(name: "config.json", size: 921, checksum: .gitBlob("70bb1e6b8b32086b8bccd5dcbb6d84ef3847669e")))
+    #expect(
+      files[2]
+        == .init(
+          name: "model.safetensors", size: 1_238_046_208,
+          checksum: .sha256("e1ac64258359389b0451bdc521593cba825635baa08b2650a1140678a01396f6")))
+    #expect(throws: AIModelInstallError.self) { try GenmaiModelRelease.files(Data("[]".utf8)) }
+    let r = GenmaiModelRelease(
+      info: GenmaiModelInfo(version: "0.2.0", repository: "subdiox/genmai", revision: "v0.2.0"), files: files)
+    #expect(r.downloadSize == 921 + 394_106 + 1_238_046_208)
+    #expect(r.url(of: files[2]).absoluteString == "https://huggingface.co/subdiox/genmai/resolve/v0.2.0/model.safetensors")
+  }
+
+  @Test func compatibility() {
+    func config(_ extra: String) -> Data {
+      Data(#"{"model_type": "gpt2", "n_layer": 24, "n_embd": 1024, "n_head": 16, "vocab_size": 6000, "n_positions": 1024\#(extra)}"#.utf8)
+    }
+    #expect(GenmaiModelRelease.isCompatible(config: config("")))
+    #expect(GenmaiModelRelease.isCompatible(config: config(#", "genmai_prompt_format": "zenzlc""#)))
+    #expect(!GenmaiModelRelease.isCompatible(config: config(#", "genmai_prompt_format": "chat""#)))
+    #expect(!GenmaiModelRelease.isCompatible(config: Data(#"{"model_type": "llama"}"#.utf8)))
+    #expect(!GenmaiModelRelease.isCompatible(config: Data("nope".utf8)))
+  }
+
+  @Test func checksums() async throws {
+    let url = FileManager.default.temporaryDirectory.appending(path: "checksum-\(UUID())")
+    defer { try? FileManager.default.removeItem(at: url) }
+    try Data("hello\n".utf8).write(to: url)
+    // `git hash-object` / `shasum -a 256` of "hello\n"
+    #expect(try await AIModelInstaller.checksum(of: url, .gitBlob("ce013625030ba8dba906f756967f9e9ca394464a")))
+    #expect(
+      try await AIModelInstaller.checksum(
+        of: url, .sha256("5891b5b522d5df086d0ff0b110fbd9d21bb4fc7163af34d08286a2e846f6be03")))
+    #expect(!(try await AIModelInstaller.checksum(of: url, .gitBlob("0000"))))
+  }
+}
 
 @Suite struct GenmaiSafetensorsTests {
   /// Writes a safetensors file with F32 tensors.
@@ -456,14 +532,6 @@ func conversionRequest() -> ConversionRequest {
     }
   }
 
-  @Test func releaseURLs() {
-    let r = GenmaiModelRelease.current
-    #expect(r.files.map(\.name).sorted() == ["config.json", "model.safetensors", "tokenizer.json"])
-    #expect(r.files.allSatisfy { $0.sha256.count == 64 })
-    #expect(
-      r.url(of: r.files.last!).absoluteString
-        == "https://huggingface.co/subdiox/genmai/resolve/\(r.info.revision)/model.safetensors")
-  }
 }
 
 // MARK: - Hook in the session layer

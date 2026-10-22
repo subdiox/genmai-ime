@@ -1,7 +1,8 @@
 // Download and installation of the genmai model (not part of Mozc).
 //
-// The model is not bundled with the IME. The config dialog (GenmaiTool) and `genmai-cli install` download a
-// pinned release from Hugging Face (fp32 safetensors, checked against its sha256), convert it to the compact
+// The model is not bundled with the IME. The config dialog (GenmaiTool) and `genmai-cli install` look up the newest
+// release on Hugging Face (`GenmaiModelRelease.latest`: the highest vX.Y.Z tag whose config.json this IME can run),
+// download it (fp32 safetensors; every file checked against the checksum Hugging Face lists), convert it to the compact
 // runtime layout that GenmaiAI loads (bf16, Conv1D weights transposed to (out, in), metadata
 // format=genmai-bf16-out-in; ~0.6 GB) and install it into the model directory together with config.json,
 // tokenizer.json and `genmai_model.json` (which release is installed). The conversion is plain Swift (GenmaiTool
@@ -39,32 +40,155 @@ public struct GenmaiModelInfo: Codable, Equatable, Sendable {
   }
 }
 
-/// A model release on Hugging Face, with the files to download and their checksums.
+/// A model release on Hugging Face (a vX.Y.Z tag of the model repository), with the files to download and their
+/// checksums, as listed by the Hugging Face API.
 public struct GenmaiModelRelease: Equatable, Sendable {
   public struct File: Equatable, Sendable {
+    public enum Checksum: Equatable, Sendable {
+      /// LFS files: sha256 of the content.
+      case sha256(String)
+      /// Regular files: the git blob id (sha1 of "blob <size>\0" + content).
+      case gitBlob(String)
+    }
+
     public var name: String
     public var size: Int64
-    public var sha256: String
+    public var checksum: Checksum
+
+    public init(name: String, size: Int64, checksum: Checksum) {
+      self.name = name
+      self.size = size
+      self.checksum = checksum
+    }
   }
 
   public var info: GenmaiModelInfo
   public var files: [File]
 
-  /// The release the IME uses.
-  public static let current = GenmaiModelRelease(
-    info: GenmaiModelInfo(version: "0.2.0", repository: "subdiox/genmai", revision: "v0.2.0"),
-    files: [
-      File(name: "config.json", size: 921, sha256: "40876bb2ca094f67e9580d3949260ec5f602a8bf5f523587e7448c91da6a1838"),
-      File(name: "tokenizer.json", size: 394_106, sha256: "5f47a842d17ec6211bf243fc2f32b6ee12c9cbc00e68f9bbfdfd550b584c1838"),
-      File(
-        name: "model.safetensors", size: 1_238_046_208,
-        sha256: "e1ac64258359389b0451bdc521593cba825635baa08b2650a1140678a01396f6"),
-    ])
+  public init(info: GenmaiModelInfo, files: [File]) {
+    self.info = info
+    self.files = files
+  }
+
+  /// The Hugging Face repository of the genmai model.
+  public static let repository = "subdiox/genmai"
+  /// The files a release must have.
+  public static let fileNames = ["config.json", "tokenizer.json", "model.safetensors"]
 
   public var downloadSize: Int64 { files.reduce(0) { $0 + $1.size } }
 
   public func url(of file: File) -> URL {
     URL(string: "https://huggingface.co/\(info.repository)/resolve/\(info.revision)/\(file.name)")!
+  }
+
+  // MARK: - Hugging Face API
+
+  /// The newest release this IME can run: the release tags (vX.Y.Z) newest first, the first whose config.json
+  /// `isCompatible`.
+  public static func latest(repository: String = repository, session: URLSession = .shared) async throws
+    -> GenmaiModelRelease
+  {
+    let refs = try await fetch(apiURL(repository, "refs"), name: "release list", session: session)
+    let tags = try releaseTags(refs)
+    guard !tags.isEmpty else { throw AIModelInstallError.noRelease(repository) }
+    for (version, tag) in tags {
+      let release = try await fetch(repository: repository, tag: tag, version: version, session: session)
+      let config = try await Self.fetch(
+        release.url(of: release.files[0]), name: "config.json of \(tag)", session: session)
+      if isCompatible(config: config) {
+        return release
+      }
+    }
+    throw AIModelInstallError.noRelease(repository)
+  }
+
+  /// The release with tag `tag` (its file list).
+  public static func fetch(
+    repository: String = repository, tag: String, version: String? = nil, session: URLSession = .shared
+  ) async throws -> GenmaiModelRelease {
+    let tree = try await fetch(apiURL(repository, "tree/\(tag)"), name: "file list of \(tag)", session: session)
+    let version = version ?? Self.version(ofTag: tag) ?? tag
+    return GenmaiModelRelease(
+      info: GenmaiModelInfo(version: version, repository: repository, revision: tag), files: try files(tree))
+  }
+
+  static func apiURL(_ repository: String, _ path: String) -> URL {
+    URL(string: "https://huggingface.co/api/models/\(repository)/\(path)")!
+  }
+
+  private static func fetch(_ url: URL, name: String, session: URLSession) async throws -> Data {
+    let (data, response) = try await session.data(from: url)
+    let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+    guard status == 200 else { throw AIModelInstallError.download(name, status: status) }
+    return data
+  }
+
+  /// "v1.2.3" / "1.2.3" → "1.2.3"; nil for other tags.
+  static func version(ofTag tag: String) -> String? {
+    let v = tag.hasPrefix("v") ? String(tag.dropFirst()) : tag
+    let parts = v.split(separator: ".", omittingEmptySubsequences: false)
+    guard parts.count == 3, parts.allSatisfy({ !$0.isEmpty && $0.allSatisfy(\.isASCII) && Int($0) != nil }) else {
+      return nil
+    }
+    return v
+  }
+
+  /// Orders versions "1.10.0" > "1.9.2".
+  public static func compareVersions(_ a: String, _ b: String) -> ComparisonResult {
+    let x = a.split(separator: ".").map { Int($0) ?? 0 }
+    let y = b.split(separator: ".").map { Int($0) ?? 0 }
+    for i in 0..<max(x.count, y.count) {
+      let p = i < x.count ? x[i] : 0
+      let q = i < y.count ? y[i] : 0
+      if p != q { return p < q ? .orderedAscending : .orderedDescending }
+    }
+    return .orderedSame
+  }
+
+  /// The release tags of a `/api/models/<repo>/refs` response, newest first: (version, tag).
+  static func releaseTags(_ refs: Data) throws -> [(version: String, tag: String)] {
+    guard let json = try JSONSerialization.jsonObject(with: refs) as? [String: Any],
+      let tags = json["tags"] as? [[String: Any]]
+    else {
+      throw AIModelInstallError.badResponse("refs")
+    }
+    let releases = tags.compactMap { t -> (version: String, tag: String)? in
+      guard let name = t["name"] as? String, let v = version(ofTag: name) else { return nil }
+      return (v, name)
+    }
+    return releases.sorted { compareVersions($0.version, $1.version) == .orderedDescending }
+  }
+
+  /// The model files of a `/api/models/<repo>/tree/<rev>` response, in `fileNames` order.
+  static func files(_ tree: Data) throws -> [File] {
+    guard let entries = try JSONSerialization.jsonObject(with: tree) as? [[String: Any]] else {
+      throw AIModelInstallError.badResponse("tree")
+    }
+    return try fileNames.map { name in
+      guard let e = entries.first(where: { $0["path"] as? String == name && $0["type"] as? String == "file" }),
+        let size = (e["size"] as? NSNumber)?.int64Value
+      else {
+        throw AIModelInstallError.badResponse("\(name) is missing in the release")
+      }
+      if let lfs = e["lfs"] as? [String: Any], let sha = lfs["oid"] as? String {
+        return File(name: name, size: (lfs["size"] as? NSNumber)?.int64Value ?? size, checksum: .sha256(sha))
+      }
+      guard let oid = e["oid"] as? String else { throw AIModelInstallError.badResponse("no checksum for \(name)") }
+      return File(name: name, size: size, checksum: .gitBlob(oid))
+    }
+  }
+
+  /// Whether this IME can run a model with this config.json: GPT-2 (the decoder in GenmaiAI) with the zenzlc
+  /// prompt format (`genmai_prompt_format`; releases before it was recorded used zenzlc).
+  public static func isCompatible(config: Data) -> Bool {
+    guard let json = try? JSONSerialization.jsonObject(with: config) as? [String: Any],
+      json["model_type"] as? String == "gpt2",
+      ["n_layer", "n_embd", "n_head", "vocab_size", "n_positions"].allSatisfy({ json[$0] is NSNumber })
+    else {
+      return false
+    }
+    let format = json["genmai_prompt_format"] as? String ?? "zenzlc"
+    return format == "zenzlc"
   }
 }
 
@@ -72,12 +196,16 @@ public enum AIModelInstallError: Error, Equatable, CustomStringConvertible {
   case download(String, status: Int)
   case checksum(String)
   case badModel(String)
+  case badResponse(String)
+  case noRelease(String)
 
   public var description: String {
     switch self {
     case .download(let file, let status): "downloading \(file) failed (HTTP \(status))"
     case .checksum(let file): "\(file) is damaged (checksum mismatch)"
     case .badModel(let message): "unsupported model file: \(message)"
+    case .badResponse(let message): "unexpected answer from Hugging Face: \(message)"
+    case .noRelease(let repository): "no model release for this version of genmai in \(repository)"
     }
   }
 }
@@ -98,7 +226,7 @@ public enum AIModelInstaller {
   /// Downloads `release`, converts it and installs it into `directory`. Only the model's own files in
   /// `directory` are replaced (each one atomically); other files are left alone. Honors task cancellation.
   public static func install(
-    _ release: GenmaiModelRelease = .current, to directory: URL, cacheDirectory: URL = AIModelInstaller.cacheDirectory,
+    _ release: GenmaiModelRelease, to directory: URL, cacheDirectory: URL = AIModelInstaller.cacheDirectory,
     progress: @escaping @Sendable (Phase) -> Void = { _ in }
   ) async throws {
     let fm = FileManager.default
@@ -121,10 +249,13 @@ public enum AIModelInstaller {
     progress(.verifying)
     for file in release.files {
       let local = downloads.appending(path: file.name)
-      guard try await sha256(of: local) == file.sha256 else {
+      guard try await checksum(of: local, file.checksum) else {
         try? fm.removeItem(at: local)
         throw AIModelInstallError.checksum(file.name)
       }
+    }
+    guard GenmaiModelRelease.isCompatible(config: try Data(contentsOf: downloads.appending(path: "config.json"))) else {
+      throw AIModelInstallError.badModel("config.json of \(release.info.revision) is not a model this IME can run")
     }
     try Task.checkCancellation()
     progress(.converting)
@@ -267,16 +398,28 @@ public enum AIModelInstaller {
     }
   }
 
+  /// Whether the file at `url` has `checksum`.
   @concurrent
-  static func sha256(of url: URL) async throws -> String {
+  static func checksum(of url: URL, _ checksum: GenmaiModelRelease.File.Checksum) async throws -> Bool {
     let handle = try FileHandle(forReadingFrom: url)
     defer { try? handle.close() }
-    var hasher = SHA256()
-    while let chunk = try handle.read(upToCount: 8 << 20), !chunk.isEmpty {
-      try Task.checkCancellation()
-      hasher.update(data: chunk)
+    func hash<H: HashFunction>(_ h: inout H) throws -> String {
+      while let chunk = try handle.read(upToCount: 8 << 20), !chunk.isEmpty {
+        try Task.checkCancellation()
+        h.update(data: chunk)
+      }
+      return h.finalize().map { String(format: "%02x", $0) }.joined()
     }
-    return hasher.finalize().map { String(format: "%02x", $0) }.joined()
+    switch checksum {
+    case .sha256(let expected):
+      var h = SHA256()
+      return try hash(&h) == expected.lowercased()
+    case .gitBlob(let expected):
+      let size = (try FileManager.default.attributesOfItem(atPath: url.path)[.size] as? Int) ?? 0
+      var h = Insecure.SHA1()
+      h.update(data: Data("blob \(size)\0".utf8))
+      return try hash(&h) == expected.lowercased()
+    }
   }
 }
 

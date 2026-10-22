@@ -94,20 +94,25 @@ BOS / EOS ids and the outputs end in garbage).
   40-character chunks), `GenmaiConverter` (actor owning the model; `mlxLock` serializes all MLX work — two
   converters on MLX's default stream at once crash Metal), `GenmaiIncrementalConverter` (converts finished chunks
   while typing).
-- The model is not bundled. `AIModelInstaller` (GenmaiClient/AIConversion) downloads the pinned release
-  (`GenmaiModelRelease.current`: repository, tag, file sizes and sha256) from Hugging Face, converts it with
-  `GenmaiSafetensors.prepare` (plain Swift, no MLX — GenmaiTool does not link it; bf16 round-to-nearest-even,
-  bit-identical to MLX `astype`; Conv1D weights (out, in); metadata `format=genmai-bf16-out-in`; 0.62 GB) and
-  replaces config.json / tokenizer.json / model.safetensors / `genmai_model.json` (installed release) in the model
-  directory one file at a time (other files are left alone). Downloads are kept in `~/Library/Caches/Genmai/download`
-  until the install succeeds. `AIModelInstaller.uninstall` removes only those files (and the directory if
-  nothing else is left; "Remove Model…" in the settings, after a confirmation, then RELOAD). Front ends: the
-  settings tab "AI" (Download / Update button with progress and cancel; afterwards it sends RELOAD and `GenmaiAugmenter` reloads because `AIModelStatus.identity` — size and
-  mtime of the weights — changed), `genmai-cli install` and `Tools/prepare_genmai_model.sh`. The prompt format is
-  `genmai_prompt_format` in config.json (0.1.0 installs had genmai_fmt.txt, removed on install). **New release:**
-  update `GenmaiModelRelease.current` (sizes / sha256 from `https://huggingface.co/api/models/subdiox/genmai/tree/<tag>`),
-  the Python fixture and the score in `convertDaily`. Tests use `$GENMAI_MODEL_DIR`, else
-  `~/Library/Application Support/Genmai/model`, and skip without it.
+- The model is not bundled. `GenmaiModelRelease.latest()` (GenmaiClient/AIConversion) asks the Hugging Face API
+  for the repository's tags (`/api/models/subdiox/genmai/refs`), takes the vX.Y.Z tags newest first and returns
+  the first whose config.json this IME can run (`isCompatible`: gpt2, `genmai_prompt_format` zenzlc or absent),
+  with its files from `/api/models/.../tree/<tag>` (sizes; LFS sha256 for the weights, git blob sha1 for the
+  small files). **Nothing about a release is hard-coded**: publishing a new tag is enough, unless it needs decoder
+  changes (then give it another prompt format / model type so older IMEs skip it). `AIModelInstaller.install`
+  downloads (kept in `~/Library/Caches/Genmai/download/<tag>` until the install succeeds), verifies the checksums
+  and config, converts with `GenmaiSafetensors.prepare` (plain Swift, no MLX — GenmaiTool does not link it; bf16
+  round-to-nearest-even, bit-identical to MLX `astype`; Conv1D weights (out, in); metadata
+  `format=genmai-bf16-out-in`; 0.62 GB) and replaces config.json / tokenizer.json / model.safetensors /
+  `genmai_model.json` (installed release) one file at a time (other files are left alone).
+  `AIModelInstaller.uninstall` removes only those files (and the directory if nothing else is left). Front ends:
+  the settings tab "AI" (looks up the latest release when shown; Download / Update when it is newer than the
+  installed one, with progress and cancel; "Remove Model…" after a confirmation; both send RELOAD and
+  `GenmaiAugmenter` reloads because `AIModelStatus.identity` — size and mtime of the weights — changed),
+  `genmai-cli install [--tag vX.Y.Z]` and `Tools/prepare_genmai_model.sh`. The prompt format is
+  `genmai_prompt_format` in config.json (0.1.0 installs had genmai_fmt.txt, removed on install). For a new release
+  also regenerate the Python fixture and the score in `convertDaily` (they test the installed model). Tests use
+  `$GENMAI_MODEL_DIR`, else `~/Library/Application Support/Genmai/model`, and skip without it.
 - `genmai-cli`: `install`, `prepare` (local HF directory), `convert`, `eval [--incremental] [--every-key] [--draft]
   [--no-kv-reuse]` (per-item latency in the JSON), `compare`, `logprobs`, `session-eval` (below).
 

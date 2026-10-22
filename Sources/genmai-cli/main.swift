@@ -1,8 +1,8 @@
 // genmai-cli: model preparation, conversion, evaluation and parity checks for GenmaiAI.
 //
-//   genmai-cli install [destination dir]
-//       downloads the current model release from Hugging Face (GenmaiModelRelease.current) and installs it like the
-//       config dialog does (default destination: the IME's model directory)
+//   genmai-cli install [--tag vX.Y.Z] [destination dir]
+//       downloads the newest model release this IME can run (or the given tag) from Hugging Face and installs it
+//       like the config dialog does (default destination: the IME's model directory)
 //   genmai-cli prepare <source model dir> <destination dir>
 //       writes the compact runtime model (bf16, Conv1D weights as (out, in)) + tokenizer.json, config.json for a
 //       local HF model directory (e.g. a checkpoint that is not a release)
@@ -111,7 +111,17 @@ func prefix(_ s: String, _ n: Int) -> String {
 
 switch command {
 case "install":
-    let release = GenmaiModelRelease.current
+    let tag = option("--tag")
+    let release: GenmaiModelRelease
+    do {
+        if let tag {
+            release = try await GenmaiModelRelease.fetch(tag: tag)
+        } else {
+            release = try await GenmaiModelRelease.latest()
+        }
+    } catch {
+        fail("cannot look up the model release: \(error)")
+    }
     let dst = args.first.map { URL(filePath: $0) } ?? GenmaiConverter.defaultModelDirectory
     print("installing genmai \(release.info.version) (\(release.info.repository)@\(release.info.revision)) into \(dst.path)")
     let last = Mutex<String>("")
