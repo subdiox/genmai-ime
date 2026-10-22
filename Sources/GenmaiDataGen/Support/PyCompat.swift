@@ -30,8 +30,9 @@ public enum Py {
   /// Python `str.strip()` (no argument).
   public static func strip(_ s: some StringProtocol) -> String {
     let u = s.unicodeScalars
-    guard let first = u.firstIndex(where: { !isSpace($0) }) else { return "" }
-    let last = u.lastIndex(where: { !isSpace($0) })!
+    guard let first = u.firstIndex(where: { !isSpace($0) }), let last = u.lastIndex(where: { !isSpace($0) }) else {
+      return ""
+    }
     return String(String.UnicodeScalarView(u[first...last]))
   }
 
@@ -53,8 +54,8 @@ public enum Py {
   public static func strip(_ s: some StringProtocol, _ chars: String) -> String {
     let set = Set(chars.unicodeScalars)
     let u = s.unicodeScalars
-    guard let first = u.firstIndex(where: { !set.contains($0) }) else { return "" }
-    let last = u.lastIndex(where: { !set.contains($0) })!
+    guard let first = u.firstIndex(where: { !set.contains($0) }), let last = u.lastIndex(where: { !set.contains($0) })
+    else { return "" }
     return String(String.UnicodeScalarView(u[first...last]))
   }
 
@@ -253,8 +254,17 @@ public struct PyOrderedDict<Key: Hashable, Value> {
   public func contains(_ key: Key) -> Bool { storage[key] != nil }
 
   /// (key, value) pairs in insertion order.
-  public var items: [(key: Key, value: Value)] { keys.map { ($0, storage[$0]!) } }
-  public var values: [Value] { keys.map { storage[$0]! } }
+  public var items: [(key: Key, value: Value)] { keys.compactMap { key in storage[key].map { (key, $0) } } }
+  public var values: [Value] { keys.compactMap { storage[$0] } }
+}
+
+extension Dictionary {
+  /// The value of a key the generator itself put into the dictionary; throws
+  /// instead of trapping if it is missing.
+  func requiredValue(_ key: Key) throws -> Value {
+    guard let value = self[key] else { throw DataGenError.invalidInput("missing key \(key)") }
+    return value
+  }
 }
 
 /// A string compared, hashed and ordered by its UTF-8 bytes (= code points),

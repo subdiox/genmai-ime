@@ -86,8 +86,7 @@ public enum RewriterDictionaryGenerator {
       var os: [UInt8] = []
       var numSameKeys: UInt32 = 0
       var prevKey = ""
-      for orderKey in tokens.keys.sorted() {
-        let token = tokens[orderKey]!
+      for (_, token) in tokens.sorted(by: { $0.key < $1.key }) {
         let pos = token.pos
 
         // Update the number of the sequence of the same keys

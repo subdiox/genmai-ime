@@ -205,10 +205,14 @@ public enum GenmaiDataSet {
       outputs[g] = r
       timings.append(t)
     }
-    let ctx = DataGenContext(
-      sources: sources,
-      userPosManagerData: try givenUserPosManagerData
-        ?? userPosManagerData(posMatcher: outputs[.posMatcher]!, userPos: outputs[.userPos]!))
+    let posManagerData: [UInt8]
+    if let givenUserPosManagerData {
+      posManagerData = givenUserPosManagerData
+    } else {
+      posManagerData = try userPosManagerData(
+        posMatcher: try outputs.requiredValue(.posMatcher), userPos: try outputs.requiredValue(.userPos))
+    }
+    let ctx = DataGenContext(sources: sources, userPosManagerData: posManagerData)
 
     // Phase 2: everything else, in parallel.
     let rest = DataGenerator.allCases.filter { wanted.contains($0) && outputs[$0] == nil }

@@ -25,7 +25,8 @@ public enum GenEmoticonRewriterData {
       }
       return xCount < yCount
     }
-    return "\(sorted.last!) \(sorted.first!)"
+    guard let first = sorted.first, let last = sorted.last else { return "" }
+    return "\(last) \(first)"
   }
 
   static func readEmoticonTsv(_ path: String) throws -> [String: SerializedDictionary.TokenList] {

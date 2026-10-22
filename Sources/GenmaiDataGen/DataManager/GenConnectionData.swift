@@ -129,10 +129,10 @@ public enum GenConnectionData {
         }
       }
       guard var best = order.first else { throw DataGenError.invalidInput("connection: empty row") }
-      var bestCount = counts[best]!
-      for cost in order.dropFirst() where counts[cost]! > bestCount {
+      var bestCount = counts[best, default: 0]
+      for cost in order.dropFirst() where counts[cost, default: 0] > bestCount {
         best = cost
-        bestCount = counts[cost]!
+        bestCount = counts[cost, default: 0]
       }
       result.append(best)
     }

@@ -90,8 +90,8 @@ public enum GenZeroQueryData {
     }
 
     // Sort emoji for each reading.  (list.sort is stable.)
-    for key in dict.keys {
-      dict[key] = dict[key]!.sorted { BStr($0.value) < BStr($1.value) }
+    for (key, entryList) in dict.items {
+      dict[key] = entryList.sorted { BStr($0.value) < BStr($1.value) }
     }
     return dict
   }
@@ -171,28 +171,28 @@ public enum GenZeroQueryData {
     -> Dict
   {
     var merged = Dict()
-    for key in ruleDict.keys {
-      merged[key, default: []] += ruleDict[key]!
+    for (key, entryList) in ruleDict.items {
+      merged[key, default: []] += entryList
     }
-    for key in emojiDict.keys {
+    for (key, entryList) in emojiDict.items {
       if !isValidKeyForZeroQuery(key) { continue }
       // Skips aggressive emoji candidates.
       // Example: "顔", "天気" are category name and have many candidates.
-      if emojiDict[key]!.count > 3 { continue }
-      merged[key, default: []] += emojiDict[key]!
+      if entryList.count > 3 { continue }
+      merged[key, default: []] += entryList
     }
-    for key in emoticonDict.keys {
+    for (key, entryList) in emoticonDict.items {
       if !isValidKeyForZeroQuery(key) { continue }
       // Merges only up to 3 emoticons.
       // Example: "にこにこ" have many candidates.
-      merged[key, default: []] += emoticonDict[key]!.prefix(3)
+      merged[key, default: []] += entryList.prefix(3)
     }
-    for key in symbolDict.keys {
+    for (key, entryList) in symbolDict.items {
       if !isValidKeyForZeroQuery(key) { continue }
       // Skip aggressive emoji candidates.
       // Example: "きごう" is category name and has many candidates.
-      if symbolDict[key]!.count > 3 { continue }
-      merged[key, default: []] += symbolDict[key]!
+      if entryList.count > 3 { continue }
+      merged[key, default: []] += entryList
     }
     return merged
   }
@@ -204,7 +204,7 @@ public enum GenZeroQueryData {
     let emoji = try readEmojiTsv(try Py.readLines(s.emoji, mode: .splitlines))
     let emoticon = try readEmoticonTsv(try Py.readLines(s.emoticonCategorized, mode: .splitlines))
     let merged = mergeZeroQueryData(rule, symbol, emoji, emoticon)
-    let out = GenZeroQueryUtil.writeZeroQueryData(merged)
+    let out = try GenZeroQueryUtil.writeZeroQueryData(merged)
     return ["zero_query_token_array": out.tokens, "zero_query_string_array": out.strings]
   }
 }

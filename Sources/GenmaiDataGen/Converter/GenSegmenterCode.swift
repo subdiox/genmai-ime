@@ -63,7 +63,7 @@ public struct GenSegmenterCode: Sendable {
     var maxId = -1
     var idRange: [(Int, Int)] = []
     for p in sortedKeys {
-      let idVal = pos[p]!
+      let idVal = try pos.requiredValue(p)
       if pat.match(p.s) {
         if minId == -1 {
           minId = idVal

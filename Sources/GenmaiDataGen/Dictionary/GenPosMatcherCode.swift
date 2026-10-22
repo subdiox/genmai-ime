@@ -9,19 +9,19 @@ import GenmaiBase
 import GenmaiCore
 
 public enum GenPosMatcherCode {
-  public static func outputPosMatcherData(_ posMatcher: PosMatcherRules) -> [UInt8] {
+  public static func outputPosMatcherData(_ posMatcher: PosMatcherRules) throws -> [UInt8] {
     let names = posMatcher.getRuleNameList()
     var data: [Int] = []
     for ruleName in names {
-      data.append(posMatcher.getId(ruleName))
+      data.append(try posMatcher.getId(ruleName))
     }
     var offset = 2 * names.count
     for ruleName in names {
       data.append(offset)
-      offset += 2 * posMatcher.getRange(ruleName).count + 1
+      offset += 2 * (try posMatcher.getRange(ruleName)).count + 1
     }
     for ruleName in names {
-      for idRange in posMatcher.getRange(ruleName) {
+      for idRange in try posMatcher.getRange(ruleName) {
         data.append(idRange.0)
         data.append(idRange.1)
       }
@@ -41,6 +41,6 @@ public enum GenPosMatcherCode {
     try posDatabase.parse(ctx.sources.idDef, ctx.sources.specialPos)
     let posMatcher = PosMatcherRules(posDatabase)
     try posMatcher.parse(ctx.sources.posMatcherRuleDef)
-    return ["pos_matcher": outputPosMatcherData(posMatcher)]
+    return ["pos_matcher": try outputPosMatcherData(posMatcher)]
   }
 }
