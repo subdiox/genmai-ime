@@ -19,7 +19,7 @@ public enum GenFilteredDictionary {
   /// Class for dictionary0*.txt.
   final class Dictionary {
     var lines: [String] = []
-    var filters: [NSRegularExpression] = []
+    var filters: [Regex<AnyRegexOutput>] = []
 
     func loadFiles(_ dictionaryTxts: [String], _ filterTsv: String) throws {
       try loadFilter(filterTsv)
@@ -33,12 +33,13 @@ public enum GenFilteredDictionary {
         if line.hasPrefix("#") { continue }
         let kv = Py.split(Py.chompLF(line), "\t")
         guard kv.count == 2 else { throw DataGenError.invalidInput("filter: \(line)") }
-        // re.fullmatch(pattern, line): anchored at both ends (\A ... \z).
-        // Python's '.' matches everything but '\n' (ICU's also excludes \r,
+        // re.fullmatch(pattern, line): anchored at both ends (wholeMatch).
+        // Python's '.' matches everything but '\n' (Swift's also excludes \r,
         // U+2028, ...); a line holds at most one '\n', at its end, so dot-all
-        // ((?s)) gives the same matches.
+        // gives the same matches.  Python matches code points: Unicode scalar
+        // semantics.
         let pattern = kv[0] + "\t\\d+\t\\d+\t\\d+\t" + kv[1] + "(\t.*)?\n"
-        filters.append(try NSRegularExpression(pattern: "(?s)\\A(?:" + pattern + ")\\z"))
+        filters.append(try Regex(pattern).dotMatchesNewlines().matchingSemantics(.unicodeScalar))
       }
     }
 
@@ -51,11 +52,7 @@ public enum GenFilteredDictionary {
     }
 
     private func checkFilter(_ line: String) -> Bool {
-      let range = NSRange(location: 0, length: (line as NSString).length)
-      for pattern in filters where pattern.firstMatch(in: line, options: [], range: range) != nil {
-        return true
-      }
-      return false
+      filters.contains { line.wholeMatch(of: $0) != nil }
     }
 
     func contents() -> [UInt8] {

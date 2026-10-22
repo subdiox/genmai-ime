@@ -32,9 +32,9 @@ public enum GenPosIdMap {
       throw DataGenError.invalidInput("POS IDs in id.def must be contiguous and start from 0.")
     }
     var data: [UInt8] = []
-    for posId in 0..<posIds.count {
+    for (posId, name) in idMap.sorted(by: { $0.key < $1.key }) {
       if posId > 0 { data.append(0) }
-      data.append(contentsOf: idMap[posId]!.utf8)
+      data.append(contentsOf: name.utf8)
     }
     return data
   }

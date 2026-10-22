@@ -12,7 +12,7 @@ public enum GenUserPosData {
   /// Returns (token array, string array).
   public static func outputUserPosData(
     _ userPosData: [(userPos: String, conjugations: [UserPosRules.Conjugation])]
-  ) -> (tokenArray: [UInt8], stringArray: [UInt8]) {
+  ) throws -> (tokenArray: [UInt8], stringArray: [UInt8]) {
     var keys = Set<BStr>()
     for (userPos, conjugationList) in userPosData {
       keys.insert(BStr(toString(userPos)))
@@ -38,12 +38,12 @@ public enum GenUserPosData {
       return a != b ? a < b : $0.offset < $1.offset
     }.map(\.element)
     for (userPos, conjugationList) in sortedData {
-      let userPosIndex = stringIndex[BStr(toString(userPos))]!
+      let userPosIndex = try stringIndex.requiredValue(BStr(toString(userPos)))
       for c in conjugationList {
         // One entry is serialized to 8 byte (four uint16_t components).
         put(userPosIndex)
-        put(stringIndex[BStr(toString(c.valueSuffix))]!)
-        put(stringIndex[BStr(toString(c.keySuffix))]!)
+        put(try stringIndex.requiredValue(BStr(toString(c.valueSuffix))))
+        put(try stringIndex.requiredValue(BStr(toString(c.keySuffix))))
         put(c.posId)
       }
     }
@@ -65,7 +65,7 @@ public enum GenUserPosData {
   /// data set section).
   public static func sections(_ ctx: DataGenContext) throws -> [String: [UInt8]] {
     let userPos = try loadUserPos(ctx.sources)
-    let (token, string) = outputUserPosData(userPos.data)
+    let (token, string) = try outputUserPosData(userPos.data)
     return [
       "user_pos_token": token,
       "user_pos_string": string,

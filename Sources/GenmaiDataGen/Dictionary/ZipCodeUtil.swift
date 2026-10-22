@@ -54,7 +54,7 @@ public enum ZipCodeUtil {
   static func shouldMerge(_ zipCount: [BStr: Int], _ entry: [String]) -> Bool {
     let zipCode = BStr(entry[2])
     let flagMulti = entry[12] == "1"
-    let shouldMerge = zipCount[zipCode]! > 1 && !flagMulti
+    let shouldMerge = zipCount[zipCode, default: 0] > 1 && !flagMulti
     let shouldMergeSpecial = shouldMergeSpecial(entry)
     return shouldMerge || shouldMergeSpecial
   }

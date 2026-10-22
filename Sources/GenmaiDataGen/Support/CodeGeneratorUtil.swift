@@ -2,6 +2,7 @@
 // (3.35.6354) used by the dictionary-group generators.
 
 import Foundation
+import GenmaiBase
 
 /// Namespaced to avoid clashing with other groups' `Py` extensions.
 public enum CodeGenUtil {
@@ -42,9 +43,9 @@ public enum CodeGenUtil {
 
   /// `struct.pack('<I', v)` / `'<H'` appenders.
   public static func packU32(_ v: Int, into buf: inout [UInt8]) {
-    withUnsafeBytes(of: UInt32(truncatingIfNeeded: v).littleEndian) { buf.append(contentsOf: $0) }
+    buf.appendLittleEndian(UInt32(truncatingIfNeeded: v))
   }
   public static func packU16(_ v: Int, into buf: inout [UInt8]) {
-    withUnsafeBytes(of: UInt16(truncatingIfNeeded: v).littleEndian) { buf.append(contentsOf: $0) }
+    buf.appendLittleEndian(UInt16(truncatingIfNeeded: v))
   }
 }

@@ -8,17 +8,16 @@ import GenmaiBase
 /// Python `re.compile(pattern).match(s)` (anchored at the start, not at the
 /// end).  The patterns of the rule files only use groups, alternation,
 /// character classes, `^` and `$`, whose semantics agree between Python `re`
-/// and ICU.
-public struct PyRegex: @unchecked Sendable {
-  let regex: NSRegularExpression
+/// and Swift `Regex` matching Unicode scalars (Python matches code points).
+public struct PyRegex {
+  let regex: Regex<AnyRegexOutput>
 
   public init(_ pattern: String) throws {
-    regex = try NSRegularExpression(pattern: pattern)
+    regex = try Regex(pattern).matchingSemantics(.unicodeScalar)
   }
 
   public func match(_ s: String) -> Bool {
-    let ns = s as NSString
-    return regex.firstMatch(in: s, options: [.anchored], range: NSRange(location: 0, length: ns.length)) != nil
+    s.prefixMatch(of: regex) != nil
   }
 }
 
@@ -62,7 +61,9 @@ public final class PosDataBase {
       }
       list.append((cols[1], id))
     }
-    let maxId = list.map(\.id).max()!
+    guard let maxId = list.map(\.id).max() else {
+      throw DataGenError.invalidInput("\(idFile): no POS ID")
+    }
     let special = PosCodeGenUtil.skipLineComment(try Py.readLines(specialPosFile, mode: .splitlines))
     for (k, line) in special.enumerated() {
       list.append((line, maxId + 1 + k))
@@ -95,7 +96,10 @@ public final class PosDataBase {
 
   public func getRange(_ pattern: PyRegex) -> [(Int, Int)] {
     let ids = idList.filter { pattern.match($0.line) }.map(\.id).sorted()
-    return PosDataBase.groupConsecutiveId(ids).map { ($0.first!, $0.last!) }
+    return PosDataBase.groupConsecutiveId(ids).compactMap { group in
+      guard let first = group.first, let last = group.last else { return nil }
+      return (first, last)
+    }
   }
 }
 
@@ -125,16 +129,26 @@ public final class PosMatcherRules {
     matchRuleMap.sorted { $0.value.sortKey < $1.value.sortKey }.map(\.key.s)
   }
 
-  public func getRange(_ name: String) -> [(Int, Int)] {
-    posDatabase.getRange(matchRuleMap[BStr(name)]!.regex)
+  public func getRange(_ name: String) throws -> [(Int, Int)] {
+    posDatabase.getRange(try rule(name).regex)
   }
 
-  public func getId(_ name: String) -> Int {
-    getRange(name)[0].0
+  public func getId(_ name: String) throws -> Int {
+    guard let first = try getRange(name).first else {
+      throw DataGenError.invalidInput("POS matcher rule \(name) matches no POS ID")
+    }
+    return first.0
   }
 
-  public func getOriginalPattern(_ name: String) -> String {
-    matchRuleMap[BStr(name)]!.pattern
+  public func getOriginalPattern(_ name: String) throws -> String {
+    try rule(name).pattern
+  }
+
+  private func rule(_ name: String) throws -> (pattern: String, regex: PyRegex, sortKey: Int) {
+    guard let rule = matchRuleMap[BStr(name)] else {
+      throw DataGenError.invalidInput("unknown POS matcher rule \(name)")
+    }
+    return rule
   }
 }
 

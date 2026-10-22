@@ -22,12 +22,11 @@ public enum GenDataVersion {
   {
     var data: [String: String] = [:]
     // re.match(r'(\w+) *= *(.*)', line.strip())
-    let regex = try NSRegularExpression(pattern: #"^(\w+) *= *(.*)"#)
+    let regex = /(\w+) *= *(.*)/.matchingSemantics(.unicodeScalar)
     for raw in try Py.readLines(versionTemplate, mode: .universal) {
       let line = Py.strip(raw)
-      let ns = line as NSString
-      guard let m = regex.firstMatch(in: line, range: NSRange(location: 0, length: ns.length)) else { continue }
-      data[ns.substring(with: m.range(at: 1))] = ns.substring(with: m.range(at: 2))
+      guard let m = line.prefixMatch(of: regex) else { continue }
+      data[String(m.1)] = String(m.2)
     }
     if let o = dataVersionOverride, !o.isEmpty { data["DATA_VERSION"] = o }
     guard let e = data["ENGINE_VERSION"], let d = data["DATA_VERSION"] else {

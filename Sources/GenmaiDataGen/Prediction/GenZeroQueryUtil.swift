@@ -20,7 +20,7 @@ public enum GenZeroQueryUtil {
   /// `collections.defaultdict(list)`: keys in insertion order.
   typealias ZeroQueryDict = PyOrderedDict<BStr, [ZeroQueryEntry]>
 
-  static func writeZeroQueryData(_ dict: ZeroQueryDict) -> (tokens: [UInt8], strings: [UInt8]) {
+  static func writeZeroQueryData(_ dict: ZeroQueryDict) throws -> (tokens: [UInt8], strings: [UInt8]) {
     // Collect all the strings and assign index in ascending order
     var all = Set<BStr>()
     for (key, entryList) in dict.items {
@@ -32,10 +32,10 @@ public enum GenZeroQueryUtil {
     for (i, s) in sortedStrings.enumerated() { stringIndex[s] = i }
 
     var f: [UInt8] = []
-    for key in dict.keys.sorted() {
-      for entry in dict[key]! {
-        Py.packU32(stringIndex[key]!, into: &f)
-        Py.packU32(stringIndex[BStr(entry.value)]!, into: &f)
+    for (key, entryList) in dict.items.sorted(by: { $0.key < $1.key }) {
+      for entry in entryList {
+        Py.packU32(try stringIndex.requiredValue(key), into: &f)
+        Py.packU32(try stringIndex.requiredValue(BStr(entry.value)), into: &f)
         Py.packU16(entry.entryType, into: &f)
         Py.packU16(0, into: &f)  // Set 0 for unused field.
         Py.packU32(0, into: &f)  // Set 0 for unused field.

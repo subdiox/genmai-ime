@@ -141,7 +141,7 @@ public enum GenUsageRewriterDictionaryMain {
   }
 
   static func put(_ v: UInt32, _ out: inout [UInt8]) {
-    withUnsafeBytes(of: v.littleEndian) { out.append(contentsOf: $0) }
+    out.appendLittleEndian(v)
   }
 
   public static func convert(usageData: [UInt8], cforms: [UInt8]) throws -> Output {

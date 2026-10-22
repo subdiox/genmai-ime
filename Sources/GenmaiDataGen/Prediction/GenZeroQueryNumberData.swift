@@ -26,7 +26,7 @@ public enum GenZeroQueryNumberData {
 
   public static func sections(_ ctx: DataGenContext) throws -> [String: [UInt8]] {
     let dict = readZeroQueryNumberData(try Py.readLines(ctx.sources.zeroQueryNumberDef, mode: .splitlines))
-    let out = GenZeroQueryUtil.writeZeroQueryData(dict)
+    let out = try GenZeroQueryUtil.writeZeroQueryData(dict)
     return ["zero_query_number_token_array": out.tokens, "zero_query_number_string_array": out.strings]
   }
 }

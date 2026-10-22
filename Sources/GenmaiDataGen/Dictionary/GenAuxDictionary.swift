@@ -26,7 +26,9 @@ public enum GenAuxDictionary {
 
     static func parse(_ line: String) throws -> Entry {
       // key, lid, rid, cost, value, *_ = line.rstrip().split('\t')
-      let f = Py.rstrip(line).utf8.split(separator: 0x09, omittingEmptySubsequences: false).map { String($0)! }
+      let f = Py.rstrip(line).utf8.split(separator: 0x09, omittingEmptySubsequences: false).map {
+        String(decoding: $0, as: UTF8.self)
+      }
       guard f.count >= 5, let cost = Py.int(f[3]) else {
         throw DataGenError.invalidInput("dictionary line: \(line)")
       }
@@ -134,8 +136,11 @@ public enum GenAuxDictionary {
 
     func getCost(_ posId: String, _ ratio: Double) throws -> Int {
       let posKey = BStr(posId + "\t" + posId)
-      guard posEntryMap[posKey] != nil else { throw DataGenError.invalidInput("no entry with POS \(posId)") }
-      return posEntryMap[posKey]!.costAtRatio(ratio)
+      // costAtRatio is mutating: called in place on the stored value.
+      guard let cost = posEntryMap[posKey]?.costAtRatio(ratio) else {
+        throw DataGenError.invalidInput("no entry with POS \(posId)")
+      }
+      return cost
     }
   }
 

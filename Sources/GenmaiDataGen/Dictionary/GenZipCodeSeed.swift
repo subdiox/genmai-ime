@@ -50,8 +50,9 @@ public enum GenZipCodeSeed {
     let csvLines = try ZipCodeUtil.readCSV(fileName)
     let mergedCsvLines = ZipCodeUtil.mergeCSV(csvLines)
     var output: [String] = []
+    let patterns = TownNamePatterns()
     for tokens in mergedCsvLines {
-      for entry in try readZipCodeEntries(tokens[2], tokens[6], tokens[7], tokens[8]) {
+      for entry in try readZipCodeEntries(tokens[2], tokens[6], tokens[7], tokens[8], patterns) {
         output.append(entry.getLine())
       }
     }
@@ -66,10 +67,11 @@ public enum GenZipCodeSeed {
   }
 
   /// Read zip code entries.
-  static func readZipCodeEntries(_ zipCode: String, _ level1: String, _ level2: String, _ level3: String) throws
-    -> [ZipEntry]
-  {
-    try parseTownName(level3).map { ZipEntry(zipCode: zipCode, address: level1 + level2 + $0) }
+  static func readZipCodeEntries(
+    _ zipCode: String, _ level1: String, _ level2: String, _ level3: String,
+    _ patterns: TownNamePatterns = TownNamePatterns()
+  ) throws -> [ZipEntry] {
+    try parseTownName(level3, patterns).map { ZipEntry(zipCode: zipCode, address: level1 + level2 + $0) }
   }
 
   /// Read jigyosyo entry.
@@ -79,10 +81,15 @@ public enum GenZipCodeSeed {
     ZipEntry(zipCode: zipCode, address: level1 + level2 + level3 + " " + name)
   }
 
-  // Python `re` patterns (Unicode \d / \D == ICU \p{Nd}).
-  static let parenRegex = try! NSRegularExpression(pattern: "（.*）")
-  static let chiwariRegex = try! NSRegularExpression(pattern: "\\A(\\D*?)第?\\d+地割.*")
-  static let chouRegex = try! NSRegularExpression(pattern: "\\A(.*町)?(.*)")
+  /// The Python `re` patterns of parse_town_name.  Python matches code points
+  /// and its Unicode \d / \D are \p{Nd} / \P{Nd}, as in Swift `Regex` with
+  /// Unicode scalar semantics.  (`Regex` is not `Sendable`: made once per CSV
+  /// file and passed down.)
+  struct TownNamePatterns {
+    let paren = /（.*）/.matchingSemantics(.unicodeScalar)
+    let chiwari = /(\D*?)第?\d+地割.*/.matchingSemantics(.unicodeScalar)
+    let chou = /(.*町)?(.*)/.matchingSemantics(.unicodeScalar)
+  }
 
   static func contains(_ s: String, _ sub: String) -> Bool {
     let a = Array(s.utf8)
@@ -96,7 +103,9 @@ public enum GenZipCodeSeed {
   }
 
   /// Parse town name.
-  static func parseTownName(_ level3In: String) throws -> [String] {
+  static func parseTownName(_ level3In: String, _ patterns: TownNamePatterns = TownNamePatterns()) throws
+    -> [String]
+  {
     var level3 = level3In
     // Skip some exceptional cases
     // 中津市の次に番地がくる場合 : 871-0099 大分県中津市
@@ -116,9 +125,8 @@ public enum GenZipCodeSeed {
     }
 
     // We ignore additional information here.
-    let ns = level3 as NSString
-    level3 = parenRegex.stringByReplacingMatches(
-      in: level3, range: NSRange(location: 0, length: ns.length), withTemplate: "")
+    // re.sub(r'（.*）', '', level3)
+    level3 = level3.replacing(patterns.paren, with: "")
 
     // For 地割, we have these cases.
     //  XX1地割
@@ -128,10 +136,9 @@ public enum GenZipCodeSeed {
     //  XX第1地割、XX第2地割、
     //  XX第1地割〜XX第2地割、
     // We simply use XX for them.
-    let ns2 = level3 as NSString
-    let full = NSRange(location: 0, length: ns2.length)
-    if let m = chiwariRegex.firstMatch(in: level3, range: full) {
-      return [ns2.substring(with: m.range(at: 1))]
+    // re.match: anchored at the start.
+    if let m = level3.prefixMatch(of: patterns.chiwari) {
+      return [String(m.1)]
     }
 
     // For "、"
@@ -139,13 +146,9 @@ public enum GenZipCodeSeed {
     //   -> XX町YY and (XX町)ZZ
     //  YY、ZZ
     //   -> YY and ZZ
-    if let m = chouRegex.firstMatch(in: level3, range: full) {
-      var chou = ""
-      let r1 = m.range(at: 1)
-      if r1.location != NSNotFound {
-        chou = ns2.substring(with: r1)
-      }
-      let rests = ns2.substring(with: m.range(at: 2))
+    if let m = level3.prefixMatch(of: patterns.chou) {
+      let chou = m.1.map(String.init) ?? ""
+      let rests = String(m.2)
       return Py.split(rests, "、").map { chou + $0 }
     }
 

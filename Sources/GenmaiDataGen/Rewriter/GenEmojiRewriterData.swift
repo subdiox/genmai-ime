@@ -26,7 +26,7 @@ public enum GenEmojiRewriterData {
     var out = String.UnicodeScalarView()
     for c in string.unicodeScalars {
       if (0xFF01...0xFF5E).contains(c.value) {
-        out.append(Unicode.Scalar(c.value - offset)!)
+        out.append(Unicode.Scalar(UInt8(c.value - offset)))
       } else {
         out.append(c)
       }
@@ -87,18 +87,18 @@ public enum GenEmojiRewriterData {
     for (i, s) in sortedStrings.enumerated() { index[s] = i }
 
     var f: [UInt8] = []
-    let empty = index[BStr("")]!
+    let empty = try index.requiredValue(BStr(""))
     for (reading, valueList) in sortedTokenDict {
-      let readingIndex = index[reading]!
+      let readingIndex = try index.requiredValue(reading)
       for valueIndex in valueList {
         let d = emojiDataList[valueIndex]
         guard let version = versionToIndex[d.unicodeVersion] else {
           throw DataGenError.invalidInput("unknown emoji version \(d.unicodeVersion)")
         }
         Py.packU32(readingIndex, into: &f)
-        Py.packU32(index[BStr(d.emoji)]!, into: &f)
+        Py.packU32(try index.requiredValue(BStr(d.emoji)), into: &f)
         Py.packU32(version, into: &f)
-        Py.packU32(index[BStr(d.utf8Description)]!, into: &f)
+        Py.packU32(try index.requiredValue(BStr(d.utf8Description)), into: &f)
         Py.packU32(empty, into: &f)
         Py.packU32(empty, into: &f)
         Py.packU32(empty, into: &f)
