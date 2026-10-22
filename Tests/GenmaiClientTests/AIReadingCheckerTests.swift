@@ -87,6 +87,12 @@ struct AIReadingCheckerTests {
     }
     let perCandidate = (ContinuousClock.now - start) / n
     print("reading check: \(perCandidate) per candidate")
-    #expect(perCandidate < .milliseconds(2))
+    // Release: ~0.2 ms (M4 Pro). Debug builds are ~8x slower and run in parallel with the other suites, so their
+    // bound only catches gross regressions.
+    #if DEBUG
+      #expect(perCandidate < .milliseconds(5))
+    #else
+      #expect(perCandidate < .milliseconds(1))
+    #endif
   }
 }

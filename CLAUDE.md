@@ -210,7 +210,7 @@ unchanged; the hook only forwards). GenmaiCore and GenmaiSession contain no AI c
   with system dictionary words (reverse lookup on a second `SystemDictionary` built with the reverse lookup index in
   the background when AI is enabled, from `Engine.getDataManager()`), their one-character entries for single kanji,
   kana / symbols as themselves, wildcards for digit / Latin runs (+ one counter kanji) and kanji without entries, and
-  one か / の / つ between two kanji. ~0.16 ms per candidate (release), results cached. Setting `reading_check`
+  one か / の / つ between two kanji. ~0.2 ms per candidate (release), results cached. Setting `reading_check`
   (default on, no UI); `session-eval --no-reading-check` compares; the debug log notes `unreadable=[...]`.
 - **Left context:** IMK surrounding text up to 500 characters plus text committed in the session; reset on
   activation, RESET_CONTEXT or an empty preceding text. The model tends to copy the context: a wrong conversion
