@@ -145,7 +145,7 @@ struct UninstallerLayout: Sendable, Equatable {
     var isDirectory: ObjCBool = false
     guard fm.fileExists(atPath: url.path(percentEncoded: false), isDirectory: &isDirectory) else { return 0 }
     guard isDirectory.boolValue else {
-      return (try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize).map { Int64($0 ?? 0) } ?? 0
+      return Int64((try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0)
     }
     var total: Int64 = 0
     for case let file as URL in fm.enumerator(at: url, includingPropertiesForKeys: [.fileSizeKey]) ?? .init() {

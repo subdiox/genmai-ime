@@ -221,8 +221,6 @@ public final class Table: @unchecked Sendable {
         : loadFromFile(kRomajiPreeditTableFile)
     case .kana:
       result = loadFromFile(kRomajiPreeditTableFile)
-    default:
-      GenmaiLog.error("Unkonwn preedit method: \(config.preeditMethod)")
     }
 
     if !result {

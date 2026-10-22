@@ -55,8 +55,13 @@ mozc/src/...` provenance comments.
 2. **Strings and byte offsets.** The C++ uses UTF-8 `std::string` and many algorithms index by **byte** (lattice
    positions, key lengths, `substr`). Use Swift `String` for values but compute positions with `.utf8` counts and
    slice via UTF-8 (helpers in GenmaiBase). Never replace a byte offset with a Character count. Binary data
-   (dictionary, connection matrix, LOUDS, serialized arrays) is read through `UnsafeRawBufferPointer` over a
-   memory-mapped `Data`; little-endian loads, no copies of big sections.
+   (dictionary, connection matrix, LOUDS, serialized arrays) is read through `Span<UInt8>` of a memory-mapped
+   `Data` (`data.span`; `loadLittleEndian(_:at:)` etc. in GenmaiBase/ByteSpan.swift); no copies of big sections.
+8. **Safe Swift only.** No unsafe APIs (`Unsafe*Pointer`, `withUnsafe*`, `unsafeBitCast`, `nonisolated(unsafe)`,
+   `@unchecked Sendable`, `assumingMemoryBound`) where a safe alternative exists: `Span` / `RawSpan` /
+   `MutableSpan`, `Mutex`, Sendable value types. No force unwrapping (`!`, `try!`, `as!`, implicitly unwrapped
+   optionals). Swift `Regex`, not `NSRegularExpression`. Prefer the latest Swift / Apple APIs. Where an unsafe API
+   is unavoidable (C APIs such as mmap or Authorization Services), keep it to one small wrapper with a comment.
 3. **absl / std replacements.** `absl::flat_hash_map` → `Dictionary` only where iteration order does not affect
    output; `std::sort` is not stable — where ties matter, match what the C++ produces. `absl::Status(Or)` →
    `throws`. Fingerprint / hash functions must be bit-exact (user history keys are persisted).
@@ -65,8 +70,7 @@ mozc/src/...` provenance comments.
    `OSAllocatedUnfairLock`, no `_unsafeLock`. `Mutex` is not recursive. **No thread-blocking waits**
    (`NSCondition`, semaphores, sleep-polling): a C++ `Wait()` becomes `async` and awaits the background work
    (GenmaiBase `TaskManager`, an actor on its own executor); synchronous paths such as
-   `SessionHandler.evalCommand` never wait. Types holding mmapped data may be `@unchecked Sendable` with a
-   comment. `ExistentialAny` is enabled. C++ interfaces become protocols; mocks become test doubles.
+   `SessionHandler.evalCommand` never wait. `ExistentialAny` is enabled. C++ interfaces become protocols; mocks become test doubles.
    **Pitfall:** if a protocol requirement has a default in an extension and a base class does not implement it, a
    subclass's method is not called through `any Protocol`. In callback hierarchies the base class implements every
    requirement and subclasses `override`.

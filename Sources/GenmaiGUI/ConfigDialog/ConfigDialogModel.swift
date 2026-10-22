@@ -461,8 +461,7 @@ public final class ConfigDialogModel {
     isLoading = true
     defer { isLoading = false }
     baseConfig = config
-    var newValues = ConfigDialogValues(config: config)
-    values = newValues
+    values = ConfigDialogValues(config: config)
     characterFormEditor.load(config)
   }
 

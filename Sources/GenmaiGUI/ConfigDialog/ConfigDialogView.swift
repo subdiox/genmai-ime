@@ -66,7 +66,7 @@ enum SettingsPane: String, CaseIterable, Identifiable {
 public struct ConfigDialogView: View {
   /// The window's ideal size; the app's window follows it (`sizingOptions = .preferredContentSize`). It is the
   /// same for every pane so that the window does not jump when the selection changes; the panes scroll.
-  public static let idealSize = CGSize(width: 760, height: 620)
+  public nonisolated static let idealSize = CGSize(width: 760, height: 620)
 
   @State private var model: ConfigDialogModel
   @State private var selection: SettingsPane? = .general

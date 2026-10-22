@@ -80,9 +80,9 @@ public enum GenZipCodeSeed {
   }
 
   // Python `re` patterns (Unicode \d / \D == ICU \p{Nd}).
-  nonisolated(unsafe) static let parenRegex = try! NSRegularExpression(pattern: "（.*）")
-  nonisolated(unsafe) static let chiwariRegex = try! NSRegularExpression(pattern: "\\A(\\D*?)第?\\d+地割.*")
-  nonisolated(unsafe) static let chouRegex = try! NSRegularExpression(pattern: "\\A(.*町)?(.*)")
+  static let parenRegex = try! NSRegularExpression(pattern: "（.*）")
+  static let chiwariRegex = try! NSRegularExpression(pattern: "\\A(\\D*?)第?\\d+地割.*")
+  static let chouRegex = try! NSRegularExpression(pattern: "\\A(.*町)?(.*)")
 
   static func contains(_ s: String, _ sub: String) -> Bool {
     let a = Array(s.utf8)

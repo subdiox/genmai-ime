@@ -262,6 +262,7 @@ public enum NumberUtil {
   ///   - output: function appends new representation into output vector.
   /// value, desc and style are stored same size and same order.
   /// if invalid string is set, this function do nothing.
+  @discardableResult
   public static func arabicToKanji(_ inputNum: some StringProtocol, _ output: inout [NumberString])
     -> Bool
   {
@@ -408,6 +409,7 @@ public enum NumberUtil {
 
   /// Converts half-width Arabic number string to Separated Arabic string.
   /// (e.g. 1234567890 are converted to 1,234,567,890)
+  @discardableResult
   public static func arabicToSeparatedArabic(
     _ inputNum: some StringProtocol, _ output: inout [NumberString]
   ) -> Bool {
@@ -471,6 +473,7 @@ public enum NumberUtil {
 
   /// Converts half-width Arabic number string to full-width Arabic number
   /// string.
+  @discardableResult
   public static func arabicToWideArabic(_ inputNum: some StringProtocol, _ output: inout [NumberString])
     -> Bool
   {
@@ -510,6 +513,7 @@ public enum NumberUtil {
 
   /// Converts half-width Arabic number to various styles.
   ///   - Roman style (i) (ii) ...
+  @discardableResult
   public static func arabicToOtherForms(_ inputNum: some StringProtocol, _ output: inout [NumberString])
     -> Bool
   {
@@ -551,6 +555,7 @@ public enum NumberUtil {
   /// Converts half-width Arabic number to various radices (2,8,16).
   /// Excepted number of input digits is smaller than 20, but it can be
   /// converted only if it can be stored in an unsigned 64-bit integer.
+  @discardableResult
   public static func arabicToOtherRadixes(_ inputNum: some StringProtocol, _ output: inout [NumberString])
     -> Bool
   {
