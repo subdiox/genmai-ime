@@ -13,27 +13,51 @@ import Testing
 
 @MainActor
 final class ControllerFixture {
+  /// What the controller's callbacks change (the opened URLs) and read (the clock).
+  final class Environment {
+    var openURLCount = 0
+    var time: TimeInterval = 1000
+  }
+
   let mockClient = MockTextInputClient()
   var mockGenmaiClient = MockGenmaiClient()
   var mockRenderer = MockRenderer()
   let toolLauncher = MockAppLauncher()
-  var openURLCount = 0
-  var time: TimeInterval = 1000
-  var controller: GenmaiInputController!
+  let environment = Environment()
+  var controller: GenmaiInputController
+
+  var openURLCount: Int {
+    get { environment.openURLCount }
+    set { environment.openURLCount = newValue }
+  }
+
+  var time: TimeInterval {
+    get { environment.time }
+    set { environment.time = newValue }
+  }
 
   init() {
-    setUpController()
+    controller = Self.makeController(
+      mockGenmaiClient, mockRenderer, mockClient: mockClient, toolLauncher: toolLauncher, environment: environment)
   }
 
   func setUpController() {
     mockGenmaiClient = MockGenmaiClient()
     mockRenderer = MockRenderer()
-    controller = GenmaiInputController(
-      genmaiClient: mockGenmaiClient, renderer: mockRenderer,
-      currentClient: { [mockClient] in mockClient }, toolLauncher: toolLauncher,
-      urlOpener: { [weak self] _ in self?.openURLCount += 1 },
+    controller = Self.makeController(
+      mockGenmaiClient, mockRenderer, mockClient: mockClient, toolLauncher: toolLauncher, environment: environment)
+  }
+
+  private static func makeController(
+    _ genmaiClient: MockGenmaiClient, _ renderer: MockRenderer, mockClient: MockTextInputClient,
+    toolLauncher: MockAppLauncher, environment: Environment
+  ) -> GenmaiInputController {
+    GenmaiInputController(
+      genmaiClient: genmaiClient, renderer: renderer,
+      currentClient: { mockClient }, toolLauncher: toolLauncher,
+      urlOpener: { _ in environment.openURLCount += 1 },
       selectionRangeFallback: { NSRange(location: NSNotFound, length: 0) },
-      now: { [weak self] in self?.time ?? 0 },
+      now: { environment.time },
       frontmostWindow: { nil })
   }
 
@@ -196,14 +220,14 @@ private func comparePreedit(_ expected: NSAttributedString, _ actual: NSAttribut
   @Test func openLink() {
     let f = ControllerFixture()
     #expect(f.openURLCount == 0)
-    f.controller.openLink(URL(string: "http://www.example.com/")!)
+    f.controller.openLink(URL(validLiteral: "http://www.example.com/"))
     // openURL is invoked
     #expect(f.openURLCount == 1)
     // Change to the unsecure bundle ID
     f.resetClientBundleIdentifier("com.apple.securityagent")
     // The counter does not change during the initialization
     #expect(f.openURLCount == 1)
-    f.controller.openLink(URL(string: "http://www.example.com/")!)
+    f.controller.openLink(URL(validLiteral: "http://www.example.com/"))
     // openURL is not invoked
     #expect(f.openURLCount == 1)
   }
@@ -231,7 +255,7 @@ private func comparePreedit(_ expected: NSAttributedString, _ actual: NSAttribut
     #expect(!f.controller.rendererCommand.visible)
   }
 
-  @Test func switchMode() {
+  @Test func switchMode() throws {
     let f = ControllerFixture()
     // When a mode changes from DIRECT, it should invoke "ON" command beforehand.
     f.mockGenmaiClient.sendKeyHandler = { _ in Output() }
@@ -242,7 +266,7 @@ private func comparePreedit(_ expected: NSAttributedString, _ actual: NSAttribut
     #expect(f.controller.mode == .hiragana)
     #expect(f.mockGenmaiClient.sendKeyCalls.count == 1)
     #expect(f.mockGenmaiClient.sendKeyCalls[0].key.specialKey == .on)
-    var actualCommand = f.mockGenmaiClient.sendCommandCalls.last!.command
+    var actualCommand = try #require(f.mockGenmaiClient.sendCommandCalls.last).command
     #expect(actualCommand.type == .switchCompositionMode)
     #expect(actualCommand.compositionMode == .hiragana)
 
@@ -250,7 +274,7 @@ private func comparePreedit(_ expected: NSAttributedString, _ actual: NSAttribut
     f.controller.mode = .hiragana
     f.controller.switchMode(.halfKatakana, client: f.mockClient)
     #expect(f.controller.mode == .halfKatakana)
-    actualCommand = f.mockGenmaiClient.sendCommandCalls.last!.command
+    actualCommand = try #require(f.mockGenmaiClient.sendCommandCalls.last).command
     #expect(actualCommand.type == .switchCompositionMode)
     #expect(actualCommand.compositionMode == .halfKatakana)
     #expect(f.mockGenmaiClient.sendCommandCalls.count == 2)
@@ -629,7 +653,7 @@ private func comparePreedit(_ expected: NSAttributedString, _ actual: NSAttribut
     #expect(f.controller.handleEvent(key(kVK_ANSI_I, "i"), client: f.mockClient))
     #expect(f.controller.handleEvent(key(kVK_ANSI_K, "k"), client: f.mockClient))
     release.yield()
-    await update.value
+    _ = await update.value
     for _ in 0..<20 { await Task.yield() }
     #expect(f.mockGenmaiClient.sendCommandCalls.isEmpty)
 
@@ -672,7 +696,7 @@ private func comparePreedit(_ expected: NSAttributedString, _ actual: NSAttribut
     #expect(f.controller.composedString.length == 0)
   }
 
-  @Test func rendererReceiverForwardsCommands() {
+  @Test func rendererReceiverForwardsCommands() throws {
     let f = ControllerFixture()
     let receiver = RendererReceiver()
     receiver.setCurrentController(f.controller)
@@ -680,13 +704,13 @@ private func comparePreedit(_ expected: NSAttributedString, _ actual: NSAttribut
     var command = SessionCommand()
     command.type = .selectCandidate
     command.id = 3
-    receiver.sendData(try! command.serializedData())
+    receiver.sendData(try command.serializedData())
     #expect(f.mockGenmaiClient.sendCommandCalls.map(\.command) == [command])
 
     var output = Output()
     output.result.type = .string
     output.result.value = "結果"
-    receiver.outputResult(try! output.serializedData())
+    receiver.outputResult(try output.serializedData())
     #expect(f.mockClient.insertedText == "結果")
   }
 

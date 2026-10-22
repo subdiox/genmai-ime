@@ -57,10 +57,6 @@ func registerInputSource() {
   }
 }
 
-/// Kept alive for the lifetime of the process.
-nonisolated(unsafe) var imkServer: IMKServer?
-nonisolated(unsafe) var updateChecker: GenmaiUpdateChecker?
-
 let kUsage = """
   Usage: GenmaiIME [--register_input_source | --self_test | --help]
     (no option)              run the input method (started by the system from Genmai.app)
@@ -241,7 +237,6 @@ func runInputMethod() -> Int32 {
     NSLog("Genmai failed to initialize: run GenmaiIME from the Genmai.app bundle (Tools/make_ime_bundle.sh).")
     return -1
   }
-  imkServer = server
 
   // Not in Mozc: the conversion server gets the AI conversion hook (idle unless enabled in the settings).
   let aiHook = AIConversionHook.makeGenmai()
@@ -256,11 +251,13 @@ func runInputMethod() -> Int32 {
   // Not in Mozc: the daily update check (if enabled in the settings).
   let checker = GenmaiUpdateChecker()
   checker.start()
-  updateChecker = checker
 
-  let app = NSApplication.shared
-  app.run()
+  // The server and the update checker live as long as the process.
+  withExtendedLifetime((server, checker)) {
+    NSApplication.shared.run()
+  }
   return 0
 }
 
-exit(MainActor.assumeIsolated { runInputMethod() })
+// Top-level code runs on the main actor.
+exit(runInputMethod())

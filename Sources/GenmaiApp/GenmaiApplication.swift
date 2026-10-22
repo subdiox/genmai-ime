@@ -200,7 +200,7 @@ enum AppSingleton {
     DistributedNotificationCenter.default().addObserver(
       forName: kActivateNotificationName, object: name, queue: .main
     ) { _ in
-      MainActor.assumeIsolated {
+      Task { @MainActor in
         NSApp.activate()
         NSApp.windows.first { $0.isVisible }?.makeKeyAndOrderFront(nil)
       }
@@ -213,6 +213,7 @@ enum AppSingleton {
   }
 }
 
+@MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
   func applicationDidFinishLaunching(_ notification: Notification) {
     NSApp.activate()
@@ -221,7 +222,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }
 
   func applicationWillTerminate(_ notification: Notification) {
-    MainActor.assumeIsolated { AppSingleton.release() }
+    AppSingleton.release()
   }
 }
 
