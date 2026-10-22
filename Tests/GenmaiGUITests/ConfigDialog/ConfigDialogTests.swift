@@ -160,10 +160,10 @@ private func makeNonDefaultConfig() -> Genmai_Config_Config {
     #expect(model.pendingMessage?.kind == .critical)
   }
 
-  @Test func resetToDefaultsAsksAndRestoresDefaults() {
+  @Test func resetToDefaultsAsksAndRestoresDefaults() throws {
     let model = ConfigDialogModel(client: ConfigDialogMockClient(config: makeNonDefaultConfig()))
     model.resetToDefaults()
-    let message = try! #require(model.pendingMessage)
+    let message = try #require(model.pendingMessage)
     #expect(message.kind == .question)
     #expect(model.values.incognitoMode)
     message.onYes?()

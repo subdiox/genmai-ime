@@ -7,8 +7,8 @@ import GenmaiBase
 import SwiftUI
 
 public struct AboutDialogContent: Equatable, Sendable {
-  public static let websiteURL = URL(string: "https://github.com/subdiox/genmai-ime")!
-  public static let issuesURL = URL(string: "https://github.com/subdiox/genmai-ime/issues")!
+  public static let websiteURL = URL(validLiteral: "https://github.com/subdiox/genmai-ime")
+  public static let issuesURL = URL(validLiteral: "https://github.com/subdiox/genmai-ime/issues")
 
   public var windowTitle: String
   public var productName: String

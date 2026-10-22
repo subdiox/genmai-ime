@@ -17,8 +17,9 @@ import Testing
   }
 
   nonisolated static let release = GenmaiAppRelease(
-    version: "0.2.0", tag: "v0.2.0", pageURL: URL(string: "https://example.com/r")!, notes: "**new**",
-    package: .init(name: "Genmai-0.2.0.pkg", url: URL(string: "https://example.com/p.pkg")!, size: 1000, sha256: nil))
+    version: "0.2.0", tag: "v0.2.0", pageURL: URL(validLiteral: "https://example.com/r"), notes: "**new**",
+    package: .init(
+      name: "Genmai-0.2.0.pkg", url: URL(validLiteral: "https://example.com/p.pkg"), size: 1000, sha256: nil))
 
   @Test func checksAndRecordsTheCheck() async {
     let dir = TempDir()
