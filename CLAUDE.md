@@ -222,6 +222,16 @@ unchanged; the hook only forwards). GenmaiCore and GenmaiSession contain no AI c
   GenmaiMacTests (key queue, suggestion refresh), GenmaiRendererTests (`CandidatePlacement`), GenmaiAITests
   (tokenizer, decoding, KV reuse / draft vs. plain), GenmaiAIClientTests (model-backed speculation).
 
+## GUI design (not in Mozc)
+
+The windows keep Mozc's options and dialog logic (`ConfigDialogModel`, `DictionaryToolModel`, ...) but not its
+Qt layouts: the settings window is a sidebar of panes (General / Input / Conversion / Suggestions / AI / Privacy /
+Updates) whose edits are saved automatically (`savesChangesAutomatically`, 300 ms after the last edit and on
+close; no OK / Cancel / Apply), the dictionary tool a `NavigationSplitView` with an SF Symbols toolbar and a
+search field, the About window a centered icon / version / links layout. Wording that differs from Mozc's
+translations lives in `Base/GenmaiStrings.swift` (looked up by `tr` before Mozc's) or in a per-window strings
+table; use "…" and "ユーザー".
+
 ## App updates and releases (not in Mozc)
 
 - The tool app (product GenmaiTool) is bundled as `Genmai.app/Contents/Resources/Genmai.app` with executable

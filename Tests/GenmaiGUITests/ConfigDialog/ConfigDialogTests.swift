@@ -94,11 +94,42 @@ private func makeNonDefaultConfig() -> Genmai_Config_Config {
     #expect(model.pendingMessage?.kind == .critical)
   }
 
-  @Test func applyButtonIsDisabledOnLaunchAndEnabledByEdits() {
-    let model = ConfigDialogModel(client: ConfigDialogMockClient())
-    #expect(!model.applyEnabled)
+  @Test func editsArePendingUntilSaved() {
+    let client = ConfigDialogMockClient(config: ConfigHandler.defaultConfig())
+    let model = ConfigDialogModel(client: client)
+    #expect(!model.hasPendingChanges)
     model.values.useCalculator.toggle()
-    #expect(model.applyEnabled)
+    #expect(model.hasPendingChanges)
+    #expect(client.setConfigCalls.isEmpty)
+    model.savePendingChanges()
+    #expect(!model.hasPendingChanges)
+    #expect(client.setConfigCalls.count == 1)
+    model.savePendingChanges()
+    #expect(client.setConfigCalls.count == 1)
+  }
+
+  @Test func editsAreSavedAutomatically() async throws {
+    let client = ConfigDialogMockClient(config: ConfigHandler.defaultConfig())
+    let model = ConfigDialogModel(client: client)
+    model.savesChangesAutomatically = true
+    model.values.incognitoMode = true
+    model.values.useCalculator.toggle()
+    #expect(client.setConfigCalls.isEmpty)
+    while model.hasPendingChanges { try await Task.sleep(for: .milliseconds(20)) }
+    #expect(client.setConfigCalls.count == 1)
+    #expect(client.setConfigCalls[0].incognitoMode)
+  }
+
+  @Test func emptyCustomKeymapIsNotSavedAutomatically() {
+    let client = ConfigDialogMockClient(config: ConfigHandler.defaultConfig())
+    let model = ConfigDialogModel(client: client)
+    model.values.customKeymapTable = ""
+    model.values.sessionKeymap = .custom
+    #expect(model.hasEmptyCustomKeymap)
+    model.savePendingChanges()
+    #expect(client.setConfigCalls.isEmpty)
+    #expect(model.pendingMessage == nil)
+    #expect(model.hasPendingChanges)
   }
 
   @Test func updateRejectsEmptyCustomKeymap() {
@@ -137,7 +168,7 @@ private func makeNonDefaultConfig() -> Genmai_Config_Config {
     #expect(model.values.incognitoMode)
     message.onYes?()
     #expect(model.values == ConfigDialogValues(config: ConfigHandler.defaultConfig()))
-    #expect(model.applyEnabled)
+    #expect(model.hasPendingChanges)
   }
 
   @Test func clearUserHistoryAsksThenClearsBoth() {
@@ -212,20 +243,11 @@ private func makeNonDefaultConfig() -> Genmai_Config_Config {
     #expect(values.isPresentationModeEditable)
   }
 
-  @Test func platformHooks() {
-    nonisolated(unsafe) var loginItem = false
-    let platform = ConfigDialogPlatform(
-      isLoginItemEnabled: { loginItem }, setLoginItemEnabled: { loginItem = $0 })
-    let model = ConfigDialogModel(
-      client: ConfigDialogMockClient(config: ConfigHandler.defaultConfig()), platform: platform)
-    model.values.startup = true
-    #expect(model.update())
-    #expect(loginItem)
-  }
-
   @Test func japaneseLabels() {
     #expect(tr("ConfigDialog", "General", language: .japanese) == "一般")
-    #expect(tr("genmai::gui::ConfigDialog", "[ProductName] Preferences", language: .japanese) == "Genmai 環境設定")
+    #expect(tr("Settings", "[ProductName] Settings", language: .japanese) == "Genmai 設定")
+    #expect(tr("Settings", "1–9", language: .japanese) == "1〜9")
+    #expect(ConfigDialogModel(client: ConfigDialogMockClient()).windowTitle.hasPrefix("Genmai"))
     #expect(tr("genmai::gui::ConfigDialog", "Romaji", language: .english) == "Romaji")
   }
 }

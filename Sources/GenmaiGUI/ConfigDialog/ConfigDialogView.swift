@@ -1,58 +1,129 @@
-// SwiftUI version of mozc/src/gui/config_dialog/config_dialog.ui (3.35.6354), macOS layout:
-// tabs General / Dictionary / Advanced / Suggest / Privacy / Misc (+ updates in Misc and the AI tab, not in Mozc), "Reset to defaults",
-// Cancel / Apply / OK.
+// The settings window. The options and their logic are those of mozc/src/gui/config_dialog (3.35.6354,
+// ConfigDialogModel); the window is Genmai's own: a sidebar of panes like System Settings, and edits take effect
+// right away (no OK / Cancel / Apply). Panes: General, Input, Conversion, Suggestions, AI (not in Mozc), Privacy,
+// Updates (not in Mozc).
 
 import GenmaiClient
 import GenmaiProtocol
 import SwiftUI
 
-public struct ConfigDialogView: View {
-  /// The dialog's size, the same for every tab: GenmaiTool's window follows the content's ideal size
-  /// (`sizingOptions = .preferredContentSize`), which would otherwise change with the selected tab (the tabs' own
-  /// ideal sizes range from 490 × 200 to 744 × 651). Large enough for the largest tab (Advanced); the forms
-  /// scroll when the user makes the window smaller.
-  static let idealSize = CGSize(width: 780, height: 760)
+/// The settings panes, in sidebar order.
+enum SettingsPane: String, CaseIterable, Identifiable {
+  case general, input, conversion, suggestions, ai, privacy, updates
 
-  @State private var model: ConfigDialogModel
-  @Environment(\.closeDialog) private var closeDialog
+  var id: Self { self }
 
-  public init(client: any GenmaiClientProtocol, launchTool: @escaping @MainActor (String) -> Void = { _ in }) {
-    _model = State(initialValue: ConfigDialogModel(client: client, launchTool: launchTool))
+  var title: String {
+    switch self {
+    case .general: tr("Settings", "General")
+    case .input: tr("Settings", "Input")
+    case .conversion: tr("Settings", "Conversion")
+    case .suggestions: tr("Settings", "Suggestions")
+    case .ai: tr("Settings", "AI")
+    case .privacy: tr("Settings", "Privacy")
+    case .updates: tr("Settings", "Updates")
+    }
   }
 
-  public init(model: ConfigDialogModel) {
+  var symbol: String {
+    switch self {
+    case .general: "gearshape.fill"
+    case .input: "keyboard.fill"
+    case .conversion: "character.book.closed.fill"
+    case .suggestions: "text.bubble.fill"
+    case .ai: "sparkles"
+    case .privacy: "hand.raised.fill"
+    case .updates: "arrow.down.circle.fill"
+    }
+  }
+
+  var tint: Color {
+    switch self {
+    case .general: .gray
+    case .input: .blue
+    case .conversion: .orange
+    case .suggestions: .teal
+    case .ai: .purple
+    case .privacy: .indigo
+    case .updates: .green
+    }
+  }
+}
+
+public struct ConfigDialogView: View {
+  /// The window's ideal size; the tool's window follows it (`sizingOptions = .preferredContentSize`). It is the
+  /// same for every pane so that the window does not jump when the selection changes; the panes scroll.
+  static let idealSize = CGSize(width: 760, height: 620)
+
+  @State private var model: ConfigDialogModel
+  @State private var selection: SettingsPane? = .general
+
+  public init(client: any GenmaiClientProtocol, launchTool: @escaping @MainActor (String) -> Void = { _ in }) {
+    let model = ConfigDialogModel(client: client, launchTool: launchTool)
+    model.savesChangesAutomatically = true
     _model = State(initialValue: model)
   }
 
+  public init(model: ConfigDialogModel) {
+    self.init(model: model, pane: .general)
+  }
+
+  init(model: ConfigDialogModel, pane: SettingsPane) {
+    _model = State(initialValue: model)
+    _selection = State(initialValue: pane)
+  }
+
   public var body: some View {
-    VStack(spacing: 12) {
-      TabView {
-        GeneralTab(model: model)
-          .tabItem { Text(verbatim: tr("ConfigDialog", "General")) }
-        DictionaryTab(model: model)
-          .tabItem { Text(verbatim: tr("ConfigDialog", "Dictionary")) }
-        AdvancedTab(model: model)
-          .tabItem { Text(verbatim: tr("ConfigDialog", "Advanced")) }
-        SuggestTab(model: model)
-          .tabItem { Text(verbatim: tr("ConfigDialog", "Suggest")) }
-        PrivacyTab(model: model)
-          .tabItem { Text(verbatim: tr("ConfigDialog", "Privacy")) }
-        MiscTab(model: model)
-          .tabItem { Text(verbatim: tr("ConfigDialog", "Misc")) }
-        // Not in Mozc: AI conversion (genmai).
-        AIConversionTab(model: model)
-          .tabItem { Text(verbatim: AIStrings.text(.tab)) }
+    NavigationSplitView {
+      List(SettingsPane.allCases, selection: $selection) { pane in
+        SettingsSidebarRow(pane: pane)
       }
-      ConfigDialogButtons(model: model, close: closeDialog)
+      .navigationSplitViewColumnWidth(min: 180, ideal: 200, max: 240)
+    } detail: {
+      SettingsPaneView(pane: selection ?? .general, model: model)
+        .navigationTitle((selection ?? .general).title)
     }
-    .padding(16)
     .frame(
-      minWidth: 560, idealWidth: Self.idealSize.width, maxWidth: .infinity,
-      minHeight: 560, idealHeight: Self.idealSize.height, maxHeight: .infinity)
-    .navigationTitle(model.windowTitle)
+      minWidth: 640, idealWidth: Self.idealSize.width, maxWidth: .infinity,
+      minHeight: 460, idealHeight: Self.idealSize.height, maxHeight: .infinity)
     .genmaiMessageAlert($model.pendingMessage)
     .sheet(item: $model.activeEditor) { editor in
       ConfigDialogEditorSheet(editor: editor, model: model)
+    }
+    .onDisappear { model.savePendingChanges() }
+  }
+}
+
+struct SettingsSidebarRow: View {
+  let pane: SettingsPane
+
+  var body: some View {
+    Label {
+      Text(verbatim: pane.title)
+    } icon: {
+      Image(systemName: pane.symbol)
+        .font(.system(size: 11, weight: .semibold))
+        .foregroundStyle(.white)
+        .frame(width: 22, height: 22)
+        .background(pane.tint.gradient, in: .rect(cornerRadius: 6))
+        .accessibilityHidden(true)
+    }
+  }
+}
+
+struct SettingsPaneView: View {
+  let pane: SettingsPane
+  let model: ConfigDialogModel
+
+  var body: some View {
+    switch pane {
+    case .general: GeneralPane(model: model)
+    case .input: InputPane(model: model)
+    case .conversion: ConversionPane(model: model)
+    case .suggestions: SuggestionsPane(model: model)
+    case .ai: AIConversionTab(model: model)
+    case .privacy: PrivacyPane(model: model)
+    case .updates: UpdatesPane(model: model)
     }
   }
 }
@@ -71,32 +142,12 @@ struct ConfigDialogEditorSheet: View {
   }
 }
 
-struct ConfigDialogButtons: View {
-  let model: ConfigDialogModel
-  let close: CloseDialogAction
-
-  var body: some View {
-    let context = ConfigDialogModel.context
-    HStack {
-      Button(tr("ConfigDialog", "Reset to defaults")) { model.resetToDefaults() }
-      Spacer()
-      Button(tr(context, "Cancel"), role: .cancel) { close() }
-        .keyboardShortcut(.cancelAction)
-      Button(tr(context, "Apply")) { model.apply() }
-        .disabled(!model.applyEnabled)
-      Button(tr(context, "  Ok  ").trimmingCharacters(in: .whitespaces)) {
-        if model.accept() {
-          close()
-        }
-      }
-      .keyboardShortcut(.defaultAction)
-    }
-  }
-}
-
 // MARK: - Shared rows
 
-/// A labeled picker row (QLabel + QComboBox).
+/// `tr` in the context of the settings window.
+func settingsText(_ source: String) -> String { tr("Settings", source) }
+
+/// A labeled picker row.
 struct ConfigPicker<Value: Hashable>: View {
   let label: String
   @Binding var selection: Value
@@ -105,7 +156,7 @@ struct ConfigPicker<Value: Hashable>: View {
   var body: some View {
     Picker(selection: $selection) {
       if !items.contains(where: { $0.0 == selection }) {
-        // An out-of-range config value: the Qt combo box shows no item.
+        // An out-of-range config value: shown as an empty item.
         Text(verbatim: "").tag(selection)
       }
       ForEach(items, id: \.0) { item in
@@ -117,120 +168,218 @@ struct ConfigPicker<Value: Hashable>: View {
   }
 }
 
+/// A switch with an optional explanation below its title.
 struct ConfigToggle: View {
   let label: String
+  var detail: String?
   @Binding var isOn: Bool
 
   var body: some View {
-    Toggle(isOn: $isOn) { Text(verbatim: label) }
+    Toggle(isOn: $isOn) {
+      Text(verbatim: label)
+      if let detail {
+        Text(verbatim: detail)
+      }
+    }
   }
 }
 
+/// A section header.
 struct ConfigSectionHeader: View {
   let title: String
 
   var body: some View {
-    Text(verbatim: tr("ConfigDialog", title))
+    Text(verbatim: settingsText(title))
   }
 }
 
-// MARK: - Tabs
+// MARK: - Panes
 
-struct GeneralTab: View {
+struct GeneralPane: View {
   @Bindable var model: ConfigDialogModel
 
   var body: some View {
-    let ui = "ConfigDialog"
     Form {
       Section {
         ConfigPicker(
-          label: tr(ui, "Input mode"), selection: $model.values.inputModeIndex,
+          label: settingsText("Input method"), selection: $model.values.inputModeIndex,
           items: ConfigDialogModel.inputModeItems)
+        KeymapRow(model: model)
+        LabeledContent {
+          Button(settingsText("Customize…")) { model.editRomanTable() }
+            .disabled(!model.values.isRomanTableEditable)
+        } label: {
+          Text(verbatim: settingsText("Romaji table"))
+        }
+      } header: {
+        ConfigSectionHeader(title: "Typing")
+      }
+      Section {
         ConfigPicker(
-          label: tr(ui, "Punctuation style"), selection: $model.values.punctuationMethod,
+          label: settingsText("Punctuation"), selection: $model.values.punctuationMethod,
           items: ConfigDialogModel.punctuationItems)
         ConfigPicker(
-          label: tr(ui, "Symbol style"), selection: $model.values.symbolMethod,
+          label: settingsText("Symbols"), selection: $model.values.symbolMethod,
           items: ConfigDialogModel.symbolItems)
         ConfigPicker(
-          label: tr(ui, "Space input style"), selection: $model.values.spaceCharacterForm,
+          label: settingsText("Space"), selection: $model.values.spaceCharacterForm,
           items: ConfigDialogModel.spaceCharacterFormItems)
         ConfigPicker(
-          label: tr(ui, "Candidate selection shortcut"), selection: $model.values.selectionShortcut,
-          items: ConfigDialogModel.selectionShortcutItems)
-        ConfigPicker(
-          label: tr(ui, "Input from numpad keys"), selection: $model.values.numpadCharacterForm,
+          label: settingsText("Numeric keypad"), selection: $model.values.numpadCharacterForm,
           items: ConfigDialogModel.numpadCharacterFormItems)
         ConfigPicker(
-          label: tr(ui, "Input from ¥ or backslash key"), selection: $model.values.yenSignCharacter,
+          label: settingsText("¥ key"), selection: $model.values.yenSignCharacter,
           items: ConfigDialogModel.yenSignItems)
       } header: {
-        ConfigSectionHeader(title: "Basics")
+        ConfigSectionHeader(title: "Characters")
+      }
+      Section {
+        ConfigPicker(
+          label: settingsText("Selection shortcut"), selection: $model.values.selectionShortcut,
+          items: ConfigDialogModel.selectionShortcutItems)
+      } header: {
+        ConfigSectionHeader(title: "Candidates")
       }
       Section {
         LabeledContent {
-          HStack {
-            Picker("", selection: $model.values.sessionKeymap) {
-              if !ConfigDialogModel.keymapItems.contains(where: { $0.0 == model.values.sessionKeymap }) {
-                Text(verbatim: "").tag(model.values.sessionKeymap)
-              }
-              ForEach(ConfigDialogModel.keymapItems, id: \.0) { item in
-                Text(verbatim: item.1).tag(item.0)
-              }
-            }
-            .labelsHidden()
-            .fixedSize()
-            Button(tr(ui, "Customize...")) { model.editKeymap() }
-          }
+          Button(settingsText("Reset All Settings…")) { model.resetToDefaults() }
         } label: {
-          Text(verbatim: tr(ui, "Keymap style"))
+          Text(verbatim: settingsText("Reset"))
+          Text(verbatim: settingsText("Personalization data and input history are kept."))
         }
-        LabeledContent {
-          Button(tr(ui, "Customize...")) { model.editRomanTable() }
-            .disabled(!model.values.isRomanTableEditable)
-        } label: {
-          Text(verbatim: tr(ui, "Romaji table"))
-        }
-      } header: {
-        ConfigSectionHeader(title: "Keymap")
       }
     }
     .formStyle(.grouped)
   }
 }
 
-struct DictionaryTab: View {
+/// The keymap style with its editor, and the warning for an empty custom keymap.
+struct KeymapRow: View {
   @Bindable var model: ConfigDialogModel
 
   var body: some View {
-    let ui = "ConfigDialog"
+    LabeledContent {
+      HStack {
+        Picker(selection: $model.values.sessionKeymap) {
+          if !ConfigDialogModel.keymapItems.contains(where: { $0.0 == model.values.sessionKeymap }) {
+            Text(verbatim: "").tag(model.values.sessionKeymap)
+          }
+          ForEach(ConfigDialogModel.keymapItems, id: \.0) { item in
+            Text(verbatim: item.1).tag(item.0)
+          }
+        } label: {
+          EmptyView()
+        }
+        .labelsHidden()
+        .fixedSize()
+        Button(settingsText("Customize…")) { model.editKeymap() }
+      }
+    } label: {
+      Text(verbatim: settingsText("Key bindings"))
+      if model.hasEmptyCustomKeymap {
+        Label {
+          Text(
+            verbatim: settingsText(
+              "The custom key bindings are empty. Customize them, or choose another style; until then the settings are not saved."
+            ))
+        } icon: {
+          Image(systemName: "exclamationmark.triangle.fill")
+        }
+        .foregroundStyle(.orange)
+      }
+    }
+  }
+}
+
+struct InputPane: View {
+  @Bindable var model: ConfigDialogModel
+
+  var body: some View {
+    Form {
+      Section {
+        ConfigToggle(
+          label: settingsText("Switch to halfwidth automatically"),
+          detail: settingsText(
+            "Switches to halfwidth alphanumerics when the input looks like English, a URL or a number."),
+          isOn: $model.values.autoSwitchCompositionMode)
+        ConfigPicker(
+          label: settingsText("Shift key switches to"), selection: $model.values.shiftKeyModeSwitch,
+          items: ConfigDialogModel.shiftKeyModeSwitchItems)
+        AutoConversionRow(values: $model.values)
+        ConfigToggle(
+          label: settingsText("Always use the Japanese keyboard layout"), isOn: $model.values.useJapaneseLayout)
+        // useModeIndicator is available only on Windows (hidden).
+      } header: {
+        ConfigSectionHeader(title: "Input assistance")
+      }
+      Section {
+        CharacterFormEditorView(model: model.characterFormEditor) { model.markButtonClicked() }
+      } header: {
+        ConfigSectionHeader(title: "Fullwidth and halfwidth")
+      }
+    }
+    .formStyle(.grouped)
+  }
+}
+
+/// "Convert at punctuation" with the punctuation marks that trigger it.
+struct AutoConversionRow: View {
+  @Binding var values: ConfigDialogValues
+
+  var body: some View {
+    ConfigToggle(label: settingsText("Convert at punctuation"), isOn: $values.useAutoConversion)
+    if values.useAutoConversion {
+      HStack(spacing: 20) {
+        PunctuationToggle(mark: "。", isOn: $values.kuten)
+        PunctuationToggle(mark: "、", isOn: $values.touten)
+        PunctuationToggle(mark: "？", isOn: $values.questionMark)
+        PunctuationToggle(mark: "！", isOn: $values.exclamationMark)
+        Spacer()
+      }
+      .padding(.leading, 12)
+    }
+  }
+}
+
+struct PunctuationToggle: View {
+  let mark: String
+  @Binding var isOn: Bool
+
+  var body: some View {
+    Toggle(isOn: $isOn) { Text(verbatim: mark) }
+      .toggleStyle(.checkbox)
+  }
+}
+
+struct ConversionPane: View {
+  @Bindable var model: ConfigDialogModel
+
+  var body: some View {
     Form {
       Section {
         ConfigPicker(
-          label: tr(ui, "Adjust conversion based on previous input"),
-          selection: $model.values.historyLearningLevel,
+          label: settingsText("Learn from what you type"), selection: $model.values.historyLearningLevel,
           items: ConfigDialogModel.historyLearningLevelItems)
         LabeledContent {
-          Button(tr(ui, "Clear personalization data")) { model.clearUserHistory() }
+          Button(settingsText("Clear Personalization Data…"), role: .destructive) { model.clearUserHistory() }
         } label: {
           EmptyView()
         }
       } header: {
-        ConfigSectionHeader(title: "Personalization")
+        ConfigSectionHeader(title: "Learning")
       }
       Section {
         LabeledContent {
-          Button(tr(ui, "Edit user dictionary...")) { model.editUserDictionary() }
+          Button(settingsText("Edit…")) { model.editUserDictionary() }
         } label: {
-          EmptyView()
+          Text(verbatim: settingsText("User dictionary"))
         }
+        ConfigToggle(
+          label: settingsText("Homonym dictionary"),
+          detail: settingsText("Shows how words with the same reading differ, next to the candidates."),
+          isOn: $model.values.useLocalUsageDictionary)
       } header: {
-        ConfigSectionHeader(title: "User dictionary")
-      }
-      Section {
-        ConfigToggle(label: tr(ui, "Homonym dictionary"), isOn: $model.values.useLocalUsageDictionary)
-      } header: {
-        ConfigSectionHeader(title: "Usage dictionary")
+        ConfigSectionHeader(title: "Dictionaries")
       }
       Section {
         SpecialConversionToggles(values: $model.values)
@@ -246,93 +395,33 @@ struct SpecialConversionToggles: View {
   @Binding var values: ConfigDialogValues
 
   var body: some View {
-    let ui = "ConfigDialog"
-    Grid(alignment: .leading, horizontalSpacing: 24, verticalSpacing: 6) {
-      GridRow {
-        ConfigToggle(label: tr(ui, "Single kanji conversion"), isOn: $values.useSingleKanjiConversion)
-        ConfigToggle(label: tr(ui, "Symbol conversion"), isOn: $values.useSymbolConversion)
-      }
-      GridRow {
-        ConfigToggle(label: tr(ui, "Emoticon conversion"), isOn: $values.useEmoticonConversion)
-        ConfigToggle(label: tr(ui, "Katakana to English conversion"), isOn: $values.useT13nConversion)
-      }
-      GridRow {
-        ConfigToggle(label: tr(ui, "Postal code conversion"), isOn: $values.useZipCodeConversion)
-        ConfigToggle(label: tr(ui, "Spelling correction"), isOn: $values.useSpellingCorrection)
-      }
-      GridRow {
-        ConfigToggle(label: tr(ui, "Calculator"), isOn: $values.useCalculator)
-        ConfigToggle(label: tr(ui, "Special number conversion"), isOn: $values.useNumberConversion)
-      }
-      GridRow {
-        ConfigToggle(label: tr(ui, "Date/time conversion"), isOn: $values.useDateConversion)
-        ConfigToggle(label: tr(ui, "Emoji conversion"), isOn: $values.useEmojiConversion)
-      }
-    }
+    ConfigToggle(label: settingsText("Single kanji"), isOn: $values.useSingleKanjiConversion)
+    ConfigToggle(label: settingsText("Symbols and arrows"), isOn: $values.useSymbolConversion)
+    ConfigToggle(label: settingsText("Emoticons"), isOn: $values.useEmoticonConversion)
+    ConfigToggle(label: settingsText("Emoji"), isOn: $values.useEmojiConversion)
+    ConfigToggle(label: settingsText("Katakana to English"), isOn: $values.useT13nConversion)
+    ConfigToggle(label: settingsText("Postal codes"), isOn: $values.useZipCodeConversion)
+    ConfigToggle(label: settingsText("Spelling correction (もしかして)"), isOn: $values.useSpellingCorrection)
+    ConfigToggle(label: settingsText("Calculator"), isOn: $values.useCalculator)
+    ConfigToggle(label: settingsText("Special numbers"), isOn: $values.useNumberConversion)
+    ConfigToggle(label: settingsText("Date and time"), isOn: $values.useDateConversion)
   }
 }
 
-struct AdvancedTab: View {
+struct SuggestionsPane: View {
   @Bindable var model: ConfigDialogModel
 
   var body: some View {
-    let ui = "ConfigDialog"
     Form {
       Section {
+        ConfigToggle(label: settingsText("Input history"), isOn: $model.values.useHistorySuggest)
+        ConfigToggle(label: settingsText("System dictionary"), isOn: $model.values.useDictionarySuggest)
         ConfigToggle(
-          label: tr(ui, "Automatically switch to halfwidth"), isOn: $model.values.autoSwitchCompositionMode)
-        ConfigPicker(
-          label: tr(ui, "Shift key mode switch"), selection: $model.values.shiftKeyModeSwitch,
-          items: ConfigDialogModel.shiftKeyModeSwitchItems)
-        AutoConversionRow(values: $model.values)
-        ConfigToggle(
-          label: tr(ui, "Always use Japanese keyboard layout for Japanese input"),
-          isOn: $model.values.useJapaneseLayout)
-        // useModeIndicator is available only on Windows (hidden).
+          label: settingsText("Realtime conversion"),
+          detail: settingsText("Shows the conversion of the whole input as the first suggestion."),
+          isOn: $model.values.useRealtimeConversion)
       } header: {
-        ConfigSectionHeader(title: "Input Assistance")
-      }
-      Section {
-        CharacterFormEditorView(model: model.characterFormEditor) { model.markButtonClicked() }
-      } header: {
-        ConfigSectionHeader(title: "Fullwidth/Halfwidth")
-      }
-    }
-    .formStyle(.grouped)
-  }
-}
-
-struct AutoConversionRow: View {
-  @Binding var values: ConfigDialogValues
-
-  var body: some View {
-    let ui = "ConfigDialog"
-    VStack(alignment: .leading, spacing: 6) {
-      ConfigToggle(label: tr(ui, "Convert at punctuations"), isOn: $values.useAutoConversion)
-      HStack(spacing: 16) {
-        ConfigToggle(label: tr(ui, "。"), isOn: $values.kuten)
-        ConfigToggle(label: tr(ui, "、"), isOn: $values.touten)
-        ConfigToggle(label: tr(ui, "?"), isOn: $values.questionMark)
-        ConfigToggle(label: tr(ui, "!"), isOn: $values.exclamationMark)
-      }
-      .padding(.leading, 20)
-      .disabled(!values.isAutoConversionKeyEditable)
-    }
-  }
-}
-
-struct SuggestTab: View {
-  @Bindable var model: ConfigDialogModel
-
-  var body: some View {
-    let ui = "ConfigDialog"
-    Form {
-      Section {
-        ConfigToggle(label: tr(ui, "Use input history"), isOn: $model.values.useHistorySuggest)
-        ConfigToggle(label: tr(ui, "Use system dictionary"), isOn: $model.values.useDictionarySuggest)
-        ConfigToggle(label: tr(ui, "Use realtime conversion"), isOn: $model.values.useRealtimeConversion)
-      } header: {
-        ConfigSectionHeader(title: "Source data")
+        ConfigSectionHeader(title: "Sources")
       }
       Section {
         Stepper(value: $model.values.suggestionsSize, in: 1...9) {
@@ -340,82 +429,49 @@ struct SuggestTab: View {
             Text(verbatim: String(model.values.suggestionsSize))
               .monospacedDigit()
           } label: {
-            Text(verbatim: tr(ui, "Maximum number of suggestions"))
+            Text(verbatim: settingsText("Maximum number of suggestions"))
           }
         }
       } header: {
-        ConfigSectionHeader(title: "Other settings")
+        ConfigSectionHeader(title: "Display")
       }
     }
     .formStyle(.grouped)
   }
 }
 
-struct PrivacyTab: View {
+struct PrivacyPane: View {
   @Bindable var model: ConfigDialogModel
 
   var body: some View {
-    let ui = "ConfigDialog"
     Form {
-      Section {
-        MessageToggle(
-          message: tr(
-            ui,
-            "Temporarily disable conversion personalization, history-based suggestions and user dictionary"),
-          isOn: $model.values.incognitoMode)
-      } header: {
-        ConfigSectionHeader(title: "Secret mode")
-      }
       Section {
         ConfigToggle(
-          label: tr(ui, "Temporarily disable all suggestions"), isOn: $model.values.presentationMode
+          label: settingsText("Secret mode"),
+          detail: settingsText("Temporarily stops learning, history-based suggestions and the user dictionary."),
+          isOn: $model.values.incognitoMode)
+        ConfigToggle(
+          label: settingsText("Presentation mode"), detail: settingsText("Temporarily hides all suggestions."),
+          isOn: $model.values.presentationMode
         )
         .disabled(!model.values.isPresentationModeEditable)
-      } header: {
-        ConfigSectionHeader(title: "Presentation mode")
       }
     }
     .formStyle(.grouped)
   }
 }
 
-/// A check box whose long message label also toggles it (ConfigDialog::eventFilter).
-struct MessageToggle: View {
-  let message: String
-  @Binding var isOn: Bool
-
-  var body: some View {
-    HStack(alignment: .top, spacing: 8) {
-      Toggle("", isOn: $isOn)
-        .labelsHidden()
-      Text(verbatim: message)
-        .fixedSize(horizontal: false, vertical: true)
-        .contentShape(.rect)
-        .onTapGesture { isOn.toggle() }
-    }
-  }
-}
-
-struct MiscTab: View {
+struct UpdatesPane: View {
   @Bindable var model: ConfigDialogModel
 
   var body: some View {
-    let ui = "ConfigDialog"
     Form {
-      // Default IME and Administration are Windows only (miscDefaultIMEWidget /
-      // miscAdministrationWidget are hidden on macOS).
-      Section {
-        ConfigToggle(label: tr(ui, "Start conversion engine on login"), isOn: $model.values.startup)
-      } header: {
-        ConfigSectionHeader(title: "Startup")
-      }
-      // Not in Mozc: updates of Genmai itself.
       UpdateSection(update: model.appUpdate)
       #if DEBUG
         // disable logging options in release builds (NDEBUG).
         Section {
           ConfigPicker(
-            label: tr(ui, "Logging level (debug only)"), selection: $model.values.verboseLevel,
+            label: settingsText("Logging level (debug builds)"), selection: $model.values.verboseLevel,
             items: ConfigDialogModel.verboseLevelItems)
         } header: {
           ConfigSectionHeader(title: "Logging")

@@ -6,6 +6,39 @@ import SwiftUI
 
 private let kUIContext = "WordRegisterDialog"
 
+/// English / Japanese strings of the word register dialog that Mozc's Qt translations do not have (or have only
+/// in an outdated form: "..." instead of "…", "ユーザ" instead of "ユーザー").
+enum WordRegisterStrings {
+  enum Key: CaseIterable, Sendable {
+    case register, cancel, editUserDictionary, unavailableTitle, close, wordPrompt, readingPrompt
+  }
+
+  static let english: [Key: String] = [
+    .register: "Add",
+    .cancel: "Cancel",
+    .editUserDictionary: "Edit User Dictionary…",
+    .unavailableTitle: "Can’t Add the Word",
+    .close: "Close",
+    .wordPrompt: "e.g. 玄米",
+    .readingPrompt: "e.g. げんまい",
+  ]
+
+  static let japanese: [Key: String] = [
+    .register: "登録",
+    .cancel: "キャンセル",
+    .editUserDictionary: "ユーザー辞書を編集…",
+    .unavailableTitle: "単語を登録できません",
+    .close: "閉じる",
+    .wordPrompt: "例: 玄米",
+    .readingPrompt: "例: げんまい",
+  ]
+
+  static func text(_ key: Key, language: GUILanguage = .current) -> String {
+    let table = language == .japanese ? japanese : english
+    return table[key] ?? english[key] ?? ""
+  }
+}
+
 public struct WordRegisterDialogView: View {
   @State private var model: WordRegisterDialogModel
   private let launchDictionaryTool: @MainActor () -> Void
@@ -31,27 +64,30 @@ public struct WordRegisterDialogView: View {
       case .available:
         WordRegisterForm(model: model, launchDictionaryTool: launchDictionaryTool)
       case .unavailable(let message):
-        WordRegisterUnavailableView(title: model.windowTitle, message: message)
+        WordRegisterUnavailableView(message: message)
       }
     }
     .navigationTitle(tr(kUIContext, "[ProductName] Word Register Dialog"))
   }
 }
 
+/// The storage is locked or broken (the Qt version shows a message box and closes).
 private struct WordRegisterUnavailableView: View {
-  let title: String
   let message: String
   @Environment(\.closeDialog) private var closeDialog
-  @State private var isPresented = true
 
   var body: some View {
-    Color.clear
-      .frame(width: 1, height: 1)
-      .alert(title, isPresented: $isPresented) {
-        Button("OK") { closeDialog() }
-      } message: {
-        Text(verbatim: message)
-      }
+    ContentUnavailableView {
+      Label(WordRegisterStrings.text(.unavailableTitle), systemImage: "lock")
+    } description: {
+      Text(verbatim: message)
+    } actions: {
+      Button(WordRegisterStrings.text(.close)) { closeDialog() }
+        .keyboardShortcut(.defaultAction)
+    }
+    .padding(.vertical, 12)
+    .frame(width: 420)
+    .fixedSize(horizontal: false, vertical: true)
   }
 }
 
@@ -69,52 +105,48 @@ private struct WordRegisterForm: View {
   @State private var closesAfterMessage = false
 
   var body: some View {
-    VStack(alignment: .leading, spacing: 12) {
+    VStack(spacing: 0) {
       Form {
-        TextField(tr(kUIContext, "Word"), text: $model.word)
-          .focused($focusedField, equals: .word)
-          .onSubmit { model.completeReading() }
-        TextField(tr(kUIContext, "Reading"), text: $model.reading)
-          .focused($focusedField, equals: .reading)
-        Picker(tr(kUIContext, "Part of Speech"), selection: $model.posIndex) {
-          ForEach(model.posList.indices, id: \.self) { index in
-            Text(verbatim: model.posList[index]).tag(index)
+        Section {
+          TextField(
+            tr(kUIContext, "Word"), text: $model.word, prompt: Text(WordRegisterStrings.text(.wordPrompt)))
+            .focused($focusedField, equals: .word)
+            .onSubmit { model.completeReading() }
+          TextField(
+            tr(kUIContext, "Reading"), text: $model.reading,
+            prompt: Text(WordRegisterStrings.text(.readingPrompt)))
+            .focused($focusedField, equals: .reading)
+        }
+        Section {
+          Picker(tr(kUIContext, "Part of Speech"), selection: $model.posIndex) {
+            ForEach(model.posList.indices, id: \.self) { index in
+              Text(verbatim: model.posList[index]).tag(index)
+            }
           }
-        }
-        Picker(tr(kUIContext, "Dictionary"), selection: $model.dictionaryIndex) {
-          ForEach(model.dictionaryNames.indices, id: \.self) { index in
-            Text(verbatim: model.dictionaryNames[index]).tag(index)
-          }
-        }
-      }
-      HStack {
-        Button(tr(kUIContext, "Edit user dictionary...")) {
-          model.prepareLaunchDictionaryTool()
-          launchDictionaryTool()
-          closeDialog()
-        }
-        .buttonStyle(.link)
-        Spacer()
-        Button(tr("FindDialog", "Cancel"), role: .cancel) {
-          model.reject()
-          closeDialog()
-        }
-        .keyboardShortcut(.cancelAction)
-        Button("OK") {
-          if model.accept() {
-            if model.pendingMessage != nil {
-              closesAfterMessage = true
-            } else {
-              closeDialog()
+          Picker(tr(kUIContext, "Dictionary"), selection: $model.dictionaryIndex) {
+            ForEach(model.dictionaryNames.indices, id: \.self) { index in
+              Text(verbatim: model.dictionaryNames[index]).tag(index)
             }
           }
         }
-        .disabled(!model.isOKEnabled)
-        .keyboardShortcut(.defaultAction)
       }
+      .formStyle(.grouped)
+      .scrollDisabled(true)
+      .fixedSize(horizontal: false, vertical: true)
+      WordRegisterButtons(
+        model: model,
+        editUserDictionary: {
+          model.prepareLaunchDictionaryTool()
+          launchDictionaryTool()
+          closeDialog()
+        },
+        cancel: {
+          model.reject()
+          closeDialog()
+        },
+        register: register)
     }
-    .padding(16)
-    .frame(minWidth: 380)
+    .frame(width: 420)
     .genmaiMessageAlert($model.pendingMessage)
     .onChange(of: model.pendingMessage) { _, message in
       if message == nil && closesAfterMessage {
@@ -130,5 +162,37 @@ private struct WordRegisterForm: View {
     .onAppear {
       focusedField = model.focusesReadingInitially ? .reading : .word
     }
+  }
+
+  /// The OK button of the Qt version.
+  private func register() {
+    if model.accept() {
+      if model.pendingMessage != nil {
+        closesAfterMessage = true
+      } else {
+        closeDialog()
+      }
+    }
+  }
+}
+
+private struct WordRegisterButtons: View {
+  let model: WordRegisterDialogModel
+  let editUserDictionary: () -> Void
+  let cancel: () -> Void
+  let register: () -> Void
+
+  var body: some View {
+    HStack(spacing: 8) {
+      Button(WordRegisterStrings.text(.editUserDictionary), action: editUserDictionary)
+        .buttonStyle(.link)
+      Spacer()
+      Button(WordRegisterStrings.text(.cancel), role: .cancel, action: cancel)
+        .keyboardShortcut(.cancelAction)
+      Button(WordRegisterStrings.text(.register), action: register)
+        .disabled(!model.isOKEnabled)
+        .keyboardShortcut(.defaultAction)
+    }
+    .padding([.horizontal, .bottom], 20)
   }
 }

@@ -24,10 +24,10 @@ import Testing
     let model = ConfigDialogModel(client: client, aiSettingsURL: dir.settings)
     #expect(model.aiValues.timeoutMilliseconds == 500)
     #expect(model.aiValues.candidateCount == 3)
-    #expect(!model.applyEnabled)
+    #expect(!model.hasPendingChanges)
 
     model.aiValues.enabled = true
-    #expect(model.applyEnabled)
+    #expect(model.hasPendingChanges)
     model.apply()
     #expect(AIConversionSettings.load(from: dir.settings).enabled)
     // SET_CONFIG is still sent: that is what makes the IME reload (and re-read the AI settings).

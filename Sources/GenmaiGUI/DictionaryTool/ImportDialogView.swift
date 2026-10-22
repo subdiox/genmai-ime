@@ -74,37 +74,67 @@ struct ImportDialogView: View {
 
   var body: some View {
     @Bindable var model = model
-    VStack(alignment: .leading, spacing: 12) {
+    VStack(spacing: 0) {
       Form {
-        HStack {
-          TextField(tr("ImportDialog", "File Location"), text: $model.fileName)
-          Button(tr("ImportDialog", "Select file...")) { model.selectFile() }
-        }
-        if model.mode == .create {
-          TextField(tr("ImportDialog", "Dictionary Name"), text: $model.dicName)
-        }
-        Picker(tr("ImportDialog", "Format"), selection: $model.imeType) {
-          ForEach(ImportDialogModel.imeTypes, id: \.0) { type, label in
-            Text(tr(kContext, label)).tag(type)
+        Section {
+          ImportFileRow(model: model)
+          if model.mode == .create {
+            TextField(tr("ImportDialog", "Dictionary Name"), text: $model.dicName)
           }
+        } header: {
+          Text(DictionaryToolStrings.text(.importTitle))
         }
-        Picker(tr("ImportDialog", "Encoding"), selection: $model.encodingType) {
-          ForEach(ImportDialogModel.encodingTypes, id: \.0) { type, label in
-            Text(tr(kContext, label)).tag(type)
+        Section {
+          Picker(DictionaryToolStrings.text(.format), selection: $model.imeType) {
+            ForEach(ImportDialogModel.imeTypes, id: \.0) { type, label in
+              Text(tr(kContext, label)).tag(type)
+            }
+          }
+          Picker(DictionaryToolStrings.text(.encoding), selection: $model.encodingType) {
+            ForEach(ImportDialogModel.encodingTypes, id: \.0) { type, label in
+              Text(tr(kContext, label)).tag(type)
+            }
           }
         }
       }
+      .formStyle(.grouped)
+      .scrollDisabled(true)
+      .fixedSize(horizontal: false, vertical: true)
       HStack {
         Spacer()
-        Button(tr("FindDialog", "Cancel"), role: .cancel) { completion(nil) }
+        Button(DictionaryToolStrings.text(.cancel), role: .cancel) { completion(nil) }
           .keyboardShortcut(.cancelAction)
-        Button(tr(kContext, "Import")) { completion(model.result) }
+        Button(DictionaryToolStrings.text(.importAction)) { completion(model.result) }
           .disabled(!model.isAcceptButtonEnabled)
           .keyboardShortcut(.defaultAction)
       }
+      .padding([.horizontal, .bottom], 20)
     }
-    .padding(16)
-    .frame(minWidth: 460)
-    .navigationTitle(tr("ImportDialog", "[ProductName] Dictionary Tool"))
+    .frame(width: 440)
+  }
+}
+
+/// The file location: the chosen file's name and a button that opens the file panel.
+private struct ImportFileRow: View {
+  let model: ImportDialogModel
+
+  var body: some View {
+    LabeledContent(DictionaryToolStrings.text(.file)) {
+      HStack(spacing: 8) {
+        if model.fileName.isEmpty {
+          Text(DictionaryToolStrings.text(.noFileSelected))
+            .foregroundStyle(.secondary)
+        } else {
+          Label(
+            (model.fileName as NSString).lastPathComponent,
+            systemImage: "doc.text"
+          )
+          .lineLimit(1)
+          .truncationMode(.middle)
+          .help(model.fileName)
+        }
+        Button(DictionaryToolStrings.text(.chooseFile)) { model.selectFile() }
+      }
+    }
   }
 }

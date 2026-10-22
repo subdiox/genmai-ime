@@ -117,7 +117,6 @@ public final class DictionaryToolModel {
   public var pendingMessage: GUIMessage?
   public var prompt: Prompt?
   public var importMode: ImportMode?
-  public var isFindDialogShown = false
   public private(set) var statusMessage = ""
 
   public let windowTitle = kProductNameInEnglish

@@ -1,52 +1,34 @@
-// Port of mozc/src/gui/about_dialog/about_dialog.{h,cc,ui} (3.35.6354).
+// The About window (tool mode about_dialog): the app icon, name, version and tagline, links to the website, the
+// issue tracker and the acknowledgments (credits_en.html: the licenses of Mozc and the other open source software
+// Genmai is built on, which their licenses require to be shown), and the copyright.
 
 import AppKit
 import GenmaiBase
 import SwiftUI
 
-private let kContext = "AboutDialog"
-
-/// The texts of the about dialog after GuiUtil::ReplaceWidgetLabels and the about dialog's ReplaceString.
 public struct AboutDialogContent: Equatable, Sendable {
+  public static let websiteURL = URL(string: "https://github.com/subdiox/genmai-ime")!
+  public static let issuesURL = URL(string: "https://github.com/subdiox/genmai-ime/issues")!
+
   public var windowTitle: String
   public var productName: String
   public var version: String
+  public var tagline: String
   public var copyright: String
-  public var terms: AttributedString
-  public var credits: AttributedString
+  public var creditsURL: URL
 
-  /// - Parameter creditsPath: the full path of credits_en.html (SystemUtil::GetDocumentDirectory()).
+  /// - Parameter creditsPath: the full path of credits_en.html.
   public init(language: GUILanguage = .current, creditsPath: String) {
-    windowTitle = tr(kContext, "About [ProductName]", language: language)
-    productName = tr(kContext, "[ProductName]", language: language)
-    version = "(" + Version.getProductVersion() + ")"
+    windowTitle = tr("About", "About [ProductName]", language: language)
+    productName = kProductNameInEnglish
+    version = String(format: tr("About", "Version %@", language: language), Version.getProductVersion())
+    tagline = tr("About", "Japanese input with on-device AI conversion", language: language)
     copyright = "Copyright © 2026 subdiox"
-    let termsHTML = tr(
-      kContext,
-      "<html><body>[ProductName] <a href=\"[ProductUrl]\"><span style=\" text-decoration: underline; color:#0000ff;\">product information</span></a> <a href=\"[ForumUrl]\"><span style=\" text-decoration: underline; color:#0000ff;\">[ForumName]</span></a></body></html>",
-      language: language)
-    let creditsHTML = tr(
-      kContext,
-      "<html><body>[ProductName] is made possible by <a href=\"file://credits_en.html\"><span style=\" text-decoration: underline; color:#0000ff;\">open source software</span></a>.</body></html>",
-      language: language)
-    terms = QtRichText.attributedString(Self.replaceString(termsHTML, creditsPath: creditsPath, language: language))
-    credits = QtRichText.attributedString(Self.replaceString(creditsHTML, creditsPath: creditsPath, language: language))
+    creditsURL = URL(filePath: creditsPath)
   }
 
-  /// about_dialog.cc: ReplaceString (the OSS build branch).
-  static func replaceString(_ str: String, creditsPath: String, language: GUILanguage) -> String {
-    var replaced = GUIUtil.replaceString(str)
-    replaced = replaced.replacingOccurrences(of: "[ProductUrl]", with: "https://github.com/subdiox/genmai-ime")
-    replaced = replaced.replacingOccurrences(
-      of: "[ForumUrl]", with: "https://github.com/subdiox/genmai-ime/issues")
-    replaced = replaced.replacingOccurrences(
-      of: "[ForumName]", with: tr("QObject", "issues", language: language))
-    replaced = replaced.replacingOccurrences(of: "credits_en.html", with: creditsPath)
-    return replaced
-  }
-
-  /// Where credits_en.html is installed: next to the tool app in Genmai.app/Contents/Resources, or in the
-  /// tool's own resources.
+  /// Where credits_en.html is installed: next to the tool app in Genmai.app/Contents/Resources, or in the tool's
+  /// own resources.
   @MainActor
   public static func defaultCreditsPath() -> String {
     let besideTool = Bundle.main.bundleURL.deletingLastPathComponent().appendingPathComponent(
@@ -61,25 +43,46 @@ public struct AboutDialogContent: Equatable, Sendable {
 
 public struct AboutDialogView: View {
   let content: AboutDialogContent
-  let productImage: NSImage?
-  @Environment(\.closeDialog) private var closeDialog
+  let icon: NSImage
 
   @MainActor
-  public init(content: AboutDialogContent? = nil, productImage: NSImage? = nil) {
+  public init(content: AboutDialogContent? = nil, icon: NSImage? = nil) {
     self.content = content ?? AboutDialogContent(creditsPath: AboutDialogContent.defaultCreditsPath())
-    self.productImage =
-      productImage ?? Bundle.main.image(forResource: "product_logo")
-      ?? Bundle.main.image(forResource: "product_icon_32bpp-128")
+    self.icon = icon ?? NSApplication.shared.applicationIconImage
   }
 
   public var body: some View {
     VStack(spacing: 0) {
-      AboutHeaderView(content: content, productImage: productImage)
-      AboutFooterView(content: content) { closeDialog() }
+      Image(nsImage: icon)
+        .resizable()
+        .interpolation(.high)
+        .frame(width: 112, height: 112)
+        .shadow(color: .black.opacity(0.15), radius: 8, y: 4)
+        .accessibilityHidden(true)
+        .padding(.bottom, 12)
+      Text(verbatim: content.productName)
+        .font(.system(size: 28, weight: .bold))
+        .accessibilityAddTraits(.isHeader)
+      Text(verbatim: content.version)
+        .font(.callout)
+        .foregroundStyle(.secondary)
+        .textSelection(.enabled)
+        .padding(.top, 2)
+      Text(verbatim: content.tagline)
+        .font(.body)
+        .multilineTextAlignment(.center)
+        .padding(.top, 12)
+      AboutLinks(content: content)
+        .padding(.top, 20)
+      Text(verbatim: content.copyright)
+        .font(.caption)
+        .foregroundStyle(.tertiary)
+        .padding(.top, 20)
     }
-    .frame(width: 440)
-    .background(Color.white)
-    .environment(\.colorScheme, .light)
+    .padding(.horizontal, 32)
+    .padding(.top, 28)
+    .padding(.bottom, 20)
+    .frame(width: 380)
     .environment(\.openURL, OpenURLAction { url in
       // we don't activate the link if about dialog is running as root
       guard RunLevel.isValidClientRunLevel() else { return .discarded }
@@ -89,56 +92,16 @@ public struct AboutDialogView: View {
   }
 }
 
-private struct AboutHeaderView: View {
+private struct AboutLinks: View {
   let content: AboutDialogContent
-  let productImage: NSImage?
+  @Environment(\.openURL) private var openURL
 
   var body: some View {
-    HStack(alignment: .bottom) {
-      VStack(alignment: .leading, spacing: 4) {
-        // change font size for product name
-        Text(verbatim: content.productName)
-          .font(.system(size: 26))
-          .accessibilityAddTraits(.isHeader)
-        Text(verbatim: content.version)
-          .font(.callout)
-          .textSelection(.enabled)
-      }
-      Spacer()
-      if let productImage {
-        Image(nsImage: productImage)
-          .resizable()
-          .frame(width: 128, height: 128)
-          .accessibilityHidden(true)
-      }
+    HStack(spacing: 8) {
+      Button(tr("About", "Website")) { openURL(AboutDialogContent.websiteURL) }
+      Button(tr("About", "Report an Issue")) { openURL(AboutDialogContent.issuesURL) }
+      Button(tr("About", "Acknowledgments")) { openURL(content.creditsURL) }
     }
-    .foregroundStyle(.black)
-    .padding(.horizontal, 20)
-    .padding(.top, 16)
-  }
-}
-
-private struct AboutFooterView: View {
-  let content: AboutDialogContent
-  let onOK: () -> Void
-
-  var body: some View {
-    VStack(alignment: .leading, spacing: 8) {
-      Text(content.terms)
-      Text(content.credits)
-      Text(verbatim: content.copyright)
-        .font(.caption)
-      HStack {
-        Spacer()
-        Button(tr(kContext, "OK"), action: onOK)
-          .keyboardShortcut(.defaultAction)
-      }
-    }
-    .font(.callout)
-    .foregroundStyle(.black)
-    .tint(.blue)
-    .padding(20)
-    .frame(maxWidth: .infinity, alignment: .leading)
-    .background(Color(red: 236 / 255, green: 233 / 255, blue: 216 / 255))
+    .controlSize(.regular)
   }
 }

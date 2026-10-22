@@ -1,8 +1,9 @@
 // SwiftUI replacement of mozc/src/gui/dictionary_tool/dictionary_tool.ui + dictionary_tool.cc (widget setup,
-// toolbar, context menus) and dictionary_content_table_widget / zero_width_splitter (3.35.6354).
+// toolbar, context menus), find_dialog and dictionary_content_table_widget (3.35.6354).
 //
-// Layout: dictionary list | entry table (HSplitView, 1:3 like the Qt splitter), a toolbar with the "Tools"
-// menu, "Add" and "Remove", and a status line "<dictionary>: <n> entries".
+// Layout: a sidebar with the dictionaries | the entry table, with a toolbar (add word, delete words, a menu of
+// dictionary operations), a search field that finds words (FindDialog: Return finds the next match) and a
+// word count below the table.
 
 import AppKit
 import GenmaiClient
@@ -12,9 +13,10 @@ private let kContext = "genmai::gui::DictionaryTool"
 
 private func trDT(_ source: String) -> String { tr(kContext, source) }
 
+private typealias Strings = DictionaryToolStrings
+
 public struct DictionaryToolView: View {
   @State private var model: DictionaryToolModel
-  @Environment(\.closeDialog) private var closeDialog
 
   public init(client: any GenmaiClientProtocol) {
     _model = State(initialValue: DictionaryToolModel(client: client))
@@ -31,46 +33,56 @@ public struct DictionaryToolView: View {
       case .available:
         DictionaryToolContent(model: model)
       case .unavailable(let message):
-        UnavailableView(message: message, title: model.windowTitle) { closeDialog() }
+        DictionaryUnavailableView(message: message)
       }
     }
-    .frame(minWidth: 640, minHeight: 400)
+    .frame(minWidth: 720, minHeight: 420)
     .navigationTitle(tr("DictionaryTool", "[ProductName] Dictionary Tool"))
     .genmaiMessageAlert($model.pendingMessage)
   }
 }
 
-private struct UnavailableView: View {
+/// The storage is locked by another process (the Qt version shows a message box and exits).
+private struct DictionaryUnavailableView: View {
   let message: String
-  let title: String
-  let close: () -> Void
-  @State private var isPresented = true
+  @Environment(\.closeDialog) private var closeDialog
 
   var body: some View {
-    Color.clear
-      .alert(title, isPresented: $isPresented) {
-        Button("OK", action: close)
-      } message: {
-        Text(verbatim: message)
-      }
+    ContentUnavailableView {
+      Label(Strings.text(.unavailableTitle), systemImage: "lock")
+    } description: {
+      Text(verbatim: message)
+    } actions: {
+      Button(Strings.text(.close)) { closeDialog() }
+        .keyboardShortcut(.defaultAction)
+    }
   }
 }
 
 private struct DictionaryToolContent: View {
   @Bindable var model: DictionaryToolModel
+  @State private var searchText = ""
+  /// The row the table scrolls to (a found or added word).
+  @State private var scrollTarget: DictionaryToolModel.Row.ID?
 
   var body: some View {
-    VStack(spacing: 0) {
-      HSplitView {
-        DictionaryListView(model: model)
-          .frame(minWidth: 140, idealWidth: 180, maxWidth: 320)
-        DictionaryContentTable(model: model)
-          .frame(minWidth: 400)
-      }
-      Divider()
-      StatusBar(message: model.statusMessage)
+    NavigationSplitView {
+      DictionarySidebar(model: model)
+        .navigationSplitViewColumnWidth(min: 170, ideal: 200, max: 320)
+    } detail: {
+      DictionaryDetail(model: model, scrollTarget: $scrollTarget)
+        .toolbar {
+          DictionaryToolToolbar(model: model, find: find)
+        }
     }
-    .toolbar { DictionaryToolToolbar(model: model) }
+    .searchable(text: $searchText, placement: .toolbar, prompt: Text(Strings.text(.searchPrompt)))
+    .onSubmit(of: .search) { find(.forward) }
+    .onChange(of: searchText) { model.resetFind() }
+    .onChange(of: model.editingRowID) { _, rowID in
+      if let rowID {
+        scrollTarget = rowID
+      }
+    }
     .sheet(item: $model.importMode) { mode in
       ImportDialogView(mode: mode) { result in
         if let result {
@@ -82,10 +94,9 @@ private struct DictionaryToolContent: View {
         }
       }
     }
-    .sheet(isPresented: $model.isFindDialogShown) {
-      FindDialogView(model: model)
+    .sheet(item: $model.prompt) { prompt in
+      PromptSheet(prompt: prompt) { text in model.completePrompt(prompt, text: text) }
     }
-    .modifier(PromptModifier(model: model))
     .onDisappear { model.close() }
     .onReceive(NotificationCenter.default.publisher(for: NSApplication.didResignActiveNotification)) { _ in
       // When application focus leaves, save so that the new dictionary can be loaded (the Qt version delays
@@ -96,57 +107,90 @@ private struct DictionaryToolContent: View {
       }
     }
   }
+
+  /// FindDialog's Up / Down buttons: selects the next match of the search text and scrolls to it.
+  private func find(_ direction: DictionaryToolModel.FindDirection) {
+    guard !searchText.isEmpty else { return }
+    if model.find(searchText, direction: direction), let rowID = model.selectedRowIDs.first {
+      scrollTarget = rowID
+    }
+  }
 }
 
 extension DictionaryToolModel.ImportMode: Identifiable {
   public var id: Self { self }
 }
 
-private struct StatusBar: View {
-  let message: String
-
-  var body: some View {
-    HStack {
-      Text(verbatim: message)
-        .font(.callout)
-        .foregroundStyle(.secondary)
-      Spacer()
-    }
-    .padding(.horizontal, 8)
-    .padding(.vertical, 4)
-  }
-}
-
 // MARK: - Toolbar
 
 private struct DictionaryToolToolbar: ToolbarContent {
   let model: DictionaryToolModel
+  let find: (DictionaryToolModel.FindDirection) -> Void
 
   var body: some ToolbarContent {
     ToolbarItemGroup(placement: .primaryAction) {
-      Menu(trDT("Tools")) {
-        Button(trDT("New dictionary...")) { model.requestCreateDictionary() }
-          .disabled(!model.canCreateDictionary)
-        Button(trDT("Rename dictionary...")) { model.requestRenameDictionary() }
-          .disabled(!model.hasCurrentDictionary)
-        Button(trDT("Delete dictionary")) { model.requestDeleteDictionary() }
-          .disabled(model.dictionaries.isEmpty)
-        Button(trDT("Find...")) { model.isFindDialogShown = true }
-        Divider()
-        Button(trDT("Import as new dictionary...")) { model.requestImportAndCreateDictionary() }
-          .disabled(!model.canCreateDictionary)
-        Button(trDT("Import to current dictionary...")) { model.requestImportAndAppendDictionary() }
-          .disabled(model.dictionaries.isEmpty || !model.hasCurrentDictionary)
-        Button(trDT("Export current dictionary...")) { DictionaryExporter.export(model) }
-          .disabled(!model.hasCurrentDictionary)
+      Button {
+        model.addWord()
+      } label: {
+        Label(Strings.text(.addWord), systemImage: "plus")
       }
-      // The toolbar would otherwise shrink the menu's title to "管…".
-      .fixedSize()
-      Button(trDT("Add")) { model.addWord() }
-        .disabled(!model.canAddWord)
-      Button(trDT("Remove")) { model.requestDeleteWords() }
-        .disabled(!model.canDeleteWord)
+      .help(Strings.text(.addWord))
+      .disabled(!model.canAddWord)
+
+      Button {
+        model.requestDeleteWords()
+      } label: {
+        Label(Strings.text(.deleteWords), systemImage: "trash")
+      }
+      .help(Strings.text(.deleteWords))
+      .disabled(!model.canDeleteWord || model.selectedRowIDs.isEmpty)
+
+      DictionaryOperationsMenu(model: model, find: find)
     }
+  }
+}
+
+/// The "Tools" menu of the Qt version.
+private struct DictionaryOperationsMenu: View {
+  let model: DictionaryToolModel
+  let find: (DictionaryToolModel.FindDirection) -> Void
+
+  var body: some View {
+    Menu {
+      Section {
+        Button(Strings.text(.newDictionaryMenu), systemImage: "plus") { model.requestCreateDictionary() }
+          .disabled(!model.canCreateDictionary)
+        Button(Strings.text(.renameDictionaryMenu), systemImage: "pencil") { model.requestRenameDictionary() }
+          .disabled(!model.hasCurrentDictionary)
+        Button(Strings.text(.deleteDictionaryMenu), systemImage: "trash") {
+          model.requestDeleteDictionary()
+        }
+        .disabled(!model.hasCurrentDictionary)
+      }
+      Section {
+        Button(Strings.text(.importAsNewMenu), systemImage: "square.and.arrow.down.on.square") {
+          model.requestImportAndCreateDictionary()
+        }
+        .disabled(!model.canCreateDictionary)
+        Button(Strings.text(.importToThisMenu), systemImage: "square.and.arrow.down") {
+          model.requestImportAndAppendDictionary()
+        }
+        .disabled(!model.hasCurrentDictionary)
+        Button(Strings.text(.exportCurrentMenu), systemImage: "square.and.arrow.up") {
+          DictionaryExporter.export(model)
+        }
+        .disabled(!model.hasCurrentDictionary)
+      }
+      Section {
+        Button(Strings.text(.findNext), systemImage: "chevron.down") { find(.forward) }
+          .keyboardShortcut("g")
+        Button(Strings.text(.findPrevious), systemImage: "chevron.up") { find(.backward) }
+          .keyboardShortcut("g", modifiers: [.command, .shift])
+      }
+    } label: {
+      Label(Strings.text(.moreMenu), systemImage: "ellipsis.circle")
+    }
+    .help(Strings.text(.moreMenu))
   }
 }
 
@@ -166,9 +210,9 @@ enum DictionaryExporter {
   }
 }
 
-// MARK: - Dictionary list
+// MARK: - Sidebar
 
-private struct DictionaryListView: View {
+private struct DictionarySidebar: View {
   let model: DictionaryToolModel
 
   var body: some View {
@@ -177,13 +221,37 @@ private struct DictionaryListView: View {
         get: { model.selectedDictionaryID },
         set: { model.selectDictionary($0) })
     ) {
-      ForEach(model.dictionaries) { item in
-        Text(verbatim: item.name)
-          .tag(item.id)
-          .contextMenu { DictionaryContextMenu(model: model, id: item.id) }
+      Section(Strings.text(.dictionaries)) {
+        ForEach(model.dictionaries) { item in
+          Label(item.name, systemImage: "book.closed")
+            .tag(item.id)
+            .contextMenu { DictionaryContextMenu(model: model, id: item.id) }
+        }
       }
     }
     .listStyle(.sidebar)
+    .safeAreaInset(edge: .bottom, spacing: 0) {
+      NewDictionaryButton(model: model)
+    }
+  }
+}
+
+/// "New dictionary..." at the bottom of the sidebar (like "Add List" in Reminders).
+private struct NewDictionaryButton: View {
+  let model: DictionaryToolModel
+
+  var body: some View {
+    Button {
+      model.requestCreateDictionary()
+    } label: {
+      Label(Strings.text(.newDictionary), systemImage: "plus.circle")
+    }
+    .buttonStyle(.borderless)
+    .disabled(!model.canCreateDictionary)
+    .help(Strings.text(.newDictionary))
+    .frame(maxWidth: .infinity, alignment: .leading)
+    .padding(.horizontal, 12)
+    .padding(.vertical, 10)
   }
 }
 
@@ -192,22 +260,94 @@ private struct DictionaryContextMenu: View {
   let id: UInt64
 
   var body: some View {
-    Button(trDT("Rename...")) {
+    Button(Strings.text(.renameMenu), systemImage: "pencil") {
       model.selectDictionary(id)
       model.requestRenameDictionary()
     }
-    Button(trDT("Delete")) {
-      model.selectDictionary(id)
-      model.requestDeleteDictionary()
-    }
-    Button(trDT("Import to this dictionary...")) {
+    Divider()
+    Button(Strings.text(.importToThisMenu), systemImage: "square.and.arrow.down") {
       model.selectDictionary(id)
       model.requestImportAndAppendDictionary()
     }
-    Button(trDT("Export this dictionary...")) {
+    Button(Strings.text(.exportThisMenu), systemImage: "square.and.arrow.up") {
       model.selectDictionary(id)
       DictionaryExporter.export(model)
     }
+    Divider()
+    Button(Strings.text(.deleteMenu), systemImage: "trash", role: .destructive) {
+      model.selectDictionary(id)
+      model.requestDeleteDictionary()
+    }
+  }
+}
+
+// MARK: - Detail
+
+private struct DictionaryDetail: View {
+  /// What the content area shows.
+  enum Content {
+    case noDictionaries
+    case noSelection
+    case noWords
+    case words
+  }
+
+  let model: DictionaryToolModel
+  @Binding var scrollTarget: DictionaryToolModel.Row.ID?
+
+  private var content: Content {
+    if model.dictionaries.isEmpty { return .noDictionaries }
+    if !model.hasCurrentDictionary { return .noSelection }
+    return model.rows.isEmpty ? .noWords : .words
+  }
+
+  var body: some View {
+    switch content {
+    case .noDictionaries:
+      ContentUnavailableView {
+        Label(Strings.text(.noDictionaries), systemImage: "books.vertical")
+      } description: {
+        Text(Strings.text(.noDictionariesDescription))
+      } actions: {
+        Button(Strings.text(.newDictionaryMenu)) { model.requestCreateDictionary() }
+      }
+    case .noSelection:
+      ContentUnavailableView(
+        Strings.text(.noSelection), systemImage: "sidebar.left",
+        description: Text(Strings.text(.noSelectionDescription)))
+    case .noWords:
+      ContentUnavailableView {
+        Label(Strings.text(.noWords), systemImage: "character.book.closed")
+      } description: {
+        Text(Strings.text(.noWordsDescription))
+      } actions: {
+        Button(Strings.text(.addWord)) { model.addWord() }
+          .disabled(!model.canAddWord)
+      }
+    case .words:
+      DictionaryContentTable(model: model, scrollTarget: $scrollTarget)
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+          WordCountFooter(count: model.rows.count)
+        }
+    }
+  }
+}
+
+/// The status line of the Qt version ("<dictionary>: <n> entries"); the dictionary is the sidebar selection.
+private struct WordCountFooter: View {
+  let count: Int
+
+  var body: some View {
+    VStack(spacing: 0) {
+      Divider()
+      Text(verbatim: Strings.wordCount(count))
+        .font(.footnote)
+        .foregroundStyle(.secondary)
+        .monospacedDigit()
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 5)
+    }
+    .background(.bar)
   }
 }
 
@@ -215,25 +355,36 @@ private struct DictionaryContextMenu: View {
 
 private struct DictionaryContentTable: View {
   @Bindable var model: DictionaryToolModel
+  @Binding var scrollTarget: DictionaryToolModel.Row.ID?
   @State private var sortOrder: [KeyPathComparator<DictionaryToolModel.Row>] = []
 
   var body: some View {
-    Table(model.rows, selection: $model.selectedRowIDs, sortOrder: $sortOrder) {
-      TableColumn(trDT("Reading"), value: \.reading) { row in
-        EditableCell(model: model, rowID: row.id, column: .reading, text: row.reading)
+    ScrollViewReader { proxy in
+      Table(model.rows, selection: $model.selectedRowIDs, sortOrder: $sortOrder) {
+        TableColumn(trDT("Reading"), value: \.reading) { row in
+          EditableCell(model: model, rowID: row.id, column: .reading, text: row.reading)
+        }
+        .width(min: 80, ideal: 120)
+        TableColumn(trDT("Word"), value: \.word) { row in
+          EditableCell(model: model, rowID: row.id, column: .word, text: row.word)
+        }
+        .width(min: 80, ideal: 120)
+        TableColumn(trDT("Category"), value: \.category) { row in
+          CategoryCell(model: model, rowID: row.id, category: row.category)
+        }
+        .width(min: 90, ideal: 110)
+        TableColumn(trDT("Comment"), value: \.comment) { row in
+          EditableCell(model: model, rowID: row.id, column: .comment, text: row.comment)
+        }
+        .width(min: 80, ideal: 140)
       }
-      TableColumn(trDT("Word"), value: \.word) { row in
-        EditableCell(model: model, rowID: row.id, column: .word, text: row.word)
-      }
-      TableColumn(trDT("Category"), value: \.category) { row in
-        CategoryCell(model: model, rowID: row.id, category: row.category)
-      }
-      TableColumn(trDT("Comment"), value: \.comment) { row in
-        EditableCell(model: model, rowID: row.id, column: .comment, text: row.comment)
+      .alternatingRowBackgrounds()
+      .onChange(of: scrollTarget) { _, rowID in
+        guard let rowID else { return }
+        withAnimation { proxy.scrollTo(rowID) }
+        scrollTarget = nil
       }
     }
-    .alternatingRowBackgrounds()
-    .disabled(!model.hasCurrentDictionary)
     .onChange(of: sortOrder) { _, newValue in
       guard let comparator = newValue.first else { return }
       let column: DictionaryToolModel.Column =
@@ -246,9 +397,7 @@ private struct DictionaryContentTable: View {
       model.sort(by: column, ascending: comparator.order == .forward)
     }
     .contextMenu(forSelectionType: DictionaryToolModel.Row.ID.self) { ids in
-      if !ids.isEmpty {
-        EntryContextMenu(model: model, ids: ids)
-      }
+      EntryContextMenu(model: model, ids: ids)
     }
     .onDeleteCommand { model.requestDeleteWords() }
   }
@@ -312,60 +461,98 @@ private struct EntryContextMenu: View {
   let ids: Set<DictionaryToolModel.Row.ID>
 
   var body: some View {
-    let multiple = ids.count > 1
     Button(trDT("Add a word")) { model.addWord() }
-    if model.canMoveWords {
-      Menu(multiple ? trDT("Move the selected words to") : trDT("Move this word to")) {
-        ForEach(model.moveTargets) { target in
-          Button(target.name) {
-            model.selectedRowIDs = ids
-            model.moveSelectedWords(to: target.id)
+      .disabled(!model.canAddWord)
+    if !ids.isEmpty {
+      let multiple = ids.count > 1
+      if model.canMoveWords {
+        Menu(multiple ? trDT("Move the selected words to") : trDT("Move this word to")) {
+          ForEach(model.moveTargets) { target in
+            Button(target.name) {
+              model.selectedRowIDs = ids
+              model.moveSelectedWords(to: target.id)
+            }
           }
         }
       }
-    }
-    Button(multiple ? trDT("Delete the selected words") : trDT("Delete this word")) {
-      model.selectedRowIDs = ids
-      model.requestDeleteWords()
-    }
-    Divider()
-    Menu(trDT("Change category to")) {
-      ForEach(model.posList, id: \.self) { pos in
-        Button(pos) {
-          model.selectedRowIDs = ids
-          model.editPos(pos)
+      Menu(trDT("Change category to")) {
+        ForEach(model.posList, id: \.self) { pos in
+          Button(pos) {
+            model.selectedRowIDs = ids
+            model.editPos(pos)
+          }
         }
       }
-    }
-    Button(trDT("Edit comment")) {
-      model.selectedRowIDs = ids
-      model.requestEditComment()
+      Button(Strings.text(.editCommentMenu)) {
+        model.selectedRowIDs = ids
+        model.requestEditComment()
+      }
+      Divider()
+      Button(multiple ? trDT("Delete the selected words") : trDT("Delete this word"), role: .destructive) {
+        model.selectedRowIDs = ids
+        model.requestDeleteWords()
+      }
     }
   }
 }
 
 // MARK: - Prompts (QInputDialog)
 
-private struct PromptModifier: ViewModifier {
-  @Bindable var model: DictionaryToolModel
-  @State private var text = ""
+/// QInputDialog::getText for the dictionary name and the comment.
+private struct PromptSheet: View {
+  let prompt: DictionaryToolModel.Prompt
+  let completion: (String?) -> Void
+  @State private var text: String
+  @FocusState private var focused: Bool
 
-  func body(content: Content) -> some View {
-    content
-      .alert(
-        model.windowTitle,
-        isPresented: Binding(get: { model.prompt != nil }, set: { if !$0 { model.prompt = nil } }),
-        presenting: model.prompt
-      ) { prompt in
-        TextField(prompt.label, text: $text)
-        Button("OK") { model.completePrompt(prompt, text: text) }
-          .disabled(!prompt.allowsEmpty && text.isEmpty)
-        Button(tr("FindDialog", "Cancel"), role: .cancel) { model.completePrompt(prompt, text: nil) }
-      } message: { prompt in
-        Text(verbatim: prompt.label)
+  init(prompt: DictionaryToolModel.Prompt, completion: @escaping (String?) -> Void) {
+    self.prompt = prompt
+    self.completion = completion
+    _text = State(initialValue: prompt.initialText)
+  }
+
+  private var title: String {
+    switch prompt {
+    case .newDictionary: Strings.text(.newDictionaryTitle)
+    case .renameDictionary: Strings.text(.renameDictionaryTitle)
+    case .editComment: Strings.text(.editCommentTitle)
+    }
+  }
+
+  private var acceptTitle: String {
+    switch prompt {
+    case .newDictionary: Strings.text(.create)
+    case .renameDictionary: Strings.text(.rename)
+    case .editComment: Strings.text(.ok)
+    }
+  }
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 16) {
+      Text(title)
+        .font(.headline)
+      TextField(prompt.label, text: $text)
+        .focused($focused)
+        .onSubmit(accept)
+      HStack {
+        Spacer()
+        Button(Strings.text(.cancel), role: .cancel) { completion(nil) }
+          .keyboardShortcut(.cancelAction)
+        Button(acceptTitle, action: accept)
+          .keyboardShortcut(.defaultAction)
+          .disabled(!canAccept)
       }
-      .onChange(of: model.prompt) { _, prompt in
-        text = prompt?.initialText ?? ""
-      }
+    }
+    .padding(20)
+    .frame(width: 340)
+    .onAppear { focused = true }
+  }
+
+  private var canAccept: Bool { prompt.allowsEmpty || !text.isEmpty }
+
+  private func accept() {
+    if canAccept {
+      completion(text)
+    }
   }
 }

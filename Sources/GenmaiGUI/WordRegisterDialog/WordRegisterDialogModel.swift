@@ -80,7 +80,9 @@ public final class WordRegisterDialogModel {
     // Create new dictionary if empty
     let exists = (try? storage.exists()) != nil
     if !exists || storage.dictionariesSize == 0 {
-      let name = tr(kContext, "User Dictionary 1")
+      // The dictionary tool's translation ("ユーザー辞書 1"; this context still has "ユーザ辞書 1"), so that both
+      // tools name the default dictionary the same.
+      let name = tr("genmai::gui::DictionaryTool", "User Dictionary 1")
       do {
         _ = try storage.createDictionary(name)
       } catch {

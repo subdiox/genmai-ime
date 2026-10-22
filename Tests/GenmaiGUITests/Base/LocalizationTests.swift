@@ -25,30 +25,20 @@ import GenmaiBase
     #expect(GUIUtil.stripMnemonic("A && B") == "A & B")
     #expect(GUIUtil.stripMnemonic("plain") == "plain")
   }
-
-  @Test func richTextLinks() {
-    let html =
-      "<html><body>Genmai <a href=\"https://example.com/\"><span style=\"x\">info</span></a> &amp; more</body></html>"
-    let attributed = QtRichText.attributedString(html)
-    #expect(String(attributed.characters) == "Genmai info & more")
-    let links = attributed.runs.compactMap(\.link)
-    #expect(links == [URL(string: "https://example.com/")!])
-  }
 }
 
 @Suite struct AboutAndErrorDialogTests {
   @Test func aboutContent() {
     let content = AboutDialogContent(language: .english, creditsPath: "/tmp/credits_en.html")
     #expect(content.windowTitle == "About Genmai")
-    #expect(content.version == "(" + Version.getProductVersion() + ")")
-    #expect(String(content.terms.characters) == "Genmai product information issues")
-    let termLinks = content.terms.runs.compactMap(\.link).map(\.absoluteString)
-    #expect(termLinks == ["https://github.com/subdiox/genmai-ime", "https://github.com/subdiox/genmai-ime/issues"])
-    #expect(content.credits.runs.compactMap(\.link).map(\.absoluteString) == ["file:///tmp/credits_en.html"])
+    #expect(content.productName == "Genmai")
+    #expect(content.version == "Version " + Version.getProductVersion())
+    #expect(content.copyright == "Copyright © 2026 subdiox")
+    #expect(content.creditsURL == URL(filePath: "/tmp/credits_en.html"))
 
     let ja = AboutDialogContent(language: .japanese, creditsPath: "/tmp/credits_en.html")
     #expect(ja.windowTitle == "Genmai について")
-    #expect(String(ja.credits.characters).contains("オープンソースソフトウェア"))
+    #expect(ja.version == "バージョン " + Version.getProductVersion())
   }
 
   @Test func errorMessages() {

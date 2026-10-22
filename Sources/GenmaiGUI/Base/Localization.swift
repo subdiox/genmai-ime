@@ -36,7 +36,9 @@ public let kProductNameInEnglish = "Genmai"
 /// mnemonic markers ("&File", "ファイル(&F)").
 public func tr(_ context: String, _ source: String, language: GUILanguage = .current) -> String {
   var text = source
-  if language == .japanese, let translated = kJapaneseTranslations[context]?[source] {
+  if language == .japanese,
+    let translated = kGenmaiJapaneseTranslations[context]?[source] ?? kJapaneseTranslations[context]?[source]
+  {
     text = translated
   }
   return GUIUtil.replaceString(GUIUtil.stripMnemonic(text))

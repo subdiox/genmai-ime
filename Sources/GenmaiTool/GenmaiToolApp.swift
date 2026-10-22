@@ -78,8 +78,18 @@ final class ToolAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     let hosting = NSHostingController(rootView: rootView)
     hosting.sizingOptions = [.preferredContentSize]
     let window = NSWindow(contentViewController: hosting)
-    window.styleMask = mode == .configDialog || mode == .dictionaryTool
-      ? [.titled, .closable, .miniaturizable, .resizable] : [.titled, .closable]
+    switch mode {
+    case .configDialog, .dictionaryTool:
+      // The sidebar runs under the title bar, as in System Settings.
+      window.styleMask = [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView]
+      window.toolbarStyle = .unified
+    case .aboutDialog:
+      window.styleMask = [.titled, .closable, .fullSizeContentView]
+      window.titlebarAppearsTransparent = true
+      window.titleVisibility = .hidden
+    default:
+      window.styleMask = [.titled, .closable]
+    }
     window.title = windowTitle(mode)
     window.delegate = self
     if mode == .errorMessageDialog {
@@ -127,10 +137,10 @@ final class ToolAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
   private func windowTitle(_ mode: ToolMode) -> String {
     switch mode {
-    case .configDialog: tr("ConfigDialog", "[ProductName] Settings")
+    case .configDialog: tr("Settings", "[ProductName] Settings")
     case .dictionaryTool: tr("DictionaryTool", "[ProductName] Dictionary Tool")
     case .wordRegisterDialog: tr("WordRegisterDialog", "[ProductName] Word Register Dialog")
-    case .aboutDialog: tr("AboutDialog", "About [ProductName]")
+    case .aboutDialog: tr("About", "About [ProductName]")
     case .errorMessageDialog: ErrorMessageDialog.title()
     case .updateDialog: UpdateStrings.text(.dialogTitle)
     }

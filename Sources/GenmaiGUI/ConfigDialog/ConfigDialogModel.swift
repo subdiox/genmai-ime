@@ -69,7 +69,6 @@ public struct ConfigDialogValues: Equatable, Sendable {
   public var verboseLevel = 0
   public var checkDefault = true
   public var yenSignCharacter: C.YenSignCharacter = .yenSign
-  public var startup = false
 
   public init() {}
 
@@ -220,24 +219,6 @@ public struct ConfigDialogValues: Equatable, Sendable {
   }
 }
 
-/// Platform hooks of the dialog (MacUtil login item).
-public struct ConfigDialogPlatform: Sendable {
-  public var isLoginItemEnabled: @MainActor @Sendable () -> Bool
-  public var setLoginItemEnabled: @MainActor @Sendable (Bool) -> Void
-
-  public init(
-    isLoginItemEnabled: @escaping @MainActor @Sendable () -> Bool,
-    setLoginItemEnabled: @escaping @MainActor @Sendable (Bool) -> Void
-  ) {
-    self.isLoginItemEnabled = isLoginItemEnabled
-    self.setLoginItemEnabled = setLoginItemEnabled
-  }
-
-  /// No prelauncher login item (the Swift IME has no separate converter process to start on login).
-  public static let oss = ConfigDialogPlatform(
-    isLoginItemEnabled: { false }, setLoginItemEnabled: { _ in })
-}
-
 /// The modal sub-editors opened from the dialog.
 public enum ConfigDialogEditor: Identifiable, Equatable, Sendable {
   case keymap(currentTable: String)
@@ -279,7 +260,7 @@ public final class ConfigDialogModel {
   public var values = ConfigDialogValues() {
     didSet {
       if !isLoading && values != oldValue {
-        applyEnabled = true
+        noteChange()
       }
     }
   }
@@ -291,7 +272,7 @@ public final class ConfigDialogModel {
         aiModelStatus = AIModelStatus.check(aiValues.resolvedModelDirectory)
       }
       if !isLoading && aiValues != oldValue {
-        applyEnabled = true
+        noteChange()
       }
     }
   }
@@ -312,13 +293,17 @@ public final class ConfigDialogModel {
       release, directory, progress in
       try await AIModelInstaller.install(release, to: directory, progress: progress)
     }
-  /// 'Apply' button is disabled on launching and enabled by any edit.
-  public private(set) var applyEnabled = false
+  /// Edits not saved yet (Mozc's 'Apply' button state: off on launching, on after any edit).
+  public private(set) var hasPendingChanges = false
+  /// Not in Mozc: the settings window has no OK / Cancel / Apply; edits are saved shortly after they are made
+  /// (and when the window closes). Off for tests, which save with `apply()` / `accept()`.
+  public var savesChangesAutomatically = false
+  private var saveTask: Task<Void, Never>?
+  static let saveDelay: Duration = .milliseconds(300)
   public var pendingMessage: GUIMessage?
   public var activeEditor: ConfigDialogEditor?
 
   private let client: any GenmaiClientProtocol
-  private let platform: ConfigDialogPlatform
   private let launchTool: @MainActor (String) -> Void
   private var baseConfig = Genmai_Config_Config()
   private var isLoading = false
@@ -331,21 +316,18 @@ public final class ConfigDialogModel {
   /// `aiSettingsURL`: where the AI settings are stored (nil: `AIConversionSettings.fileURL` in the profile).
   public init(
     client: any GenmaiClientProtocol,
-    platform: ConfigDialogPlatform = .oss,
     launchTool: @escaping @MainActor (String) -> Void = { _ in },
     aiSettingsURL: URL? = nil,
     appUpdate: GenmaiUpdateModel? = nil
   ) {
     self.appUpdate = appUpdate ?? GenmaiUpdateModel()
     self.client = client
-    self.platform = platform
     self.launchTool = launchTool
     self.aiSettingsURL = aiSettingsURL
     reload()
   }
 
-  /// setWindowTitle(tr("%1 Preferences")) on macOS.
-  public var windowTitle: String { tr(Self.context, "[ProductName] Preferences") }
+  public var windowTitle: String { tr("Settings", "[ProductName] Settings") }
 
   // MARK: - Config I/O
 
@@ -479,7 +461,6 @@ public final class ConfigDialogModel {
     defer { isLoading = false }
     baseConfig = config
     var newValues = ConfigDialogValues(config: config)
-    newValues.startup = platform.isLoginItemEnabled()
     values = newValues
     characterFormEditor.load(config)
   }
@@ -517,9 +498,6 @@ public final class ConfigDialogModel {
     if !setConfig(config) {
       showMessage(.critical, tr(Self.context, "Failed to update config"))
     }
-    if values.startup != platform.isLoginItemEnabled() {
-      platform.setLoginItemEnabled(values.startup)
-    }
     baseConfig = config
     return true
   }
@@ -527,11 +505,42 @@ public final class ConfigDialogModel {
   // MARK: - Buttons
 
   /// The OK button (AcceptRole). Returns true if the dialog should close.
-  public func accept() -> Bool { update() }
+  public func accept() -> Bool {
+    guard update() else { return false }
+    hasPendingChanges = false
+    return true
+  }
 
   /// The Apply button (ApplyRole).
   public func apply() {
-    update()
+    if update() {
+      hasPendingChanges = false
+    }
+  }
+
+  /// A custom keymap must have entries; the settings are not saved until it has (Update's warning, shown in
+  /// place instead of an alert).
+  public var hasEmptyCustomKeymap: Bool {
+    values.sessionKeymap == .custom && values.customKeymapTable.isEmpty
+  }
+
+  private func noteChange() {
+    hasPendingChanges = true
+    guard savesChangesAutomatically else { return }
+    saveTask?.cancel()
+    saveTask = Task { [weak self] in
+      try? await Task.sleep(for: Self.saveDelay)
+      guard !Task.isCancelled else { return }
+      self?.savePendingChanges()
+    }
+  }
+
+  /// Saves the pending edits now (automatic saving; the window closes).
+  public func savePendingChanges() {
+    saveTask?.cancel()
+    saveTask = nil
+    guard hasPendingChanges, !hasEmptyCustomKeymap else { return }
+    apply()
   }
 
   /// "Clear personalization data".
@@ -562,9 +571,8 @@ public final class ConfigDialogModel {
   public func resetToDefaults() {
     markButtonClicked()
     let message = tr(
-      Self.context,
-      "When you reset [ProductName] settings, any changes you've made will be reverted to the default settings. Do you want to reset settings? The following items are not reset with this operation.\n - Personalization data\n - Input history\n - Usage statistics and crash reports\n - Administrator settings"
-    )
+      "Settings",
+      "Do you want to reset all settings to their defaults? Personalization data and input history are kept.")
     showQuestion(message) { [weak self] in
       self?.performResetToDefaults()
     }
@@ -575,7 +583,7 @@ public final class ConfigDialogModel {
     // nice to have GET_DEFAULT_CONFIG command
     convertFromProto(ConfigHandler.defaultConfig())
     aiValues = AIConversionSettings()
-    applyEnabled = true
+    noteChange()
   }
 
   /// The keymap "Customize..." button (EditKeymap).
@@ -616,9 +624,9 @@ public final class ConfigDialogModel {
     }
   }
 
-  /// EnableApplyButton(): any button click / check box / combo box activation enables 'Apply'.
+  /// EnableApplyButton(): any button click / check box / combo box activation enables 'Apply' (and saves).
   public func markButtonClicked() {
-    applyEnabled = true
+    noteChange()
   }
 
   // MARK: - Option lists (the items added in the constructor)
@@ -632,12 +640,12 @@ public final class ConfigDialogModel {
   ]
   public static var keymapItems: [(Genmai_Config_Config.SessionKeymap, String)] {
     [
-      (.custom, tr(context, "Custom keymap")), (.atok, tr(context, "ATOK")),
-      (.msime, tr(context, "MS-IME")), (.kotoeri, tr(context, "Kotoeri")),
+      (.kotoeri, tr(context, "Kotoeri")), (.msime, tr(context, "MS-IME")), (.atok, tr(context, "ATOK")),
+      (.custom, tr(context, "Custom keymap")),
     ]
   }
   public static var inputModeItems: [(Int, String)] {
-    [(0, tr(context, "Romaji")), (1, tr(context, "Kana"))]
+    [(0, tr("Settings", "Romaji input")), (1, tr("Settings", "Kana input"))]
   }
   public static var spaceCharacterFormItems: [(Genmai_Config_Config.FundamentalCharacterForm, String)] {
     [
@@ -648,14 +656,14 @@ public final class ConfigDialogModel {
   }
   public static var selectionShortcutItems: [(Genmai_Config_Config.SelectionShortcut, String)] {
     [
-      (.noShortcut, tr(context, "No shortcut")), (.shortcut123456789, tr(context, "1 -- 9")),
-      (.shortcutAsdfghjkl, tr(context, "A -- L")),
+      (.noShortcut, tr("Settings", "None")), (.shortcut123456789, tr("Settings", "1–9")),
+      (.shortcutAsdfghjkl, tr("Settings", "A–L")),
     ]
   }
   public static var historyLearningLevelItems: [(Genmai_Config_Config.HistoryLearningLevel, String)] {
     [
-      (.defaultHistory, tr(context, "Yes")), (.readOnly, tr(context, "Yes (don't record new data)")),
-      (.noHistory, tr(context, "No")),
+      (.defaultHistory, tr("Settings", "Yes")), (.readOnly, tr("Settings", "Yes, without recording new data")),
+      (.noHistory, tr("Settings", "No")),
     ]
   }
   public static var shiftKeyModeSwitchItems: [(Genmai_Config_Config.ShiftKeyModeSwitch, String)] {
