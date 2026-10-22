@@ -36,10 +36,6 @@ public final class RomanTableEditorModel {
       dialogTitle: tr("genmai::gui::RomanTableEditorDialog", "[ProductName] settings"))
   }
 
-  public var windowTitle: String {
-    tr("genmai::gui::RomanTableEditorDialog", "[ProductName] Romaji table editor")
-  }
-
   /// Initializes the editor like RomanTableEditorDialog::Show.
   public convenience init(currentRomanTable: String) {
     self.init()
@@ -163,11 +159,11 @@ public final class RomanTableEditorModel {
   }
 }
 
-/// The romaji table editor dialog. `onFinish` receives the new table on OK (empty == default) or nil.
+/// The romaji table editor sheet. `onFinish` receives the new table on OK (empty == default) or nil.
 public struct RomanTableEditorView: View {
   @State private var model: RomanTableEditorModel
   @State private var isImporting = false
-  /// Set when OK succeeded but an information message must be read before the dialog closes.
+  /// Set when OK succeeded but an information message must be read before the sheet closes.
   @State private var finishAfterMessage = false
   private let onFinish: (String?) -> Void
 
@@ -178,25 +174,31 @@ public struct RomanTableEditorView: View {
 
   public var body: some View {
     @Bindable var table = model.table
-    VStack(spacing: 12) {
-      RomanTableGrid(table: model.table)
-      TableEditorButtonBar(
-        menuItems: menuItems,
-        okEnabled: model.okEnabled,
-        onCancel: { onFinish(nil) },
-        onOK: {
-          if model.update() {
-            if model.table.pendingMessage == nil {
-              onFinish(model.acceptedRomanTable())
-            } else {
-              finishAfterMessage = true
-            }
+    EditorSheet(
+      title: TableEditorStrings.text(.romanTitle),
+      message: TableEditorStrings.text(.romanMessage),
+      okEnabled: model.okEnabled,
+      onCancel: { onFinish(nil) },
+      onOK: {
+        if model.update() {
+          if model.table.pendingMessage == nil {
+            onFinish(model.acceptedRomanTable())
+          } else {
+            finishAfterMessage = true
           }
-        })
+        }
+      }
+    ) {
+      TableEditorBox(
+        canRemove: model.canRemoveOrReset && !table.selection.isEmpty,
+        moreItems: moreItems,
+        onAdd: { model.table.addNewItem() },
+        onRemove: { model.table.deleteSelectedItems() }
+      ) {
+        RomanTableGrid(table: model.table)
+      }
     }
-    .padding(12)
-    .frame(minWidth: 330, minHeight: 350)
-    .navigationTitle(model.windowTitle)
+    .frame(minWidth: 440, minHeight: 440)
     .genmaiMessageAlert($table.pendingMessage)
     .onChange(of: table.pendingMessage) { _, message in
       if message == nil, finishAfterMessage {
@@ -206,26 +208,20 @@ public struct RomanTableEditorView: View {
     .tableEditorImporter(isPresented: $isImporting) { model.importFile($0) }
   }
 
-  private var menuItems: [TableEditorMenuItem] {
-    let context = "genmai::gui::RomanTableEditorDialog"
+  private var moreItems: [TableEditorMenuItem] {
     let model = model
     return [
-      .action(tr(context, "New entry")) { model.table.addNewItem() },
-      .action(tr(context, "Remove selected entries"), enabled: model.canRemoveOrReset) {
-        model.table.deleteSelectedItems()
-      },
-      .divider,
-      .action(tr(context, "Import from file...")) {
+      .action(TableEditorStrings.text(.importFromFile)) {
         model.confirmOverwrite { isImporting = true }
       },
-      .action(tr(context, "Export to file...")) {
-        guard model.update(), let url = TableEditorSavePanel.run(
-          defaultFilename: RomanTableEditorModel.defaultFilename)
+      .action(TableEditorStrings.text(.exportToFile)) {
+        guard model.update(),
+          let url = TableEditorSavePanel.run(defaultFilename: RomanTableEditorModel.defaultFilename)
         else { return }
         model.table.writeExportFile(url, model.serializedTable)
       },
       .divider,
-      .action(tr(context, "Reset to defaults"), enabled: model.canRemoveOrReset) {
+      .action(TableEditorStrings.text(.resetToDefaults), enabled: model.canRemoveOrReset) {
         model.confirmOverwrite { model.loadDefaultRomanTable() }
       },
     ]
@@ -239,24 +235,35 @@ struct RomanTableGrid: View {
     let context = "genmai::gui::RomanTableEditorDialog"
     Table($table.rows, selection: $table.selection) {
       TableColumn(tr(context, "Input")) { $row in
-        TextField("", text: $row.input)
+        RomanTableCell(text: $row.input)
       }
       TableColumn(tr(context, "Output")) { $row in
-        TextField("", text: $row.output)
+        RomanTableCell(text: $row.output)
       }
       TableColumn(tr(context, "Next input")) { $row in
-        TextField("", text: $row.pending)
+        RomanTableCell(text: $row.pending)
       }
     }
+    .tableStyle(.inset(alternatesRowBackgrounds: true))
     .contextMenu(forSelectionType: UUID.self) { ids in
       TableEditorContextMenu(
-        canEdit: false,
-        onEdit: {},
+        onEdit: nil,
         onNew: { table.addNewItem() },
         onRemove: {
           if !ids.isEmpty { table.selection = ids }
           table.deleteSelectedItems()
         })
     }
+  }
+}
+
+/// An editable cell: plain text until clicked.
+struct RomanTableCell: View {
+  @Binding var text: String
+
+  var body: some View {
+    TextField("", text: $text)
+      .textFieldStyle(.plain)
+      .labelsHidden()
   }
 }

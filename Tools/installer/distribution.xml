@@ -6,10 +6,16 @@
  (the Swift package targets macOS 15) and hostArchitectures, which Tools/make_installer_pkg.sh fills with
  the architectures of the built binaries (@@@HOST_ARCHITECTURES@@@), and no logout at the end: the postinstall
  script restarts the input method (there are no launch agents to load), so updates take effect at once.
+ Not in Mozc: localized welcome and conclusion pages (Resources/{en,ja}.lproj/*.html) and the app icon as the
+ background in both appearances (background.tiff, made from Tools/assets/genmai.icns by make_installer_pkg.sh).
 -->
 
 <installer-gui-script minSpecVersion="1">
     <title>Genmai</title>
+    <welcome file="welcome.html" mime-type="text/html"/>
+    <conclusion file="conclusion.html" mime-type="text/html"/>
+    <background file="background.tiff" mime-type="image/tiff" alignment="bottomleft" scaling="none"/>
+    <background-darkAqua file="background.tiff" mime-type="image/tiff" alignment="bottomleft" scaling="none"/>
     <allowed-os-versions>
         <os-version min="15.0"/>
     </allowed-os-versions>

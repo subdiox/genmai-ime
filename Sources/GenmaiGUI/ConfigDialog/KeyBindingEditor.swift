@@ -256,6 +256,10 @@ extension KeyBindingInput {
 public final class KeyBindingEditorModel {
   public var binding: String
   public private(set) var okEnabled = false
+  /// True once a key was pressed (the field then shows whether the combination can be assigned).
+  public private(set) var hasPressedKey = false
+  /// Whether the capture field has keyboard focus.
+  var isCapturing = false
   private var filter = KeyBindingFilter()
 
   public init(binding: String) {
@@ -266,16 +270,18 @@ public final class KeyBindingEditorModel {
     let (text, ok) = filter.keyPress(input)
     binding = text
     okEnabled = ok
+    hasPressedKey = true
   }
 
   public func keyRelease() {
     filter.keyRelease()
   }
 
-  var windowTitle: String { tr("KeyBindingEditor", "[ProductName] key binding editor") }
+  /// The pressed combination cannot be assigned.
+  public var isInvalid: Bool { hasPressedKey && !okEnabled && !binding.isEmpty }
 }
 
-/// The key binding editor dialog opened from the "Key" column of the keymap editor.
+/// The key binding editor sheet opened from a row of the keymap editor.
 struct KeyBindingEditorView: View {
   @State private var model: KeyBindingEditorModel
   let onFinish: (String?) -> Void
@@ -286,26 +292,66 @@ struct KeyBindingEditorView: View {
   }
 
   var body: some View {
-    VStack(alignment: .leading, spacing: 12) {
-      Text(verbatim: model.windowTitle)
-        .font(.headline)
-      Text(verbatim: tr("KeyBindingEditor", "Input key assignments:"))
-      KeyCaptureField(model: model)
-        .frame(height: 24)
-      HStack {
-        Spacer()
-        Button(tr("genmai::gui::ConfigDialog", "Cancel"), role: .cancel) { onFinish(nil) }
-          .keyboardShortcut(.cancelAction)
-        Button("OK") { onFinish(model.binding) }
-          .disabled(!model.okEnabled)
-      }
+    // Return and Escape are keys that can be assigned, so OK is not the default button.
+    EditorSheet(
+      title: TableEditorStrings.text(.keyBindingTitle),
+      message: TableEditorStrings.text(.keyBindingMessage),
+      okEnabled: model.okEnabled,
+      okIsDefault: false,
+      onCancel: { onFinish(nil) },
+      onOK: { onFinish(model.binding) }
+    ) {
+      KeyCaptureWell(model: model)
     }
-    .padding(16)
-    .frame(width: 320)
+    .frame(width: 360)
   }
 }
 
-/// A focused field that captures raw key events (the QLineEdit with the event filter installed).
+/// The large field that shows the captured key, with a focus ring while it captures.
+struct KeyCaptureWell: View {
+  let model: KeyBindingEditorModel
+
+  var body: some View {
+    VStack(spacing: 6) {
+      ZStack {
+        KeyCaptureField(model: model)
+        KeyCaptureLabel(binding: model.binding)
+          .allowsHitTesting(false)
+      }
+      .frame(height: 56)
+      .background(.background, in: .rect(cornerRadius: 8))
+      .overlay {
+        RoundedRectangle(cornerRadius: 8)
+          .strokeBorder(
+            model.isCapturing ? AnyShapeStyle(Color.accentColor) : AnyShapeStyle(.separator),
+            lineWidth: model.isCapturing ? 2 : 1)
+      }
+      Text(verbatim: TableEditorStrings.text(.keyBindingInvalid))
+        .font(.caption)
+        .foregroundStyle(.secondary)
+        .opacity(model.isInvalid ? 1 : 0)
+        .accessibilityHidden(!model.isInvalid)
+    }
+  }
+}
+
+struct KeyCaptureLabel: View {
+  let binding: String
+
+  var body: some View {
+    if binding.isEmpty {
+      Text(verbatim: TableEditorStrings.text(.keyBindingPlaceholder))
+        .font(.title3)
+        .foregroundStyle(.tertiary)
+    } else {
+      Text(verbatim: KeyDisplayFormatter.display(binding))
+        .font(.system(.title2, design: .rounded, weight: .medium))
+        .help(binding)
+    }
+  }
+}
+
+/// A focused view that captures raw key events (the QLineEdit with the event filter installed).
 struct KeyCaptureField: NSViewRepresentable {
   let model: KeyBindingEditorModel
 
@@ -317,21 +363,34 @@ struct KeyCaptureField: NSViewRepresentable {
 
   func updateNSView(_ view: KeyCaptureNSView, context: Context) {
     view.model = model
-    view.text = model.binding
   }
 }
 
 final class KeyCaptureNSView: NSView {
   var model: KeyBindingEditorModel?
-  var text = "" {
-    didSet { needsDisplay = true }
-  }
 
   override var acceptsFirstResponder: Bool { true }
 
   override func viewDidMoveToWindow() {
     super.viewDidMoveToWindow()
     window?.makeFirstResponder(self)
+  }
+
+  override func becomeFirstResponder() -> Bool {
+    setCapturing(true)
+    return true
+  }
+
+  override func resignFirstResponder() -> Bool {
+    setCapturing(false)
+    return true
+  }
+
+  /// Updates the model outside of the current view update (first responder changes happen during layout).
+  private func setCapturing(_ capturing: Bool) {
+    Task { @MainActor [weak self] in
+      self?.model?.isCapturing = capturing
+    }
   }
 
   override func mouseDown(with event: NSEvent) {
@@ -369,18 +428,11 @@ final class KeyCaptureNSView: NSView {
     return super.performKeyEquivalent(with: event)
   }
 
-  override func draw(_ dirtyRect: NSRect) {
-    NSColor.textBackgroundColor.setFill()
-    bounds.fill()
-    (window?.firstResponder === self ? NSColor.keyboardFocusIndicatorColor : NSColor.separatorColor)
-      .setStroke()
-    NSBezierPath(rect: bounds.insetBy(dx: 0.5, dy: 0.5)).stroke()
-    let attributes: [NSAttributedString.Key: Any] = [
-      .font: NSFont.systemFont(ofSize: NSFont.systemFontSize),
-      .foregroundColor: NSColor.textColor,
-    ]
-    let string = NSAttributedString(string: text, attributes: attributes)
-    let size = string.size()
-    string.draw(at: NSPoint(x: 4, y: (bounds.height - size.height) / 2))
-  }
+  override func isAccessibilityElement() -> Bool { true }
+
+  override func accessibilityRole() -> NSAccessibility.Role? { .textField }
+
+  override func accessibilityLabel() -> String? { TableEditorStrings.text(.keyBindingTitle) }
+
+  override func accessibilityValue() -> Any? { model?.binding }
 }

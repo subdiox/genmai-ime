@@ -3,7 +3,9 @@
 // The Qt GenericTableEditorDialog is a QDialog with a QTableWidget, an "Edit" menu button and OK/Cancel.
 // Subclasses (KeyMapEditorDialog, RomanTableEditorDialog) override LoadFromStream / Update / UpdateMenuStatus.
 // In Swift the shared row operations live in `GenericTableEditorModel<Row>` (composition instead of
-// inheritance), and `TableEditorChrome` renders the common dialog chrome (Edit menu, OK/Cancel).
+// inheritance). The views are Genmai's own sheet layout instead of the Qt dialog: `EditorSheet` (title,
+// explanation, content, Cancel / OK) and `TableEditorBox` (the table with +/− buttons and a "More" menu under it,
+// like the lists of System Settings). Their strings are in `TableEditorStrings`.
 
 import AppKit
 import Foundation
@@ -177,9 +179,206 @@ public final class GenericTableEditorModel<Row: TableEditorRow> {
   }
 }
 
+// MARK: - Strings
+
+/// English / Japanese strings of the editor sheets (key bindings, romaji table, key assignment, character forms)
+/// that Mozc's Qt translations do not have or word differently.
+enum TableEditorStrings {
+  enum Key: CaseIterable, Sendable {
+    case cancel, ok, addEntry, removeEntries, more, importFromFile, exportToFile, exportPanelTitle, importPreset,
+      resetToDefaults, newEntry, changeKey, deleteEntries, keymapTitle, keymapMessage, romanTitle, romanMessage,
+      keyBindingTitle, keyBindingMessage, keyBindingPlaceholder, keyBindingInvalid, characterGroup,
+      characterComposition, characterConversion, characterFormFootnote
+  }
+
+  static let english: [Key: String] = [
+    .cancel: "Cancel",
+    .ok: "OK",
+    .addEntry: "Add Entry",
+    .removeEntries: "Remove Selected Entries",
+    .more: "More",
+    .importFromFile: "Import from File…",
+    .exportToFile: "Export to File…",
+    .exportPanelTitle: "Export",
+    .importPreset: "Import Preset",
+    .resetToDefaults: "Reset to Defaults",
+    .newEntry: "New Entry",
+    .changeKey: "Change Key…",
+    .deleteEntries: "Delete",
+    .keymapTitle: "Key Bindings",
+    .keymapMessage:
+      "Choose the command each key runs in each input state. Double-click a row to assign another key.",
+    .romanTitle: "Romaji Table",
+    .romanMessage:
+      "Each romaji sequence you type is replaced by its output. The next input stays in the composition, so “kk” becomes “っ” followed by “k”.",
+    .keyBindingTitle: "Assign a Key",
+    .keyBindingMessage: "Press the key or key combination to assign.",
+    .keyBindingPlaceholder: "Press a Key",
+    .keyBindingInvalid: "This key combination can’t be assigned.",
+    .characterGroup: "Characters",
+    .characterComposition: "Composition",
+    .characterConversion: "Conversion",
+    .characterFormFootnote: "“Remember” uses the width you chose last time.",
+  ]
+
+  static let japanese: [Key: String] = [
+    .cancel: "キャンセル",
+    .ok: "OK",
+    .addEntry: "エントリーを追加",
+    .removeEntries: "選択したエントリーを削除",
+    .more: "その他",
+    .importFromFile: "ファイルからインポート…",
+    .exportToFile: "ファイルにエクスポート…",
+    .exportPanelTitle: "エクスポート",
+    .importPreset: "プリセットを読み込む",
+    .resetToDefaults: "初期設定に戻す",
+    .newEntry: "エントリーを追加",
+    .changeKey: "キーを変更…",
+    .deleteEntries: "削除",
+    .keymapTitle: "キー操作",
+    .keymapMessage: "入力の状態ごとに、キーで実行するコマンドを選びます。行をダブルクリックすると、別のキーを割り当てられます。",
+    .romanTitle: "ローマ字テーブル",
+    .romanMessage: "入力したローマ字を出力の文字に置き換えます。「次の入力」は出力の後に入力中の文字として残ります（例: kk →「っ」+「k」）。",
+    .keyBindingTitle: "キーを割り当てる",
+    .keyBindingMessage: "割り当てるキー、またはキーの組み合わせを押してください。",
+    .keyBindingPlaceholder: "キーを押してください",
+    .keyBindingInvalid: "このキーの組み合わせは割り当てられません。",
+    .characterGroup: "文字の種類",
+    .characterComposition: "変換前",
+    .characterConversion: "変換後",
+    .characterFormFootnote: "「学習」は前回使った幅で入力します。",
+  ]
+
+  static func text(_ key: Key, language: GUILanguage = .current) -> String {
+    let table = language == .japanese ? japanese : english
+    return table[key] ?? english[key] ?? ""
+  }
+}
+
 // MARK: - Views
 
-/// The actions of the Edit menu of a concrete editor.
+/// The layout of an editor sheet: title and explanation, the content, and Cancel / OK.
+struct EditorSheet<Content: View>: View {
+  let title: String
+  let message: String
+  let okEnabled: Bool
+  /// False when Return must reach the content (the key capture field) instead of OK.
+  var okIsDefault = true
+  let onCancel: () -> Void
+  let onOK: () -> Void
+  @ViewBuilder let content: Content
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 16) {
+      EditorSheetHeader(title: title, message: message)
+      content
+      HStack {
+        Spacer()
+        Button(TableEditorStrings.text(.cancel), role: .cancel, action: onCancel)
+          .keyboardShortcut(.cancelAction)
+        if okIsDefault {
+          Button(TableEditorStrings.text(.ok), action: onOK)
+            .keyboardShortcut(.defaultAction)
+            .disabled(!okEnabled)
+        } else {
+          Button(TableEditorStrings.text(.ok), action: onOK)
+            .buttonStyle(.borderedProminent)
+            .disabled(!okEnabled)
+        }
+      }
+      .controlSize(.regular)
+    }
+    .padding(20)
+  }
+}
+
+struct EditorSheetHeader: View {
+  let title: String
+  let message: String
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 4) {
+      Text(verbatim: title)
+        .font(.headline)
+        .accessibilityAddTraits(.isHeader)
+      Text(verbatim: message)
+        .font(.callout)
+        .foregroundStyle(.secondary)
+        .fixedSize(horizontal: false, vertical: true)
+    }
+  }
+}
+
+/// A table with +/− buttons and a "More" menu under it, in a rounded box.
+struct TableEditorBox<Content: View>: View {
+  let canRemove: Bool
+  let moreItems: [TableEditorMenuItem]
+  let onAdd: () -> Void
+  let onRemove: () -> Void
+  @ViewBuilder let content: Content
+
+  var body: some View {
+    VStack(spacing: 0) {
+      content
+      Divider()
+      TableEditorControlBar(
+        canRemove: canRemove, moreItems: moreItems, onAdd: onAdd, onRemove: onRemove)
+    }
+    .background(Color(nsColor: .controlBackgroundColor))
+    .clipShape(.rect(cornerRadius: 8))
+    .overlay {
+      RoundedRectangle(cornerRadius: 8)
+        .strokeBorder(.separator)
+    }
+  }
+}
+
+/// + / − and the "More" menu.
+struct TableEditorControlBar: View {
+  let canRemove: Bool
+  let moreItems: [TableEditorMenuItem]
+  let onAdd: () -> Void
+  let onRemove: () -> Void
+
+  var body: some View {
+    HStack(spacing: 0) {
+      Button(action: onAdd) {
+        Image(systemName: "plus")
+          .frame(width: 24, height: 22)
+          .contentShape(.rect)
+      }
+      .help(TableEditorStrings.text(.addEntry))
+      .accessibilityLabel(TableEditorStrings.text(.addEntry))
+      Divider()
+        .frame(height: 14)
+      Button(action: onRemove) {
+        Image(systemName: "minus")
+          .frame(width: 24, height: 22)
+          .contentShape(.rect)
+      }
+      .disabled(!canRemove)
+      .help(TableEditorStrings.text(.removeEntries))
+      .accessibilityLabel(TableEditorStrings.text(.removeEntries))
+      Spacer()
+      Menu {
+        TableEditorMenuContent(items: moreItems)
+      } label: {
+        Image(systemName: "ellipsis.circle")
+      }
+      .menuStyle(.borderlessButton)
+      .menuIndicator(.hidden)
+      .fixedSize()
+      .help(TableEditorStrings.text(.more))
+      .accessibilityLabel(TableEditorStrings.text(.more))
+      .padding(.trailing, 6)
+    }
+    .buttonStyle(.borderless)
+    .padding(.horizontal, 4)
+    .frame(height: 26)
+  }
+}
+
+/// An item of the "More" menu of a concrete editor.
 struct TableEditorMenuItem: Identifiable {
   enum Kind {
     case action(title: String, enabled: Bool, perform: @MainActor () -> Void)
@@ -203,20 +402,6 @@ struct TableEditorMenuItem: Identifiable {
   static var divider: TableEditorMenuItem { TableEditorMenuItem(kind: .divider) }
 }
 
-/// The "Edit" button with its menu (editButton + edit_menu_).
-struct TableEditorEditMenu: View {
-  let items: [TableEditorMenuItem]
-
-  var body: some View {
-    Menu {
-      TableEditorMenuContent(items: items)
-    } label: {
-      Text(verbatim: tr("GenericTableEditorDialog", "Edit"))
-    }
-    .fixedSize()
-  }
-}
-
 struct TableEditorMenuContent: View {
   let items: [TableEditorMenuItem]
 
@@ -237,44 +422,25 @@ struct TableEditorMenuContent: View {
   }
 }
 
-/// The bottom bar of the generic table editor: Edit menu on the left, Cancel / OK on the right.
-struct TableEditorButtonBar: View {
-  let menuItems: [TableEditorMenuItem]
-  let okEnabled: Bool
-  let onCancel: () -> Void
-  let onOK: () -> Void
-
-  var body: some View {
-    HStack {
-      TableEditorEditMenu(items: menuItems)
-      Spacer()
-      Button(tr("genmai::gui::ConfigDialog", "Cancel"), role: .cancel, action: onCancel)
-        .keyboardShortcut(.cancelAction)
-      Button("OK", action: onOK)
-        .keyboardShortcut(.defaultAction)
-        .disabled(!okEnabled)
-    }
-  }
-}
-
-/// Context menu of a table row (OnContextMenuRequested).
+/// Context menu of table rows (OnContextMenuRequested).
 struct TableEditorContextMenu: View {
-  let canEdit: Bool
-  let onEdit: () -> Void
+  /// The "Change Key…" action, when the editor has one and a single row is clicked.
+  let onEdit: (() -> Void)?
   let onNew: () -> Void
   let onRemove: () -> Void
 
   var body: some View {
-    if canEdit {
-      Button(tr("genmai::gui::GenericTableEditorDialog", "Edit entry"), action: onEdit)
+    if let onEdit {
+      Button(TableEditorStrings.text(.changeKey), action: onEdit)
+      Divider()
     }
-    Button(tr("genmai::gui::GenericTableEditorDialog", "New entry"), action: onNew)
-    Button(tr("genmai::gui::GenericTableEditorDialog", "Remove entry"), action: onRemove)
+    Button(TableEditorStrings.text(.newEntry), action: onNew)
+    Button(TableEditorStrings.text(.deleteEntries), action: onRemove)
   }
 }
 
 extension View {
-  /// `QFileDialog::getOpenFileName(tr("import from file"))` / `getSaveFileName(tr("export to file"))`.
+  /// `QFileDialog::getOpenFileName(tr("import from file"))`.
   @MainActor
   func tableEditorImporter(isPresented: Binding<Bool>, onPick: @escaping (URL) -> Void) -> some View {
     fileImporter(isPresented: isPresented, allowedContentTypes: [.data, .plainText, .text]) { result in
@@ -292,7 +458,7 @@ extension View {
 enum TableEditorSavePanel {
   static func run(defaultFilename: String) -> URL? {
     let panel = NSSavePanel()
-    panel.title = tr("genmai::gui::GenericTableEditorDialog", "export to file")
+    panel.title = TableEditorStrings.text(.exportPanelTitle)
     panel.nameFieldStringValue = defaultFilename
     panel.directoryURL = FileManager.default.homeDirectoryForCurrentUser
     return panel.runModal() == .OK ? panel.url : nil

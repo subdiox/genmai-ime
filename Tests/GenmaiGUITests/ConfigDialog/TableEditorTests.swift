@@ -296,3 +296,41 @@ import Testing
     #expect(KeyBindingInput(modifierKeyCode: 0x37, flags: .command) == nil)
   }
 }
+
+@Suite struct TableEditorViewSupportTests {
+  @Test func keyDisplayUsesMacSymbols() {
+    #expect(KeyDisplayFormatter.display("Ctrl Shift a") == "⌃⇧A")
+    #expect(KeyDisplayFormatter.display("Shift Option Ctrl Left") == "⌃⌥⇧←")
+    #expect(KeyDisplayFormatter.display("Backspace") == "⌫")
+    #expect(KeyDisplayFormatter.display("Ctrl Space") == "⌃Space")
+    #expect(KeyDisplayFormatter.display("Hiragana") == "Hiragana")
+    #expect(KeyDisplayFormatter.display("") == "")
+  }
+
+  @Test func stringsHaveEnglishAndJapanese() {
+    for key in TableEditorStrings.Key.allCases {
+      #expect(TableEditorStrings.english[key] != nil, "missing English: \(key)")
+      #expect(TableEditorStrings.japanese[key] != nil, "missing Japanese: \(key)")
+      for language in [GUILanguage.english, .japanese] {
+        let text = TableEditorStrings.text(key, language: language)
+        #expect(!text.contains("..."), "\(text)")
+        #expect(!text.contains("ユーザ") || text.contains("ユーザー"), "\(text)")
+      }
+    }
+    for key in ErrorMessageStrings.Key.allCases {
+      #expect(ErrorMessageStrings.english[key] != nil, "missing English: \(key)")
+      #expect(ErrorMessageStrings.japanese[key] != nil, "missing Japanese: \(key)")
+    }
+  }
+
+  @MainActor
+  @Test func keyBindingInvalidOnlyAfterAKeyPress() {
+    let model = KeyBindingEditorModel(binding: "Ctrl a")
+    #expect(!model.isInvalid)
+    model.keyPress(.shift)
+    #expect(model.isInvalid)
+    model.keyPress(.nonModifierRequired("F1"))
+    #expect(!model.isInvalid)
+    #expect(model.binding == "Shift F1")
+  }
+}

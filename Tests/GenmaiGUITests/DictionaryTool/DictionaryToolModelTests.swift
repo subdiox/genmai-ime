@@ -36,7 +36,6 @@ import Testing
       // CreateDictionaryHelper calls AddWord.
       #expect(model.rows.count == 1)
       #expect(model.rows[0].category == "名詞")
-      #expect(model.statusMessage == "User Dictionary 1: 1 entries")
       model.close()
     }
   }
@@ -91,7 +90,7 @@ import Testing
       fillRow(model, "とうきょう", "東京", "地名")
       model.addWord()
       fillRow(model, "おおさか", "大阪", "地名")
-      #expect(model.statusMessage == "User Dictionary 1: 3 entries")
+      #expect(model.rows.count == 3)
 
       // Invalid reading is reported.
       model.setCell(model.rows[0].id, .reading, "京都")

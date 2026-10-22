@@ -2,9 +2,10 @@
 # Builds the uninstaller app build/UninstallGenmai.app from the SwiftPM product GenmaiUninstaller.
 #
 # Mirrors the uninstaller_macos rule of mac/BUILD.bazel (bundle UninstallGenmai.app, infoplist
-# mac/Uninstaller/Info.plist, strings {English,Japanese}.lproj/InfoPlist.strings, icon product_icon.icns).
-# The xib dialogs are SwiftUI views compiled into the executable, so there is no Dialogs.nib and
-# NSMainNibFile is dropped from the Info.plist. The bundle is ad-hoc code signed.
+# mac/Uninstaller/Info.plist, icon product_icon.icns). The xib dialogs are a SwiftUI window compiled into the
+# executable, so there is no Dialogs.nib and NSMainNibFile is dropped from the Info.plist. Upstream's
+# {English,Japanese}.lproj/InfoPlist.strings (which name Mozc) are replaced by Genmai's own {en,ja}.lproj
+# names. The bundle is ad-hoc code signed.
 #
 # Usage: Tools/make_uninstaller_bundle.sh [--debug]
 #   UPSTREAM_SRC=<path to mozc/src>  defaults to Vendor/mozc/src (the git submodule).
@@ -46,6 +47,9 @@ sed -e "s|\${PRODUCT_NAME}|$APP_NAME|g" \
     "$UPSTREAM_SRC/mac/Uninstaller/Info.plist" >| "$OUT/Contents/Info.plist"
 PLIST=$OUT/Contents/Info.plist
 /usr/libexec/PlistBuddy -c "Delete :NSMainNibFile" "$PLIST"
+/usr/libexec/PlistBuddy -c "Set :CFBundleDevelopmentRegion en" "$PLIST"
+/usr/libexec/PlistBuddy -c "Add :LSHasLocalizedDisplayName bool true" "$PLIST"
+/usr/libexec/PlistBuddy -c "Add :NSHumanReadableCopyright string 'Copyright © 2026 subdiox'" "$PLIST"
 /usr/libexec/PlistBuddy -c "Add :CFBundleName string $APP_NAME" "$PLIST"
 /usr/libexec/PlistBuddy -c "Add :CFBundleShortVersionString string $SHORT_VERSION" "$PLIST"
 /usr/libexec/PlistBuddy -c "Add :LSMinimumSystemVersion string 15.0" "$PLIST"
@@ -56,11 +60,15 @@ plutil -lint "$PLIST" >/dev/null
 
 cp "$BIN_DIR/GenmaiUninstaller" "$OUT/Contents/MacOS/GenmaiUninstaller"
 cp "$ROOT/Tools/assets/genmai.icns" "$OUT/Contents/Resources/product_icon.icns"
-for lproj in English Japanese; do
-  mkdir -p "$OUT/Contents/Resources/$lproj.lproj"
-  cp "$UPSTREAM_SRC/mac/Uninstaller/$lproj.lproj/InfoPlist.strings" "$OUT/Contents/Resources/$lproj.lproj/"
-  plutil -lint "$OUT/Contents/Resources/$lproj.lproj/InfoPlist.strings" >/dev/null
-done
+# The localized app name (Finder, Dock, menu bar); keep in sync with UninstallerStrings.windowTitle.
+write_info_plist_strings() {
+  mkdir -p "$OUT/Contents/Resources/$1.lproj"
+  printf 'CFBundleName = "%s";\nCFBundleDisplayName = "%s";\n' "$2" "$2" \
+    >| "$OUT/Contents/Resources/$1.lproj/InfoPlist.strings"
+  plutil -lint "$OUT/Contents/Resources/$1.lproj/InfoPlist.strings" >/dev/null
+}
+write_info_plist_strings en "Uninstall $PRODUCT_NAME"
+write_info_plist_strings ja "${PRODUCT_NAME}のアンインストール"
 
 echo "==> codesign (ad hoc)"
 codesign --force --sign - --timestamp=none "$OUT"

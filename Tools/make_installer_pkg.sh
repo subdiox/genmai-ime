@@ -25,6 +25,10 @@
 # with the same identifier it finds (e.g. build/Genmai.app or ~/Library/Input Methods/Genmai.app) instead of
 # installing to /Library/Input Methods.
 #
+# Installer UI (not in Mozc): productbuild --resources gets Tools/installer/Resources ({en,ja}.lproj welcome /
+# conclusion pages, referenced by distribution.xml) plus background.tiff, the app icon (128 pt, 1x and 2x) made
+# here from Tools/assets/genmai.icns and shown at the bottom left of the Installer window in both appearances.
+#
 # Signing: the app bundles are ad-hoc signed by the bundle scripts. The .pkg itself is unsigned unless
 # PKG_SIGN_IDENTITY names a "Developer ID Installer" identity (then productsign is run, like build_package.py
 # with --codesign_identity); an ad-hoc signature does not exist for packages. An unsigned package that was not
@@ -123,9 +127,21 @@ done
   --scripts "$WORK/scripts" \
   "$WORK/$PKG_NAME"
 
+echo "==> installer resources"
+RESOURCES=$WORK/resources
+ICONSET=$WORK/genmai.iconset
+ditto "$INSTALLER_SRC/Resources" "$RESOURCES"
+iconutil --convert iconset --output "$ICONSET" "$ROOT/Tools/assets/genmai.icns"
+tiffutil -cathidpicheck "$ICONSET/icon_128x128.png" "$ICONSET/icon_128x128@2x.png" \
+  -out "$RESOURCES/background.tiff" >/dev/null 2>&1
+for page in "$RESOURCES"/*.lproj/*.html; do
+  xmllint --html --noout "$page"
+done
+
 echo "==> productbuild"
 /usr/bin/productbuild \
   --distribution "$WORK/distribution.xml" \
+  --resources "$RESOURCES" \
   --package-path "$WORK" \
   "$WORK/package.pkg"
 

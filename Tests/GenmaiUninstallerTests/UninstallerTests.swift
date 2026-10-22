@@ -1,7 +1,9 @@
 // Tests of the uninstaller logic (mac/Uninstaller has no C++ test). Nothing here touches the real install
 // locations or asks for privileges: the layout points at a temporary directory and the deletion command is
-// run unprivileged by /bin/sh (`ShellCommandRunner`), or recorded by a double.
+// run unprivileged by /bin/sh (`ShellCommandRunner`), or recorded by a double. The controller tests drive the
+// window's phases without showing it.
 
+import AppKit
 import Foundation
 import GenmaiBase
 import Testing
@@ -103,38 +105,6 @@ final class FixedCommandRunner: PrivilegedCommandRunner {
   }
 }
 
-/// Answers every dialog immediately and records which ones were shown.
-@MainActor
-final class RecordingDialogs: UninstallerDialogs {
-  enum Report: Equatable {
-    case authError
-    case uninstallSuccess
-    case uninstallError
-  }
-
-  var answer: Bool
-  private(set) var reports: [Report] = []
-
-  init(answer: Bool) {
-    self.answer = answer
-  }
-
-  func reportAuthError() async -> Bool {
-    reports.append(.authError)
-    return answer
-  }
-
-  func reportUninstallSuccess() async -> Bool {
-    reports.append(.uninstallSuccess)
-    return answer
-  }
-
-  func reportUninstallError() async -> Bool {
-    reports.append(.uninstallError)
-    return answer
-  }
-}
-
 @MainActor
 final class Counter {
   var count = 0
@@ -211,7 +181,7 @@ final class Counter {
     #expect(uninstaller.deleteFiles() == .success)
   }
 
-  @Test func deleteFilesStopsAtTheFirstFailure() async throws {
+  @Test func deleteFilesStopsAtTheFirstFailure() throws {
     let install = try FakeInstall()
     defer { install.remove() }
     try install.populate()
@@ -220,18 +190,81 @@ final class Counter {
     try FileManager.default.setAttributes([.posixPermissions: 0o555], ofItemAtPath: inputMethods.path)
     defer { try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: inputMethods.path) }
 
-    let dialogs = RecordingDialogs(answer: true)
-    let reboots = Counter()
-    var uninstaller = Uninstaller(layout: install.layout, runner: ShellCommandRunner())
+    let uninstaller = Uninstaller(layout: install.layout, runner: ShellCommandRunner())
+    guard case .failed = uninstaller.deleteFiles() else {
+      Issue.record("expected a failure")
+      return
+    }
+    #expect(install.exists("Library/Input Methods/Genmai.app"))
+    #expect(install.exists("Applications/Genmai/UninstallGenmai.app"))
+  }
+
+  @Test func removeItemsDescribeEachPath() throws {
+    let install = try FakeInstall()
+    defer { install.remove() }
+    try install.populate()
+    let items = install.layout.removeItems()
+    #expect(items.map(\.kind) == [.inputMethod, .applicationsFolder, .manualInputMethod])
+    #expect(items.map(\.path) == install.layout.removePaths())
+    #expect(
+      RemoveItem(kind: .inputMethod, path: "/Library/Input Methods/Genmai.app/").displayPath
+        == "/Library/Input Methods/Genmai.app")
+    let home = FileManager.default.homeDirectoryForCurrentUser.path(percentEncoded: false)
+    #expect(
+      RemoveItem(kind: .manualInputMethod, path: home + "Library/Input Methods/Genmai.app/").displayPath
+        == "~/Library/Input Methods/Genmai.app")
+  }
+
+  @Test func strings() {
+    let english = UninstallerStrings(.english)
+    let japanese = UninstallerStrings(.japanese)
+    #expect(english.windowTitle == "Uninstall Genmai")
+    #expect(japanese.windowTitle == "Genmaiのアンインストール")
+    #expect(english.uninstall == "Uninstall…")
+    #expect(japanese.uninstall == "アンインストール…")
+    #expect(english.restartNow == "Restart Now")
+    #expect(japanese.later == "後で")
+    #expect(japanese.keptNote.contains("ユーザー辞書"))
+    for strings in [english, japanese] {
+      for text in [strings.confirmMessage, strings.succeededMessage, strings.removalFailedMessage] {
+        #expect(!text.contains("Mozc") && !text.contains("Google") && !text.contains("..."))
+      }
+    }
+  }
+}
+
+/// Makes a controller over a fake install whose deletion returns `result`, counting restarts and quits.
+@MainActor
+struct ControllerFixture {
+  let runner: FixedCommandRunner
+  let terminated = Counter()
+  let reboots = Counter()
+  let controller: UninstallerController
+
+  init(_ result: PrivilegedCommandResult, language: UninstallerLanguage = .english) throws {
+    let runner = FixedCommandRunner(result)
+    let reboots = self.reboots
+    let terminated = self.terminated
+    var uninstaller = Uninstaller(layout: try FakeInstall().layout, runner: runner)
     uninstaller.reboot = {
       reboots.count += 1
       return true
     }
-    await uninstaller.doUninstall(dialogs)
-    #expect(dialogs.reports == [.uninstallError])
-    #expect(reboots.count == 0)
-    #expect(install.exists("Library/Input Methods/Genmai.app"))
-    #expect(install.exists("Applications/Genmai/UninstallGenmai.app"))
+    self.runner = runner
+    controller = UninstallerController(
+      uninstaller: uninstaller, language: language, icon: NSImage(), terminate: { terminated.count += 1 })
+  }
+}
+
+@MainActor
+@Suite struct UninstallerControllerTests {
+  @Test func cancelTerminatesWithoutUninstalling() throws {
+    let fixture = try ControllerFixture(.success)
+    #expect(fixture.controller.phase == .confirm)
+    #expect(fixture.controller.items.map(\.kind) == [.inputMethod, .applicationsFolder])
+    fixture.controller.close()
+    #expect(fixture.terminated.count == 1)
+    #expect(fixture.runner.commands.isEmpty)
   }
 
   @Test(arguments: [true, false])
@@ -239,106 +272,55 @@ final class Counter {
     let install = try FakeInstall()
     defer { install.remove() }
     try install.populate()
-    let dialogs = RecordingDialogs(answer: restartNow)
+    let terminated = Counter()
     let reboots = Counter()
     var uninstaller = Uninstaller(layout: install.layout, runner: ShellCommandRunner())
     uninstaller.reboot = {
       reboots.count += 1
       return true
     }
-    await uninstaller.doUninstall(dialogs)
-    #expect(dialogs.reports == [.uninstallSuccess])
-    #expect(reboots.count == (restartNow ? 1 : 0))
+    let controller = UninstallerController(
+      uninstaller: uninstaller, language: .japanese, icon: NSImage(), terminate: { terminated.count += 1 })
+    await controller.uninstall()
+    #expect(controller.phase == .succeeded)
     #expect(!install.exists("Library/Input Methods/Genmai.app"))
-  }
-
-  @Test func authorizationFailureDeletesNothing() async throws {
-    let dialogs = RecordingDialogs(answer: true)
-    let reboots = Counter()
-    let runner = FixedCommandRunner(.authorizationFailed)
-    var uninstaller = Uninstaller(layout: try FakeInstall().layout, runner: runner)
-    uninstaller.reboot = {
-      reboots.count += 1
-      return true
-    }
-    await uninstaller.doUninstall(dialogs)
-    #expect(dialogs.reports == [.authError])
-    #expect(reboots.count == 0)
-    #expect(runner.commands.count == 1)
-  }
-
-  @Test func commandFailureReportsUninstallError() async throws {
-    let dialogs = RecordingDialogs(answer: true)
-    let uninstaller = Uninstaller(layout: try FakeInstall().layout, runner: FixedCommandRunner(.failed("rm")))
-    await uninstaller.doUninstall(dialogs)
-    #expect(dialogs.reports == [.uninstallError])
-  }
-
-  @Test func strings() {
-    #expect(UninstallerStrings.confirm(.english).message == "Are you sure you want to uninstall Genmai?")
-    #expect(UninstallerStrings.confirm(.japanese).message == "Genmaiを削除してもよろしいですか？")
-    #expect(UninstallerStrings.confirm(.japanese).title == "確認")
-    #expect(UninstallerStrings.uninstallSucceeded(.english).okButton == "Restart now")
-    #expect(UninstallerStrings.uninstallSucceeded(.english).cancelButton == "Later")
-    #expect(UninstallerStrings.uninstallSucceeded(.japanese).okButton == "再起動")
-    #expect(UninstallerStrings.uninstallSucceeded(.japanese).cancelButton == "後で")
-    #expect(UninstallerStrings.authError(.japanese).title == "認証の失敗")
-    #expect(UninstallerStrings.authError(.english).cancelButton == nil)
-    #expect(UninstallerStrings.uninstallError(.english).message == "Uninstallation failed.  Please try again.")
-  }
-}
-
-@MainActor
-@Suite struct DialogsControllerTests {
-  @Test func cancelTerminatesWithoutUninstalling() throws {
-    let runner = FixedCommandRunner(.success)
-    let terminated = Counter()
-    let controller = DialogsController(
-      uninstaller: Uninstaller(layout: try FakeInstall().layout, runner: runner), language: .english,
-      terminate: { terminated.count += 1 })
-    #expect(controller.dialog == .confirm)
-    #expect(controller.strings.title == "Uninstall")
-    controller.cancel()
-    #expect(terminated.count == 1)
-    #expect(runner.commands.isEmpty)
-  }
-
-  @Test func successDialogWaitsForTheUser() async throws {
-    let runner = FixedCommandRunner(.success)
-    let terminated = Counter()
-    let reboots = Counter()
-    var uninstaller = Uninstaller(layout: try FakeInstall().layout, runner: runner)
-    uninstaller.reboot = {
-      reboots.count += 1
-      return true
-    }
-    let controller = DialogsController(
-      uninstaller: uninstaller, language: .japanese, terminate: { terminated.count += 1 })
-    let task = Task { await controller.runUninstall() }
-    while controller.dialog != .uninstallSucceeded {
-      await Task.yield()
-    }
-    #expect(controller.strings.title == "削除の完了")
     #expect(terminated.count == 0)
-    controller.dialogCancel()  // "後で"
-    await task.value
-    #expect(reboots.count == 0)
+    if restartNow {
+      controller.restartNow()
+    } else {
+      controller.close()  // "後で"
+    }
+    #expect(reboots.count == (restartNow ? 1 : 0))
     #expect(terminated.count == 1)
-    #expect(runner.commands.count == 1)
   }
 
-  @Test func authErrorDialogThenTerminate() async throws {
-    let terminated = Counter()
-    let controller = DialogsController(
-      uninstaller: Uninstaller(layout: try FakeInstall().layout, runner: FixedCommandRunner(.authorizationFailed)),
-      language: .english, terminate: { terminated.count += 1 })
-    let task = Task { await controller.runUninstall() }
-    while controller.dialog != .authError {
-      await Task.yield()
-    }
-    #expect(controller.strings.message.hasPrefix("Authentication failed."))
-    controller.dialogOK()
-    await task.value
-    #expect(terminated.count == 1)
+  @Test func authorizationFailureDeletesNothingAndCanBeRetried() async throws {
+    let fixture = try ControllerFixture(.authorizationFailed)
+    await fixture.controller.uninstall()
+    #expect(fixture.controller.phase == .failed(.authorization))
+    #expect(fixture.runner.commands.count == 1)
+    // Restart is only offered after a success.
+    fixture.controller.restartNow()
+    #expect(fixture.reboots.count == 0)
+    #expect(fixture.terminated.count == 0)
+    await fixture.controller.uninstall()  // Try Again
+    #expect(fixture.runner.commands.count == 2)
+    fixture.controller.close()  // Quit
+    #expect(fixture.terminated.count == 1)
+  }
+
+  @Test func commandFailureReportsRemovalError() async throws {
+    let fixture = try ControllerFixture(.failed("rm"))
+    await fixture.controller.uninstall()
+    #expect(fixture.controller.phase == .failed(.removal))
+    #expect(fixture.reboots.count == 0)
+    #expect(fixture.terminated.count == 0)
+  }
+
+  @Test func uninstallRunsOnceAfterSuccess() async throws {
+    let fixture = try ControllerFixture(.success)
+    await fixture.controller.uninstall()
+    await fixture.controller.uninstall()
+    #expect(fixture.runner.commands.count == 1)
   }
 }

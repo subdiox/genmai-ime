@@ -67,6 +67,14 @@ final class ToolAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
       NSApp.terminate(nil)
       return
     }
+    if mode == .welcome {
+      // Once per user: the installer opens it after every installation, updates included.
+      if GenmaiWelcome.wasShown() {
+        NSApp.terminate(nil)
+        return
+      }
+      GenmaiWelcome.markShown()
+    }
     if !acquireSingleton(mode) {
       NSApp.terminate(nil)
       return
@@ -83,7 +91,7 @@ final class ToolAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
       // The sidebar runs under the title bar, as in System Settings.
       window.styleMask = [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView]
       window.toolbarStyle = .unified
-    case .aboutDialog:
+    case .aboutDialog, .welcome:
       window.styleMask = [.titled, .closable, .fullSizeContentView]
       window.titlebarAppearsTransparent = true
       window.titleVisibility = .hidden
@@ -131,6 +139,8 @@ final class ToolAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
       view = AnyView(ErrorMessageDialogView(message: message))
     case .updateDialog:
       view = AnyView(UpdateDialogView())
+    case .welcome:
+      view = AnyView(WelcomeView(client: client) { launchTool(ToolMode.configDialog.rawValue) })
     }
     return AnyView(view.environment(\.closeDialog, close))
   }
@@ -143,6 +153,7 @@ final class ToolAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     case .aboutDialog: tr("About", "About [ProductName]")
     case .errorMessageDialog: ErrorMessageDialog.title()
     case .updateDialog: UpdateStrings.text(.dialogTitle)
+    case .welcome: WelcomeStrings.text(.windowTitle)
     }
   }
 

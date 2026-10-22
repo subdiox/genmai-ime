@@ -20,6 +20,11 @@ fi
 
 if [ -n "$CONSOLE_USER" ] && [ "$CONSOLE_USER" != "root" ] && [ "$COMMAND_LINE_INSTALL" != "1" ]; then
   /usr/bin/sudo -u "$CONSOLE_USER" "@@@GENMAI_APP_PATH@@@/Contents/MacOS/GenmaiIME" --register_input_source > /dev/null 2>&1 || true
+  # Not in Mozc: the welcome window (how to switch to Genmai, turning on AI conversion), in the user's GUI
+  # session. It shows only once per user (a marker in the profile), so updates do not open it again.
+  USER_ID=`/usr/bin/id -u "$CONSOLE_USER"`
+  /bin/launchctl asuser "$USER_ID" /usr/bin/sudo -u "$CONSOLE_USER" /usr/bin/open -n \
+    "@@@GENMAI_APP_PATH@@@/Contents/Resources/Genmai.app" --args --mode=welcome > /dev/null 2>&1 || true
 fi
 
 /usr/bin/true

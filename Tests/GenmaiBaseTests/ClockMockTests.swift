@@ -39,6 +39,8 @@ import Testing
     withScopedClockMock(parseTimeOrDie("2020-12-23T13:24:35Z")) { _ in
       #expect(Clock.getAbslTime() == parseTimeOrDie("2020-12-23T13:24:35Z"))
     }
-    #expect(Clock.getAbslTime() != parseTimeOrDie("2020-12-23T13:24:35Z"))
+    // The override ends with the scope. (Not checked through the time: ClockTest briefly installs a global mock at
+    // the same instant while suites run in parallel.)
+    #expect(Clock.taskLocalMock == nil)
   }
 }

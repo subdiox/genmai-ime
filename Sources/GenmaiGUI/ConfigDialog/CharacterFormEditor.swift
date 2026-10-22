@@ -1,7 +1,8 @@
 // Port of mozc/src/gui/config_dialog/character_form_editor.{h,cc} (3.35.6354).
 //
 // The Qt editor is a QTableWidget (Group / Composition / Conversion) with ComboBoxDelegates listing
-// "Fullwidth", "Halfwidth" and "Remember". The preedit form of the Katakana group is not editable.
+// "Fullwidth", "Halfwidth" and "Remember". The preedit form of the Katakana group is not editable. Here the rules
+// are rows of the settings form (a column header row, then one row per group with two menus).
 
 import GenmaiCore
 import GenmaiProtocol
@@ -105,43 +106,83 @@ public final class CharacterFormEditorModel {
   }
 }
 
+/// The rows of the "Fullwidth and halfwidth" section of the settings form.
 struct CharacterFormEditorView: View {
   @Bindable var model: CharacterFormEditorModel
   let onEdit: () -> Void
 
   var body: some View {
-    let context = "genmai::gui::CharacterFormEditor"
-    Table($model.rows) {
-      TableColumn(tr(context, "Group")) { $row in
-        Text(verbatim: row.groupTitle)
-      }
-      TableColumn(tr(context, "Composition")) { $row in
-        CharacterFormPicker(selection: $row.preedit, onEdit: onEdit)
-          .disabled(!row.isPreeditEditable)
-      }
-      TableColumn(tr(context, "Conversion")) { $row in
-        CharacterFormPicker(selection: $row.conversion, onEdit: onEdit)
-      }
+    CharacterFormHeaderRow()
+    ForEach($model.rows) { $row in
+      CharacterFormRuleRow(row: $row, onEdit: onEdit)
     }
-    .help(tr(context, "Character form editor"))
-    .frame(minHeight: 140)
+    Text(verbatim: TableEditorStrings.text(.characterFormFootnote))
+      .font(.callout)
+      .foregroundStyle(.secondary)
+  }
+}
+
+/// The width of the two menu columns.
+private let kCharacterFormColumnWidth: CGFloat = 110
+
+struct CharacterFormHeaderRow: View {
+  var body: some View {
+    HStack {
+      Text(verbatim: TableEditorStrings.text(.characterGroup))
+      Spacer()
+      Text(verbatim: TableEditorStrings.text(.characterComposition))
+        .frame(width: kCharacterFormColumnWidth, alignment: .trailing)
+      Text(verbatim: TableEditorStrings.text(.characterConversion))
+        .frame(width: kCharacterFormColumnWidth, alignment: .trailing)
+    }
+    .font(.callout)
+    .foregroundStyle(.secondary)
+    .accessibilityHidden(true)
+  }
+}
+
+struct CharacterFormRuleRow: View {
+  @Binding var row: CharacterFormRow
+  let onEdit: () -> Void
+
+  var body: some View {
+    HStack {
+      Text(verbatim: row.groupTitle)
+        // Lists of symbols ("()[]{}") are spaced out to stay legible.
+        .tracking(row.groupTitle == row.group ? 3 : 0)
+        .lineLimit(1)
+      Spacer()
+      CharacterFormPicker(
+        label: TableEditorStrings.text(.characterComposition), selection: $row.preedit, onEdit: onEdit
+      )
+      .disabled(!row.isPreeditEditable)
+      CharacterFormPicker(
+        label: TableEditorStrings.text(.characterConversion), selection: $row.conversion, onEdit: onEdit)
+    }
+    .accessibilityElement(children: .contain)
+    .accessibilityLabel(row.groupTitle)
   }
 }
 
 struct CharacterFormPicker: View {
+  let label: String
   @Binding var selection: CharacterFormChoice
   let onEdit: () -> Void
 
   var body: some View {
-    Picker("", selection: $selection) {
+    Picker(selection: $selection) {
       if selection == .unknown {
         Text(verbatim: CharacterFormChoice.unknown.title).tag(CharacterFormChoice.unknown)
       }
       ForEach(CharacterFormChoice.selectable, id: \.self) { choice in
         Text(verbatim: choice.title).tag(choice)
       }
+    } label: {
+      Text(verbatim: label)
     }
     .labelsHidden()
+    .fixedSize()
+    .frame(width: kCharacterFormColumnWidth, alignment: .trailing)
     .onChange(of: selection) { onEdit() }
   }
 }

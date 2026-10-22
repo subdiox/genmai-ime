@@ -96,6 +96,8 @@ public enum ToolMode: String, CaseIterable, Sendable {
   case errorMessageDialog = "error_message_dialog"
   /// Not in Mozc: the update dialog (opened from the IME's update notification).
   case updateDialog = "update_dialog"
+  /// Not in Mozc: the welcome window (opened once by the installer).
+  case welcome
 
   /// Maps `Output.LaunchToolMode` to the tool mode string (client/client.cc LaunchToolWithProtoBuf).
   public init?(_ mode: Output.ToolMode) {

@@ -250,7 +250,10 @@ Updates) whose edits are saved automatically (`savesChangesAutomatically`, 300 m
 close; no OK / Cancel / Apply), the candidate window a Liquid Glass panel (window background at 70 % underneath for legibility; metrics in
 `CandidateDesign`, the infolist a card layout in `InfolistDesign` instead of renderer_style.textproto), the
 dictionary tool a `NavigationSplitView` with an SF Symbols toolbar and a
-search field, the About window a centered icon / version / links layout. Wording that differs from Mozc's
+search field, the About window a centered icon / version / links layout, the editor sheets (key bindings, romaji
+table) `EditorSheet` + `TableEditorBox` (+ / − / ⋯ under the table, keys shown as ⌃⇧A; GenericTableEditor.swift),
+the error dialog an alert-style window, the uninstaller one window with confirm / removing / done / failed states,
+and the installer has welcome / conclusion pages (Tools/installer/Resources). Wording that differs from Mozc's
 translations lives in `Base/GenmaiStrings.swift` (looked up by `tr` before Mozc's) or in a per-window strings
 table; use "…" and "ユーザー".
 
@@ -261,9 +264,14 @@ table; use "…" and "ユーザー".
   facing copyright is "Copyright © 2026 subdiox"; Mozc's license notices stay in `credits_en.html` (linked from the
   About dialog; required by Mozc's BSD license). Google-only features (usage statistics upload, uninstall survey)
   were removed.
-- Releases: GitHub releases of subdiox/genmai-ime, tag vX.Y.Z (= `kProductVersion`), asset `Genmai-X.Y.Z.pkg`, made
-  with `Tools/make_release.sh [--publish]`. The package installs into `/Library/Input Methods`, removes a copy in
-  the console user's `~/Library/Input Methods` (same bundle id) and needs no logout.
+- Releases: GitHub releases of subdiox/genmai-ime, tag vX.Y.Z (= `kProductVersion`), asset `Genmai-X.Y.Z.pkg`.
+  Normally made by the GitHub Actions workflow `.github/workflows/release.yml`: bump `kProductVersion`, commit, push
+  the tag `vX.Y.Z`; the workflow (macos-26 runner, newest Xcode ≥ 26 + Metal toolchain) builds the data set and the
+  package and creates the release (a manual run only builds and keeps the package as an artifact).
+  `Tools/make_release.sh [--publish]` does the same locally. The package installs into `/Library/Input Methods`,
+  removes a copy in the console user's `~/Library/Input Methods` (same bundle id), needs no logout, and opens the
+  welcome window (tool mode `welcome`, `GenmaiGUI/Welcome`: how to switch to Genmai, "Turn On AI Conversion" =
+  model download + `enabled`) once per user (marker `<profile>/welcome_shown`).
 - Updates (GenmaiClient/Update): `GenmaiAppRelease.latest` (GitHub API `/repos/.../releases`: highest vX.Y.Z, no
   drafts / pre-releases, with a .pkg asset; size + SHA-256 `digest`), `GenmaiUpdater.download` (shared
   `FileDownload`, also used by the model installer), `GenmaiUpdateSettings` (`<profile>/update.json`:

@@ -53,8 +53,9 @@ which downloads the package (verified against the SHA-256 GitHub lists) and open
 "Misc" › Updates) turn the automatic check off, check on request and install the update. The check sends no data
 besides the request for the release list.
 
-Releases are made with `Tools/make_release.sh --publish` (bump `kProductVersion` in
-`Sources/GenmaiBase/VersionDef.swift` first): it builds the package, tags `vX.Y.Z` and creates the GitHub release.
+To make a release, bump `kProductVersion` in `Sources/GenmaiBase/VersionDef.swift`, commit, and push the tag
+`vX.Y.Z`: the GitHub Actions workflow `Release` builds the package and creates the GitHub release
+(`Tools/make_release.sh --publish` does the same from a Mac).
 
 ## Build from source
 

@@ -1,7 +1,8 @@
 // Port of mozc/src/mac/Uninstaller/Uninstaller.{h,mm} (3.35.6354).
 //
 // The uninstaller asks for administrator rights, removes the installed files with `/bin/rm -rf` one path at a
-// time (stopping at the first failure), reports the result and offers to restart the computer.
+// time (stopping at the first failure), reports the result and offers to restart the computer. The C++'s
+// +doUninstall: (delete, then one modal dialog per outcome) is UninstallerController's single-window flow.
 //
 // Deviations from C++:
 // - Privileges: the C++ obtains an AuthorizationRef (AuthorizationCopyRights with kAuthorizationRightExecute)
@@ -68,14 +69,19 @@ struct UninstallerLayout: Sendable, Equatable {
   }
 
   /// kRemovePaths: the fixed install locations, then any manually installed bundle of this port.
-  func removePaths() -> [String] {
-    var paths = [inputMethodBundle.path(percentEncoded: false), applicationsFolder.path(percentEncoded: false)]
+  func removeItems() -> [RemoveItem] {
+    var items = [
+      RemoveItem(kind: .inputMethod, path: inputMethodBundle.path(percentEncoded: false)),
+      RemoveItem(kind: .applicationsFolder, path: applicationsFolder.path(percentEncoded: false)),
+    ]
     for candidate in manualInstallCandidates
     where Self.bundleIdentifier(at: candidate) == Self.kBundleIdentifier {
-      paths.append(candidate.path(percentEncoded: false))
+      items.append(RemoveItem(kind: .manualInputMethod, path: candidate.path(percentEncoded: false)))
     }
-    return paths
+    return items
   }
+
+  func removePaths() -> [String] { removeItems().map(\.path) }
 
   /// Reads CFBundleIdentifier from <bundle>/Contents/Info.plist (not through Bundle, which caches).
   static func bundleIdentifier(at bundle: URL) -> String? {
@@ -86,6 +92,30 @@ struct UninstallerLayout: Sendable, Equatable {
       return nil
     }
     return dictionary["CFBundleIdentifier"] as? String
+  }
+}
+
+/// One path the uninstaller removes, with what it is (shown in the confirmation).
+struct RemoveItem: Sendable, Equatable, Hashable {
+  enum Kind: Sendable, Equatable, Hashable {
+    /// /Library/Input Methods/Genmai.app.
+    case inputMethod
+    /// /Applications/Genmai (holds this uninstaller).
+    case applicationsFolder
+    /// ~/Library/Input Methods/Genmai.app.
+    case manualInputMethod
+  }
+
+  var kind: Kind
+  var path: String
+
+  /// The path for display: no trailing slash, the home directory as ~.
+  var displayPath: String {
+    var path = path
+    if path.count > 1, path.hasSuffix("/") {
+      path.removeLast()
+    }
+    return (path as NSString).abbreviatingWithTildeInPath
   }
 }
 
@@ -140,15 +170,6 @@ struct AppleScriptPrivilegedCommandRunner: PrivilegedCommandRunner {
   }
 }
 
-/// The modal dialogs of DialogsController. Each call shows the dialog and returns when the user answers:
-/// true for OK / "Restart now", false for "Later" (waitForModalWindow: result != DIALOG_CANCEL).
-@MainActor
-protocol UninstallerDialogs: AnyObject {
-  func reportAuthError() async -> Bool
-  func reportUninstallSuccess() async -> Bool
-  func reportUninstallError() async -> Bool
-}
-
 @MainActor
 struct Uninstaller {
   var layout: UninstallerLayout
@@ -173,20 +194,6 @@ struct Uninstaller {
       NSLog("Failed to remove path: %@", message)
     }
     return result
-  }
-
-  /// +[Uninstaller doUninstall:].
-  func doUninstall(_ dialogs: some UninstallerDialogs) async {
-    switch deleteFiles() {
-    case .authorizationFailed:
-      _ = await dialogs.reportAuthError()
-    case .success:
-      if await dialogs.reportUninstallSuccess() {
-        _ = reboot()
-      }
-    case .failed:
-      _ = await dialogs.reportUninstallError()
-    }
   }
 
   /// RunReboot: asks loginwindow to restart (kAERestart), like Apple menu > Restart.

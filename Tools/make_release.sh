@@ -1,5 +1,7 @@
 #!/bin/zsh
-# Builds the installer package of the current version and (with --publish) publishes it as a GitHub release.
+# Builds the installer package of the current version and (with --publish) publishes it as a GitHub release. The
+# usual path is the GitHub Actions workflow (.github/workflows/release.yml), which does the same when the tag vX.Y.Z
+# is pushed; this script is the local equivalent.
 #
 # The version is kProductVersion (Sources/GenmaiBase/VersionDef.swift); the release is tag vX.Y.Z with the asset
 # Genmai-X.Y.Z.pkg. The IME and the settings find releases through the GitHub API (GenmaiAppRelease.latest: the

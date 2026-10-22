@@ -136,8 +136,10 @@ struct ConfigDialogEditorSheet: View {
     switch editor {
     case .keymap(let table):
       KeyMapEditorView(currentKeymap: table) { model.finishKeymapEditor($0) }
+        .frame(idealWidth: 660, idealHeight: 560)
     case .romanTable(let table):
       RomanTableEditorView(currentRomanTable: table) { model.finishRomanTableEditor($0) }
+        .frame(idealWidth: 500, idealHeight: 560)
     }
   }
 }

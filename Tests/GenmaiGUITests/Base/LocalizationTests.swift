@@ -51,7 +51,7 @@ import GenmaiBase
     #expect(ErrorMessageDialog.message(forErrorType: "unknown") == nil)
     #expect(
       ErrorMessageDialog.message(forErrorType: "server_fatal", language: .japanese)
-        == "変換エンジンプログラムの起動に失敗しました。新しい Genmaiを利用するためにコンピュータを再起動してください。")
+        == "変換エンジンを起動できません。Mac を再起動してください。")
     #expect(ErrorMessageDialog.title(language: .japanese) == "Genmai エラー")
   }
 }

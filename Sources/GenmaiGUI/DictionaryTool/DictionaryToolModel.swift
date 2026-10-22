@@ -12,9 +12,7 @@ import GenmaiCore
 import GenmaiProtocol
 import Observation
 
-private let kContext = "genmai::gui::DictionaryTool"
-
-private func trDT(_ source: String) -> String { tr(kContext, source) }
+private func dtText(_ key: DictionaryToolStrings.Key) -> String { DictionaryToolStrings.text(key) }
 
 public typealias IMEType = UserDictionaryImporter.IMEType
 public typealias EncodingType = UserDictionaryImporter.EncodingType
@@ -75,9 +73,9 @@ public final class DictionaryToolModel {
 
     public var label: String {
       switch self {
-      case .newDictionary: trDT("Name of the new dictionary")
-      case .renameDictionary: trDT("New name of the dictionary")
-      case .editComment: trDT("New comment")
+      case .newDictionary: dtText(.newDictionaryNameLabel)
+      case .renameDictionary: dtText(.renameDictionaryLabel)
+      case .editComment: dtText(.newCommentLabel)
       }
     }
 
@@ -117,7 +115,6 @@ public final class DictionaryToolModel {
   public var pendingMessage: GUIMessage?
   public var prompt: Prompt?
   public var importMode: ImportMode?
-  public private(set) var statusMessage = ""
 
   public let windowTitle = kProductNameInEnglish
   public let posList: [String]
@@ -149,7 +146,7 @@ public final class DictionaryToolModel {
       GenmaiLog.warning("UserDictionaryStorage::Load() failed")
     }
     if !storage.lock() {
-      availability = .unavailable(trDT("Another process is accessing the user dictionary file."))
+      availability = .unavailable(dtText(.storageLocked))
       return
     }
 
@@ -166,9 +163,8 @@ public final class DictionaryToolModel {
     do {
       try storage.exists()
     } catch {
-      createDictionaryHelper(trDT("User Dictionary 1"))
+      createDictionaryHelper(dtText(.defaultDictionaryName))
     }
-    updateUIStatus()
   }
 
   // MARK: - UI state (UpdateUIStatus)
@@ -181,14 +177,6 @@ public final class DictionaryToolModel {
 
   /// Dictionaries other than the current one ("Move to" targets).
   public var moveTargets: [DictionaryItem] { dictionaries.filter { $0.id != selectedDictionaryID } }
-
-  private func updateUIStatus() {
-    if let item = currentItem {
-      statusMessage = DictionaryToolText.arg(trDT("%1: %2 entries"), item.name, rows.count)
-    } else {
-      statusMessage = ""
-    }
-  }
 
   private var currentItem: DictionaryItem? {
     dictionaries.first { $0.id == selectedDictionaryID }
@@ -207,7 +195,6 @@ public final class DictionaryToolModel {
     guard let item = currentItem else {
       currentDictionaryID = 0
       setRowsWithoutModification([])
-      updateUIStatus()
       return
     }
     currentDictionaryID = item.id
@@ -223,7 +210,6 @@ public final class DictionaryToolModel {
       dic.entries.map {
         Row(reading: $0.key, word: $0.value, category: UserPos.getStringPosType($0.pos), comment: $0.comment)
       })
-    updateUIStatus()
   }
 
   private func setRowsWithoutModification(_ newRows: [Row]) {
@@ -235,14 +221,13 @@ public final class DictionaryToolModel {
 
   private func initDictionaryList() {
     dictionaries = storage.proto.dictionaries.map { DictionaryItem(id: $0.id, name: $0.name) }
-    updateUIStatus()
   }
 
   /// "New dictionary..." — checks the limit, then asks for the name.
   public func requestCreateDictionary() {
     let maxSize = UserDictionaryStorage.maxDictionarySize
     if dictionaries.count >= maxSize {
-      showMessage(.critical, DictionaryToolText.arg(trDT("You can't have more than %1 dictionaries."), maxSize))
+      showMessage(.critical, DictionaryToolText.arg(dtText(.tooManyDictionaries), maxSize))
       return
     }
     prompt = .newDictionary
@@ -271,10 +256,10 @@ public final class DictionaryToolModel {
 
   public func requestDeleteDictionary() {
     guard let item = currentItem else {
-      showMessage(.information, trDT("No dictionary is selected."))
+      showMessage(.information, dtText(.noDictionarySelected))
       return
     }
-    showMessage(.question, DictionaryToolText.arg(trDT("Do you want to delete %1?"), item.name)) { [weak self] in
+    showMessage(.question, DictionaryToolText.arg(dtText(.confirmDeleteDictionary), item.name)) { [weak self] in
       self?.deleteDictionary(item.id)
     }
   }
@@ -293,12 +278,11 @@ public final class DictionaryToolModel {
       currentDictionaryID = 0
       setRowsWithoutModification([])
     }
-    updateUIStatus()
   }
 
   public func requestRenameDictionary() {
     guard let item = currentItem else {
-      showMessage(.information, trDT("No dictionary is selected."))
+      showMessage(.information, dtText(.noDictionarySelected))
       return
     }
     prompt = .renameDictionary(currentName: item.name)
@@ -317,7 +301,6 @@ public final class DictionaryToolModel {
     if let index = dictionaries.firstIndex(where: { $0.id == item.id }) {
       dictionaries[index].name = dicName
     }
-    updateUIStatus()
   }
 
   /// Answers a prompt (nil: canceled).
@@ -336,7 +319,7 @@ public final class DictionaryToolModel {
   public func requestImportAndCreateDictionary() {
     let maxSize = UserDictionaryStorage.maxDictionarySize
     if dictionaries.count >= maxSize {
-      showMessage(.critical, DictionaryToolText.arg(trDT("You can't have more than %1 dictionaries."), maxSize))
+      showMessage(.critical, DictionaryToolText.arg(dtText(.tooManyDictionaries), maxSize))
       return
     }
     importMode = .create
@@ -344,13 +327,13 @@ public final class DictionaryToolModel {
 
   public func requestImportAndAppendDictionary() {
     guard currentItem != nil else {
-      showMessage(.information, trDT("No dictionary is selected."))
+      showMessage(.information, dtText(.noDictionarySelected))
       return
     }
     if rows.count >= maxEntrySize {
       showMessage(
         .critical,
-        DictionaryToolText.arg(trDT("You can't have more than %1 words in one dictionary."), maxEntrySize))
+        DictionaryToolText.arg(dtText(.tooManyWords), maxEntrySize))
       return
     }
     importMode = .append
@@ -374,30 +357,25 @@ public final class DictionaryToolModel {
     switch error ?? .ok {
     case .ok:
       showMessage(
-        .information, DictionaryToolText.arg(trDT("%1 entries are imported to %2."), addedEntriesSize, dicName))
+        .information, DictionaryToolText.arg(dtText(.importFinished), addedEntriesSize, dicName))
     case .importNotSupported:
       showMessage(
         .information,
         DictionaryToolText.arg(
-          trDT(
-            "You have imported a file in an invalid or unsupported file format.\n\nPlease check the file format. ATOK11 or older format is not supported by %1."
-          ), kProductNameInEnglish))
+          dtText(.importNotSupported), kProductNameInEnglish))
     case .importTooManyWords:
       showMessage(
         .information,
         DictionaryToolText.arg(
-          trDT(
-            "%1 doesn't have enough space to import all words in the file. First %2 entries are imported."),
+          dtText(.importTooManyWords),
           dicName, addedEntriesSize))
     case .importInvalidEntries:
       showMessage(
         .information,
         DictionaryToolText.arg(
-          trDT(
-            "%1 entries are imported to %2.\n\nSome imported words were not recognized by %3. Please check the original import file."
-          ), addedEntriesSize, dicName, windowTitle))
+          dtText(.importInvalidEntries), addedEntriesSize, dicName, windowTitle))
     case .importFatal:
-      showMessage(.critical, trDT("Failed to open user dictionary"))
+      showMessage(.critical, dtText(.importFatal))
     default:
       break
     }
@@ -407,7 +385,7 @@ public final class DictionaryToolModel {
     _ dicID: UInt64, _ dicName: String, _ fileName: String, _ imeType: IMEType, _ encodingType: EncodingType
   ) {
     if !isReadableToImport(fileName) {
-      showMessage(.critical, DictionaryToolText.arg(trDT("Can't open %1."), fileName))
+      showMessage(.critical, DictionaryToolText.arg(dtText(.cannotOpenFile), fileName))
       return
     }
     var dicID = dicID
@@ -452,7 +430,6 @@ public final class DictionaryToolModel {
     selectedDictionaryID = dicID
     currentDictionaryID = 0  // Already synced; reload the rows from the storage.
     onDictionarySelectionChanged()
-    updateUIStatus()
 
     reportImportError(importError, dicName, addedEntriesSize)
   }
@@ -460,14 +437,14 @@ public final class DictionaryToolModel {
   /// Exports the current dictionary to `fileName` (the view asks for the path with a save panel).
   public func exportDictionary(to fileName: String) {
     guard let item = currentItem else {
-      showMessage(.information, trDT("No dictionary is selected."))
+      showMessage(.information, dtText(.noDictionarySelected))
       return
     }
     if fileName.isEmpty {
       return
     }
     if !isWritableToExport(fileName) {
-      showMessage(.critical, DictionaryToolText.arg(trDT("Can't open %1."), fileName))
+      showMessage(.critical, DictionaryToolText.arg(dtText(.cannotOpenFile), fileName))
       return
     }
     syncToStorage()
@@ -477,13 +454,13 @@ public final class DictionaryToolModel {
       reportError(error)
       return
     }
-    showMessage(.information, trDT("Dictionary export finished."))
+    showMessage(.information, dtText(.exportFinished))
   }
 
   /// Checks done before showing the export save panel.
   public func canStartExport() -> Bool {
     if currentItem == nil {
-      showMessage(.information, trDT("No dictionary is selected."))
+      showMessage(.information, dtText(.noDictionarySelected))
       return false
     }
     return true
@@ -496,14 +473,13 @@ public final class DictionaryToolModel {
     if row >= maxEntrySize {
       showMessage(
         .information,
-        DictionaryToolText.arg(trDT("You can't have more than %1 words in one dictionary."), maxEntrySize))
+        DictionaryToolText.arg(dtText(.tooManyWords), maxEntrySize))
       return
     }
     let newRow = Row(reading: "", word: "", category: defaultPos, comment: "")
     rows.append(newRow)
     selectedRowIDs = [newRow.id]
     editingRowID = newRow.id
-    updateUIStatus()
   }
 
   /// The selected row indices, unique and sorted in descending order (GetSortedSelectedRows).
@@ -518,7 +494,7 @@ public final class DictionaryToolModel {
     }
     let message =
       selected.count == 1
-      ? trDT("Do you want to delete this word?") : trDT("Do you want to delete the selected words?")
+      ? dtText(.confirmDeleteWord) : dtText(.confirmDeleteWords)
     showMessage(.question, message) { [weak self] in
       self?.deleteSelectedWords()
     }
@@ -530,7 +506,6 @@ public final class DictionaryToolModel {
       rows.remove(at: index)
     }
     selectedRowIDs = []
-    updateUIStatus()
     modified = true
   }
 
@@ -573,7 +548,7 @@ public final class DictionaryToolModel {
       showMessage(
         .critical,
         DictionaryToolText.arg(
-          trDT("Cannot move all the selected items.\nThe target dictionary can have maximum %1 entries."),
+          dtText(.cannotMoveWords),
           targetMaxEntrySize))
       return
     }
@@ -586,7 +561,6 @@ public final class DictionaryToolModel {
       rows.remove(at: index)
     }
     selectedRowIDs = []
-    updateUIStatus()
     modified = true
   }
 
@@ -595,12 +569,11 @@ public final class DictionaryToolModel {
     if column == .reading, let row = rows.first(where: { $0.id == rowID }), !row.reading.isEmpty,
       !UserDictionaryUtil.isValidReading(row.reading)
     {
-      showMessage(.critical, trDT("An invalid character is included in the reading."))
+      showMessage(.critical, dtText(.invalidReading))
     }
     if editingRowID == rowID {
       editingRowID = nil
     }
-    updateUIStatus()
     modified = true
   }
 
@@ -696,8 +669,7 @@ public final class DictionaryToolModel {
     }
     lastFoundCell = nil
     pendingMessage = GUIMessage(
-      kind: .information, title: tr("FindDialog", "[ProductName] Dictionary Find Dialog"),
-      text: DictionaryToolText.arg(tr("genmai::gui::FindDialog", "Cannot find pattern %1"), query))
+      kind: .information, title: dtText(.findTitle), text: DictionaryToolText.arg(dtText(.patternNotFound), query))
     return false
   }
 
@@ -760,9 +732,7 @@ public final class DictionaryToolModel {
     if (status as? StatusError)?.code == .resourceExhausted {
       showMessage(
         .warning,
-        trDT(
-          "Making dangerously large user dictionary file. If the dictionary file turns out to be larger than 256Mbyte, the dictionary loader skips to handle all the words to prevent the converter from being halted."
-        ))
+        dtText(.dictionaryTooLarge))
     }
     storage.unlock()
   }
@@ -779,15 +749,15 @@ public final class DictionaryToolModel {
   private func reportError(_ error: (any Error)?) {
     switch error as? ExtendedErrorCode {
     case .dictionaryNameContainsInvalidCharacter:
-      showMessage(.critical, trDT("An invalid character is included in the dictionary name."))
+      showMessage(.critical, dtText(.invalidDictionaryName))
     case .dictionaryNameEmpty:
-      showMessage(.critical, trDT("Dictionary name is empty."))
+      showMessage(.critical, dtText(.dictionaryNameEmpty))
     case .dictionaryNameTooLong:
-      showMessage(.critical, trDT("Dictionary name is too long."))
+      showMessage(.critical, dtText(.dictionaryNameTooLong))
     case .dictionaryNameDuplicated:
-      showMessage(.critical, trDT("Dictionary already exists."))
+      showMessage(.critical, dtText(.dictionaryExists))
     default:
-      showMessage(.critical, trDT("A fatal error occurred."))
+      showMessage(.critical, dtText(.fatalError))
     }
   }
 
