@@ -20,7 +20,7 @@ public enum AIStrings {
     .sectionAI: "AI conversion",
     .enable: "Use AI conversion",
     .explanation:
-      "Converts with a local language model (genmai) in addition to Genmai and puts its result first when it differs. Your input is never sent over the network. Turned off, [ProductName] converts exactly as before.",
+      "Converts with a local language model (genmai) in addition to the dictionary-based conversion and puts its result first when it differs. Your input is never sent over the network. Turned off, only the dictionary-based conversion is used.",
     .sectionSettings: "Settings",
     .timeout: "Maximum wait at the conversion key",
     .candidates: "Number of AI candidates",
@@ -58,7 +58,7 @@ public enum AIStrings {
     .sectionAI: "AI 変換",
     .enable: "AI 変換を使う",
     .explanation:
-      "Genmai に加えてローカルの言語モデル (genmai) で変換し、結果が異なる場合はそれを第一候補にします。入力内容がネットワークに送信されることはありません。オフにすると [ProductName] は従来どおりに変換します。",
+      "辞書を用いた変換に加えてローカルの言語モデル (genmai) で変換し、結果が異なる場合はそれを第一候補にします。入力内容がネットワークに送信されることはありません。オフにすると辞書を用いた変換だけを使います。",
     .sectionSettings: "設定",
     .timeout: "変換キーでの最大待ち時間",
     .candidates: "AI 候補の数",
