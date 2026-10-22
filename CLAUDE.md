@@ -268,6 +268,10 @@ table; use "…" and "ユーザー".
   facing copyright is "Copyright © 2026 subdiox"; Mozc's license notices stay in `credits_en.html` (linked from the
   About dialog; required by Mozc's BSD license). Google-only features (usage statistics upload, uninstall survey)
   were removed.
+- Icons (Tools/make_icon.swift → Tools/assets): the input method's 玄 icon, the app's with a gear badge, the
+  uninstaller's with a trash badge; same glyph (Hiragino Mincho ProN W6), colors and shape. Each bundle gets an
+  Icon Composer `Assets.car` (`CFBundleIconName`, macOS 26+: the system draws shape and glass) and an `.icns` on
+  the macOS icon grid (`CFBundleIconFile`, macOS 15).
 - Install location: Installer offers "all users" (`/Library/Input Methods`, the default; Installer asks for an
   administrator) or "me only" (`~/Library/Input Methods`, no administrator rights) — distribution.xml `domains`;
   the scripts derive the domain from `$2` and run their user-level steps with `sudo -u` only when they run as root.

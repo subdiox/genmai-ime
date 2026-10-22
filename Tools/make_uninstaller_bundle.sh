@@ -54,13 +54,16 @@ PLIST=$OUT/Contents/Info.plist
 /usr/libexec/PlistBuddy -c "Add :CFBundleName string $APP_NAME" "$PLIST"
 /usr/libexec/PlistBuddy -c "Add :CFBundleShortVersionString string $SHORT_VERSION" "$PLIST"
 /usr/libexec/PlistBuddy -c "Add :LSMinimumSystemVersion string 15.0" "$PLIST"
+/usr/libexec/PlistBuddy -c "Add :CFBundleIconName string genmai-uninstaller" "$PLIST"
 /usr/libexec/PlistBuddy -c "Add :CFBundleLocalizations array" "$PLIST"
 /usr/libexec/PlistBuddy -c "Add :CFBundleLocalizations:0 string en" "$PLIST"
 /usr/libexec/PlistBuddy -c "Add :CFBundleLocalizations:1 string ja" "$PLIST"
 plutil -lint "$PLIST" >/dev/null
 
 cp "$BIN_DIR/GenmaiUninstaller" "$OUT/Contents/MacOS/GenmaiUninstaller"
-cp "$ROOT/Tools/assets/genmai.icns" "$OUT/Contents/Resources/product_icon.icns"
+# The uninstaller icon: 玄 with a trash badge (Assets.car on macOS 26+, the .icns before).
+cp "$ROOT/Tools/assets/genmai-uninstaller.icns" "$OUT/Contents/Resources/product_icon.icns"
+cp "$ROOT/Tools/assets/genmai-uninstaller.car" "$OUT/Contents/Resources/Assets.car"
 # The localized app name (Finder, Dock, menu bar); keep in sync with UninstallerStrings.windowTitle.
 write_info_plist_strings() {
   mkdir -p "$OUT/Contents/Resources/$1.lproj"

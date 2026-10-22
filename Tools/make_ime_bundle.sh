@@ -114,6 +114,9 @@ substitute "$UPSTREAM_SRC/mac/Info.plist" GenmaiIME "$BUNDLE_ID" \
 # The display name shown in the input menu.
 /usr/libexec/PlistBuddy -c "Set :CFBundleDisplayName $DISPLAY_NAME_EN" "$OUT/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c "Set :CFBundleName $DISPLAY_NAME_EN" "$OUT/Contents/Info.plist"
+# The icon: Assets.car (Icon Composer, macOS 26+: the system draws the shape and the glass) with the .icns as the
+# fallback for macOS 15 (Tools/make_icon.swift makes both).
+/usr/libexec/PlistBuddy -c "Add :CFBundleIconName string genmai" "$OUT/Contents/Info.plist"
 plutil -lint "$OUT/Contents/Info.plist" >/dev/null
 cp "$BIN_DIR/GenmaiIME" "$OUT/Contents/MacOS/GenmaiIME"
 cp "$BIN_DIR/mlx.metallib" "$OUT/Contents/MacOS/mlx.metallib"
@@ -123,6 +126,7 @@ for image in "$UPSTREAM_SRC"/data/images/mac/*.tiff; do
   cp "$image" "$OUT/Contents/Resources/"
 done
 cp "$ROOT/Tools/assets/genmai.icns" "$OUT/Contents/Resources/product_icon.icns"
+cp "$ROOT/Tools/assets/genmai.car" "$OUT/Contents/Resources/Assets.car"
 cp "$ROOT/Tools/assets/product_logo.png" "$OUT/Contents/Resources/product_logo.png"
 [[ -f $UPSTREAM_SRC/data/installer/credits_en.html ]] && cp "$UPSTREAM_SRC/data/installer/credits_en.html" "$OUT/Contents/Resources/"
 for lproj in English Japanese; do
@@ -142,7 +146,9 @@ done
 TOOL=$OUT/Contents/Resources/$PRODUCT_NAME.app
 mkdir -p "$TOOL/Contents/MacOS" "$TOOL/Contents/Resources"
 cp "$BIN_DIR/GenmaiApp" "$TOOL/Contents/MacOS/$PRODUCT_NAME"
-cp "$ROOT/Tools/assets/genmai.icns" "$TOOL/Contents/Resources/product_icon.icns"
+# The settings icon: 玄 with a gear badge.
+cp "$ROOT/Tools/assets/genmai-settings.icns" "$TOOL/Contents/Resources/product_icon.icns"
+cp "$ROOT/Tools/assets/genmai-settings.car" "$TOOL/Contents/Resources/Assets.car"
 cp "$ROOT/Tools/assets/product_logo.png" "$TOOL/Contents/Resources/product_logo.png"
 cat >| "$TOOL/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
@@ -160,6 +166,8 @@ cat >| "$TOOL/Contents/Info.plist" <<PLIST
 	<string>$PRODUCT_NAME</string>
 	<key>CFBundleIconFile</key>
 	<string>product_icon.icns</string>
+	<key>CFBundleIconName</key>
+	<string>genmai-settings</string>
 	<key>CFBundleIdentifier</key>
 	<string>$BUNDLE_ID.Tool</string>
 	<key>CFBundleInfoDictionaryVersion</key>
