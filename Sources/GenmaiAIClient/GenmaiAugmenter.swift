@@ -399,10 +399,15 @@ public final class GenmaiAugmenter: ConversionAugmenter {
     func unload() {
       converter = nil
       incrementals = []
+      GenmaiConverter.releaseUnusedMemory()
     }
 
     func releaseCachedMemory() async {
-      _ = await converter?.releaseCachedMemory()
+      if let converter {
+        _ = await converter.releaseCachedMemory()
+      } else {
+        GenmaiConverter.releaseUnusedMemory()
+      }
     }
 
     private func incremental(_ context: String) throws -> GenmaiIncrementalConverter {

@@ -405,7 +405,10 @@ public final class GenmaiModel {
     let layerCount = self.layerCount
     let dt = dtype
     // inputs: tok (B), src (B), pos (scalar), pad (B), K[0..L), V[0..L); outputs: logp, K, V
-    let f: ([MLXArray]) -> [MLXArray] = { [self] args in
+    // `steps` keeps the compiled function, so it must not hold the model strongly: the model (its weights, prompt
+    // KV cache and compiled graphs) would never be released when AI conversion is turned off.
+    let f: ([MLXArray]) -> [MLXArray] = { [weak self] args in
+      guard let self else { return [] }
       let tok = args[0]
       let src = args[1]
       let pos = args[2]

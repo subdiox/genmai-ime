@@ -516,6 +516,26 @@ public enum AIConversionMerger {
     }
   }
 
+  /// Removes the mark of `markAI`. The user history keeps the description of what is committed and shows it
+  /// with its suggestions, so a committed AI candidate would come back marked "AI" (also with AI conversion off).
+  static func unmarkAI(_ candidate: Candidate) {
+    if candidate.description == description {
+      candidate.description = ""
+    } else if candidate.description.hasPrefix(description + " ") {
+      candidate.description = String(candidate.description.dropFirst(description.count + 1))
+    }
+  }
+
+  /// `unmarkAI` for every candidate of the conversion segments.
+  static func unmarkAI(_ segments: Segments) {
+    for i in 0..<segments.conversionSegmentsSize {
+      let segment = segments.mutableConversionSegment(i)
+      for j in 0..<segment.candidatesSize {
+        unmarkAI(segment.mutableCandidate(j))
+      }
+    }
+  }
+
   static func makeCandidate(_ text: String, _ segment: Segment) -> Candidate {
     let key = segment.key
     // A Mozc candidate with the same functional suffix (e.g. "京は" for "今日は"): reuse its POS and content key.

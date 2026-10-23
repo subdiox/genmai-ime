@@ -227,6 +227,17 @@ func conversionRequest() -> ConversionRequest {
     #expect(segments.conversionSegment(1).candidate(1).value == "わたり始めた")
   }
 
+  /// The user history keeps the description of what is committed: the AI mark must not be learned.
+  @Test func unmarkRemovesOnlyTheAIMark() {
+    let segments = makeSegments([("はし", ["橋", "箸", "端"])])
+    let segment = segments.mutableConversionSegment(0)
+    segment.mutableCandidate(0).description = "AI"
+    segment.mutableCandidate(1).description = "AI 食器"
+    segment.mutableCandidate(2).description = "AIの説明"
+    AIConversionMerger.unmarkAI(segments)
+    #expect((0..<3).map { segment.candidate($0).description } == ["", "食器", "AIの説明"])
+  }
+
   @Test func sameTopAddsOnlyAlternatives() {
     let segments = makeSegments([("きしゃの", ["記者の"]), ("きしゃ", ["記者", "貴社"])])
     let outcome = AIConversionMerger.apply(

@@ -124,6 +124,12 @@ public actor GenmaiConverter {
     }
   }
 
+  /// Returns MLX's cached buffers to the system when no converter needs them any more (AI conversion turned
+  /// off: the buffers of the released model end up in the cache).
+  public static func releaseUnusedMemory() {
+    withMLX { Memory.clearCache() }
+  }
+
   /// Drops the prompt KV cache and the drafts of the model (tests).
   public func clearPromptCache() {
     Self.withMLX { model.clearPromptCache() }

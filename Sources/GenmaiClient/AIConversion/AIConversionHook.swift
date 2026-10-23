@@ -391,6 +391,8 @@ public final class AIConversionHook: Sendable {
   /// composition) and for multi-segment results. Costs one Mozc conversion (a few ms) when a result is ready.
   func augmentSuggestion(_ request: ConversionRequest, _ segments: Segments, _ converter: any ConverterInterface) {
     let type = request.requestType()
+    // Suggestions from the user history: AI candidates committed by earlier versions were learned with the mark.
+    AIConversionMerger.unmarkAI(segments)
     guard type == .suggestion || type == .prediction, segments.conversionSegmentsSize == 1, augmenter.isReady
     else {
       return
@@ -514,6 +516,8 @@ public final class AIConversionHook: Sendable {
         }
       }
     }
+    // Not learned with the mark (see `AIConversionMerger.unmarkAI`).
+    AIConversionMerger.unmarkAI(segments)
   }
 
   // MARK: - Waiting for an AI result in flight (before the conversion key is evaluated)
