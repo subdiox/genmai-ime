@@ -172,6 +172,7 @@ import Testing
       #expect(found != nil)
 
       let tempDir = makeTempDirectoryOrDie()
+      defer { withExtendedLifetime(tempDir) {} }
       let exportFile = FileUtil.joinPath(tempDir.path, "export.txt")
 
       #expect(!isOk { try storage.exportDictionary(id &+ 1, exportFile) })
@@ -368,6 +369,7 @@ import Testing
     try withTempProfile {
       let kDummyDictionaryId: UInt64 = 10
       let tempDir = makeTempDirectoryOrDie()
+      defer { withExtendedLifetime(tempDir) {} }
       let kPath = FileUtil.joinPath(tempDir.path, "exported_file")
 
       do {

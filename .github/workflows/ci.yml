@@ -2,6 +2,10 @@
 # release workflow (the oldest supported toolchain is where compile errors show up first), and checks
 # swift-format (.swift-format; any finding fails). Tests that need the AI
 # model skip (it is not downloaded here); the data sets are built with genmai-datagen and cached.
+# The tests run in a release build with testing enabled: debug code is ~20x slower and the tests took 45 minutes on
+# the runner. The caches are saved even when a step fails (a failing run must not make the next one start over);
+# the build cache keeps the dependencies' objects (mostly MLX's C++), the package's own modules are rebuilt because
+# the checkout gives every source a new mtime.
 name: CI
 
 on:
@@ -40,17 +44,19 @@ jobs:
           find Sources Tests Package.swift -name '*.swift' -not -path 'Sources/GenmaiProtocol/*' -print0 \
             | xargs -0 xcrun swift-format lint --strict
 
-      - name: SwiftPM cache
-        uses: actions/cache@v4
+      - name: Restore build cache
+        id: build-cache
+        uses: actions/cache/restore@v4
         with:
           path: |
-            .build-ci/checkouts
-            .build-ci/repositories
-          key: spm-ci-${{ runner.os }}-${{ hashFiles('Package.resolved') }}
+            .build-ci
+            .build-datagen
+          key: build-ci-${{ runner.os }}-${{ hashFiles('Package.resolved') }}-${{ github.sha }}
+          restore-keys: build-ci-${{ runner.os }}-${{ hashFiles('Package.resolved') }}-
 
-      - name: Data sets cache
+      - name: Restore data sets
         id: data
-        uses: actions/cache@v4
+        uses: actions/cache/restore@v4
         with:
           path: Data
           key: data-${{ runner.os }}-${{ steps.mozc.outputs.commit }}-${{ hashFiles('Tools/build_data.sh', 'Sources/GenmaiDataGen/**') }}
@@ -59,8 +65,24 @@ jobs:
         if: steps.data.outputs.cache-hit != 'true'
         run: Tools/build_data.sh
 
+      - name: Save data sets
+        if: steps.data.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: Data
+          key: ${{ steps.data.outputs.cache-primary-key }}
+
       - name: Build
-        run: swift build --build-path .build-ci --build-tests
+        run: swift build --build-path .build-ci -c release -Xswiftc -enable-testing --build-tests
+
+      - name: Save build cache
+        if: always() && steps.build-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            .build-ci
+            .build-datagen
+          key: ${{ steps.build-cache.outputs.cache-primary-key }}
 
       - name: Test
-        run: swift test --build-path .build-ci --skip-build
+        run: swift test --build-path .build-ci -c release -Xswiftc -enable-testing --skip-build

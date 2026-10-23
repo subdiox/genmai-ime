@@ -82,6 +82,7 @@ private func getValuesInStorageOrder(_ storage: LruStorage) -> [[UInt8]] {
     let kSize = [10, 100, 1000, 10000]
     for size in kSize {
       let file = makeTempFileOrDie()
+      defer { withExtendedLifetime(file) {} }
       LruStorage.createStorageFile(file.path, 4, size, kSeed)
       let storage = LruStorage()
       #expect(storage.open(file.path))
@@ -99,6 +100,7 @@ private func getValuesInStorageOrder(_ storage: LruStorage) -> [[UInt8]] {
 
     for size in kSize {
       let file = makeTempFileOrDie()
+      defer { withExtendedLifetime(file) {} }
       LruStorage.createStorageFile(file.path, 4, size, kSeed)
       let storage = LruStorage()
       #expect(storage.open(file.path))
@@ -133,7 +135,9 @@ private func getValuesInStorageOrder(_ storage: LruStorage) -> [[UInt8]] {
 
   @Test func merge() {
     let file1 = makeTempFileOrDie()
+    defer { withExtendedLifetime(file1) {} }
     let file2 = makeTempFileOrDie()
+    defer { withExtendedLifetime(file2) {} }
 
     // Can merge
     do {
@@ -250,6 +254,7 @@ private func getValuesInStorageOrder(_ storage: LruStorage) -> [[UInt8]] {
     #expect(!storage.insert("test", nil as [UInt8]?))
 
     let file = makeTempFileOrDie()
+    defer { withExtendedLifetime(file) {} }
 
     // cannot open
     #expect(!storage.open(file.path))
@@ -258,6 +263,7 @@ private func getValuesInStorageOrder(_ storage: LruStorage) -> [[UInt8]] {
 
   @Test func openOrCreateTest() throws {
     let file = makeTempFileOrDie()
+    defer { withExtendedLifetime(file) {} }
     try FileUtil.setContents(file.path, "test")
 
     do {
@@ -285,6 +291,7 @@ private func getValuesInStorageOrder(_ storage: LruStorage) -> [[UInt8]] {
       let kNumElements = 4
       let storage = LruStorage()
       let file = makeTempFileOrDie()
+      defer { withExtendedLifetime(file) {} }
       try #require(storage.openOrCreate(file.path, kValueSize, kNumElements, kSeed))
 
       #expect(storage.delete("nothing to delete"))
@@ -370,6 +377,7 @@ private func getValuesInStorageOrder(_ storage: LruStorage) -> [[UInt8]] {
       let kNumElements = 4
       let storage = LruStorage()
       let file = makeTempFileOrDie()
+      defer { withExtendedLifetime(file) {} }
       try #require(storage.openOrCreate(file.path, kValueSize, kNumElements, kSeed))
 
       // Auto advance clock after opening the file; otherwise OpenOrCreate()

@@ -432,6 +432,7 @@ struct SystemDictionaryTests {
   @Test func lookupReverseIndex() throws {
     let sourceTokens = textTokens
     let tempDir = try TempDirectory.default().createTempDirectory()
+    defer { withExtendedLifetime(tempDir) {} }
     let dicFn = FileUtil.joinPath(tempDir.path, "mozc.dic")
     do {
       let builder = SystemDictionaryBuilder()

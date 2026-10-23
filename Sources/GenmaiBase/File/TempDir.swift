@@ -11,6 +11,9 @@
 /// Deletes the file when this object is released.
 /// It doesn't result in an error when the file doesn't exit unlike
 /// FileUnlinker.
+/// Unlike a C++ object it can be released right after the last use of
+/// `path` (optimized builds do): keep it alive with withExtendedLifetime
+/// while the file is used. The same holds for TempDirectory.
 public final class TempFile {
   public let path: String
   /// Delete a temp file by default.

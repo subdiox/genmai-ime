@@ -21,6 +21,7 @@ private func getRandomContents(_ size: Int) -> [UInt8] {
   @Test func moveCtor() throws {
     let kTestContents = Array("mmap test".utf8)
     let tempFile = try TempDirectory.default().createTempFile()
+    defer { withExtendedLifetime(tempFile) {} }
     try FileUtil.setContents(tempFile.path, kTestContents)
     var mmap: Mmap? = try Mmap.map(tempFile.path)
     let moved = try #require(mmap)
@@ -36,6 +37,7 @@ private func getRandomContents(_ size: Int) -> [UInt8] {
       try TempDirectory.default().createTempFile(),
       try TempDirectory.default().createTempFile(),
     ]
+    defer { withExtendedLifetime(tempFiles) {} }
     for i in 0..<2 {
       try FileUtil.setContents(tempFiles[i].path, kTestContents[i])
     }
@@ -54,6 +56,7 @@ private func getRandomContents(_ size: Int) -> [UInt8] {
   @Test func failsIfOffsetExceedsFileSize() throws {
     let kFileSize = 128
     let tempFile = try TempDirectory.default().createTempFile()
+    defer { withExtendedLifetime(tempFile) {} }
     try FileUtil.setContents(tempFile.path, String(repeating: "a", count: kFileSize))
     #expect(throws: (any Error).self) {
       try Mmap.map(tempFile.path, offset: 512, size: nil, .readOnly)
@@ -63,6 +66,7 @@ private func getRandomContents(_ size: Int) -> [UInt8] {
   @Test func failsIfMapSizeIsZero() throws {
     let kFileSize = 128
     let tempFile = try TempDirectory.default().createTempFile()
+    defer { withExtendedLifetime(tempFile) {} }
     try FileUtil.setContents(tempFile.path, String(repeating: "a", count: kFileSize))
     #expect(throws: (any Error).self) { try Mmap.map(tempFile.path, offset: 0, size: 0, .readOnly) }
     #expect(throws: (any Error).self) {
@@ -78,6 +82,7 @@ private func getRandomContents(_ size: Int) -> [UInt8] {
   @Test func maybeMLockTest() throws {
     let kDataLen = 32
     let tempFile = try TempDirectory.default().createTempFile()
+    defer { withExtendedLifetime(tempFile) {} }
     try FileUtil.setContents(tempFile.path, String(repeating: "a", count: kDataLen))
     let mmap = try Mmap.map(tempFile.path)
     if Mmap.isMLockSupported() {
@@ -95,6 +100,7 @@ private func getRandomContents(_ size: Int) -> [UInt8] {
     // Create a file with random contents.
     let data = getRandomContents(filesize)
     let tempFile = try TempDirectory.default().createTempFile()
+    defer { withExtendedLifetime(tempFile) {} }
     try FileUtil.setContents(tempFile.path, data)
 
     // Mmap the file and check its contents.
@@ -106,6 +112,7 @@ private func getRandomContents(_ size: Int) -> [UInt8] {
   func entireFileWrite(_ filesize: Int) throws {
     // Create a file with full of a's.
     let tempFile = try TempDirectory.default().createTempFile()
+    defer { withExtendedLifetime(tempFile) {} }
     try FileUtil.setContents(tempFile.path, String(repeating: "a", count: filesize))
 
     // Mmap the file and writes random contents.
@@ -150,6 +157,7 @@ private func getRandomContents(_ size: Int) -> [UInt8] {
     let (filesize, offset, size) = params
     let data = getRandomContents(filesize)
     let tempFile = try TempDirectory.default().createTempFile()
+    defer { withExtendedLifetime(tempFile) {} }
     try FileUtil.setContents(tempFile.path, data)
 
     let expected = Array(data[offset..<offset + (size ?? (filesize - offset))])
@@ -171,6 +179,7 @@ private func getRandomContents(_ size: Int) -> [UInt8] {
     let (filesize, offset, size) = params
     let mapSize = size ?? (filesize - offset)
     let tempFile = try TempDirectory.default().createTempFile()
+    defer { withExtendedLifetime(tempFile) {} }
     try FileUtil.setContents(tempFile.path, String(repeating: "a", count: filesize))
 
     let data = getRandomContents(mapSize)

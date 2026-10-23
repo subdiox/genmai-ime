@@ -294,7 +294,8 @@ table; use "…" and "ユーザー".
   removed without rights. The user data kinds the user checks go too (AI model + caches checked by default; user
   dictionary, learning data, settings kept by default).
 - CI: `.github/workflows/ci.yml` builds every product and runs `swift test` on each push to main and on pull
-  requests (macos-26 runner, the same Xcode as releases; the data sets are built and cached, model tests skip).
+  requests (release build with `-enable-testing`: debug tests took 45 minutes on the runner; code that must hold in
+  debug builds only is not checked there) (macos-26 runner, the same Xcode as releases; the data sets are built and cached, model tests skip).
   The local Xcode can be newer than the runner's: code that compiles here can still fail there.
 - Releases: GitHub releases of subdiox/genmai-ime, tag vX.Y.Z (= `kProductVersion`), asset `Genmai-X.Y.Z.pkg`.
   Normally made by the GitHub Actions workflow `.github/workflows/release.yml`: bump `kProductVersion`, commit, push

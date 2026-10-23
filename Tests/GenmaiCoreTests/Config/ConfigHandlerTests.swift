@@ -21,6 +21,7 @@ private typealias Config = Genmai_Config_Config
     var output = Config()
 
     let tempDir = makeTempDirectoryOrDie()
+    defer { withExtendedLifetime(tempDir) {} }
     let configFile = FileUtil.joinPath(tempDir.path, "mozc_config_test_tmp")
     try FileUtil.unlinkIfExists(configFile)
     ConfigHandler.setConfigFileNameForTesting(configFile)
@@ -94,6 +95,7 @@ private typealias Config = Genmai_Config_Config
     var input = Config()
 
     let tempDir = makeTempDirectoryOrDie()
+    defer { withExtendedLifetime(tempDir) {} }
     let configFile = FileUtil.joinPath(tempDir.path, "mozc_config_test_tmp")
     try FileUtil.unlinkIfExists(configFile)
     ConfigHandler.setConfigFileNameForTesting(configFile)

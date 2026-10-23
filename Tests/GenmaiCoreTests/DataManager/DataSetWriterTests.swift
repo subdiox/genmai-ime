@@ -21,6 +21,7 @@ import Testing
     let cBytes = DataManagerTestSupport.cBytes
     // Create a dummy file to be packed.
     let tempDir = try TempDirectory.default().createTempDirectory()
+    defer { withExtendedLifetime(tempDir) {} }
     tempDir.keep = false
     let inPath = FileUtil.joinPath(tempDir.path, "in")
     try FileUtil.setContents(inPath, [0x6D, 0x00, 0x7A, 0x63, 0xEF] as [UInt8])

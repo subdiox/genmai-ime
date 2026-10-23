@@ -12,6 +12,7 @@ private func createTestFile(_ filename: String, _ data: String) throws {
 @Suite struct FileUtilTest {
   @Test func createDirectory() throws {
     let tempDir = makeTempDirectoryOrDie()
+    defer { withExtendedLifetime(tempDir) {} }
     try FileUtil.directoryExists(tempDir.path)
     // dirpath = FLAGS_test_tmpdir/testdir
     let dirpath = FileUtil.joinPath(tempDir.path, "testdir")
@@ -34,6 +35,7 @@ private func createTestFile(_ filename: String, _ data: String) throws {
 
   @Test func directoryExists() throws {
     let tempDir = makeTempDirectoryOrDie()
+    defer { withExtendedLifetime(tempDir) {} }
     try FileUtil.directoryExists(tempDir.path)
     let filepath = FileUtil.joinPath(tempDir.path, "testfile")
 
@@ -53,6 +55,7 @@ private func createTestFile(_ filename: String, _ data: String) throws {
 
   @Test func unlink() throws {
     let tempDir = makeTempDirectoryOrDie()
+    defer { withExtendedLifetime(tempDir) {} }
     let filepath = FileUtil.joinPath(tempDir.path, "testfile")
     try FileUtil.unlinkIfExists(filepath)
     #expect(!FileUtil.fileExistsOK(filepath))
@@ -66,6 +69,7 @@ private func createTestFile(_ filename: String, _ data: String) throws {
 
   @Test func isEqualFile() throws {
     let tempDir = makeTempDirectoryOrDie()
+    defer { withExtendedLifetime(tempDir) {} }
     let filename1 = FileUtil.joinPath(tempDir.path, "test1")
     let filename2 = FileUtil.joinPath(tempDir.path, "test2")
     #expect(throws: (any Error).self) { try FileUtil.isEqualFile(filename1, filename2) }
@@ -83,6 +87,7 @@ private func createTestFile(_ filename: String, _ data: String) throws {
 
   @Test func isEquivalent() throws {
     let tempDir = makeTempDirectoryOrDie()
+    defer { withExtendedLifetime(tempDir) {} }
     let filename1 = FileUtil.joinPath(tempDir.path, "test1")
     let filename2 = FileUtil.joinPath(tempDir.path, "test2")
     #expect(throws: (any Error).self) { try FileUtil.isEquivalent(filename1, filename1) }
@@ -101,6 +106,7 @@ private func createTestFile(_ filename: String, _ data: String) throws {
 
   @Test func copyFile() throws {
     let tempDir = makeTempDirectoryOrDie()
+    defer { withExtendedLifetime(tempDir) {} }
     // just test rename operation works as intended
     let from = FileUtil.joinPath(tempDir.path, "copy_from")
     let to = FileUtil.joinPath(tempDir.path, "copy_to")
@@ -115,6 +121,7 @@ private func createTestFile(_ filename: String, _ data: String) throws {
 
   @Test func atomicRename() throws {
     let tempDir = makeTempDirectoryOrDie()
+    defer { withExtendedLifetime(tempDir) {} }
     // just test rename operation works as intended
     let from = FileUtil.joinPath(tempDir.path, "atomic_rename_test_from")
     let to = FileUtil.joinPath(tempDir.path, "atomic_rename_test_to")
@@ -142,6 +149,7 @@ private func createTestFile(_ filename: String, _ data: String) throws {
 
   @Test func atomicRenameWhileReading() async throws {
     let tempDir = makeTempDirectoryOrDie()
+    defer { withExtendedLifetime(tempDir) {} }
     let from = FileUtil.joinPath(tempDir.path, "atomic_rename_test_from")
     let to = FileUtil.joinPath(tempDir.path, "atomic_rename_test_to")
     try createTestFile(from, "new")
@@ -164,6 +172,7 @@ private func createTestFile(_ filename: String, _ data: String) throws {
 
   @Test func createHardLink() throws {
     let tempDir = makeTempDirectoryOrDie()
+    defer { withExtendedLifetime(tempDir) {} }
     let filename1 = FileUtil.joinPath(tempDir.path, "test1")
     let filename2 = FileUtil.joinPath(tempDir.path, "test2")
     try createTestFile(filename1, "test data")
@@ -231,6 +240,7 @@ private func createTestFile(_ filename: String, _ data: String) throws {
 
   @Test func getModificationTime() throws {
     let tempDir = makeTempDirectoryOrDie()
+    defer { withExtendedLifetime(tempDir) {} }
     #expect(throws: (any Error).self) {
       try FileUtil.getModificationTime(FileUtil.joinPath(tempDir.path, "not_existent_file"))
     }
@@ -246,6 +256,7 @@ private func createTestFile(_ filename: String, _ data: String) throws {
 
   @Test func getAndSetContents() throws {
     let tempDir = makeTempDirectoryOrDie()
+    defer { withExtendedLifetime(tempDir) {} }
     let filename = FileUtil.joinPath(tempDir.path, "test.txt")
 
     // File doesn't exist yet.
@@ -277,6 +288,7 @@ private func createTestFile(_ filename: String, _ data: String) throws {
 
   @Test func fileUnlinker() throws {
     let tempFile = try TempDirectory.default().createTempFile()
+    defer { withExtendedLifetime(tempFile) {} }
     try FileUtil.setContents(tempFile.path, "test")
     do {
       let unlinker = FileUnlinker(tempFile.path)

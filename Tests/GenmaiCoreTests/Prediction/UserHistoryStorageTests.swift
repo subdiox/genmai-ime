@@ -199,6 +199,7 @@ func runUserHistoryTestThreads(_ count: Int, _ body: @escaping @Sendable (Int) -
 
   @Test func multiThreadsTest() async {
     let file = makeUserHistoryTempFileOrDie()
+    defer { withExtendedLifetime(file) {} }
     let storage = UserHistoryStorage(file.path)
 
     let kNumThreads = 32
@@ -240,6 +241,7 @@ func runUserHistoryTestThreads(_ count: Int, _ body: @escaping @Sendable (Int) -
   // that concurrent read-modify-writes of one entry are serialized.
   @Test func uniqueLockTest() async {
     let file = makeUserHistoryTempFileOrDie()
+    defer { withExtendedLifetime(file) {} }
     let storage = UserHistoryStorage(file.path)
     await storage.wait()
     storage.insert(makeEntry(0))
@@ -260,6 +262,7 @@ func runUserHistoryTestThreads(_ count: Int, _ body: @escaping @Sendable (Int) -
 
   @Test func syncTest() async {
     let file = makeUserHistoryTempFileOrDie()
+    defer { withExtendedLifetime(file) {} }
 
     let storage = UserHistoryStorage(file.path)
 
@@ -288,6 +291,7 @@ func runUserHistoryTestThreads(_ count: Int, _ body: @escaping @Sendable (Int) -
 
   @Test func cancelTest() async {
     let file = makeUserHistoryTempFileOrDie()
+    defer { withExtendedLifetime(file) {} }
 
     do {
       let storage = UserHistoryStorage(file.path)
@@ -391,6 +395,7 @@ func runUserHistoryTestThreads(_ count: Int, _ body: @escaping @Sendable (Int) -
     }
 
     let file = makeUserHistoryTempFileOrDie()
+    defer { withExtendedLifetime(file) {} }
     // Write directly to the file to keep invalid entries for testing.
     let fileStorage = EncryptedStringStorage(file.path)
     #expect(fileStorage.save(history))
@@ -409,6 +414,7 @@ func runUserHistoryTestThreads(_ count: Int, _ body: @escaping @Sendable (Int) -
 
   @Test func characterFormStorageTest() async {
     let file = makeUserHistoryTempFileOrDie()
+    defer { withExtendedLifetime(file) {} }
     let manager = CharacterFormManager.getCharacterFormManager()
     manager.setDefaultRule()
     manager.clearHistory()
@@ -457,6 +463,7 @@ func runUserHistoryTestThreads(_ count: Int, _ body: @escaping @Sendable (Int) -
 
   @Test func clearWhileAsyncLoadAndSaveTest() async {
     let file = makeUserHistoryTempFileOrDie()
+    defer { withExtendedLifetime(file) {} }
     let storage = UserHistoryStorage(file.path)
     await storage.wait()
 
@@ -492,6 +499,7 @@ func runUserHistoryTestThreads(_ count: Int, _ body: @escaping @Sendable (Int) -
   // inner_segment_boundary.
   @Test func serializedFormatIsCompatible() async throws {
     let file = makeUserHistoryTempFileOrDie()
+    defer { withExtendedLifetime(file) {} }
     do {
       let storage = UserHistoryStorage(file.path)
       await storage.wait()

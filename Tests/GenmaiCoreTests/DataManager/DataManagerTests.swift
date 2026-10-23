@@ -361,6 +361,7 @@ struct DataManagerOssDataSetTest {
 @Suite struct ConnectionFileReaderTest {
   @Test func read() throws {
     let tempDir = try TempDirectory.default().createTempDirectory()
+    defer { withExtendedLifetime(tempDir) {} }
     tempDir.keep = false
     let path = FileUtil.joinPath(tempDir.path, "connection_single_column.txt")
     defer { try? FileUtil.unlinkIfExists(path) }

@@ -8,6 +8,7 @@ import Testing
 @Suite struct DictionaryFileTests {
   @Test func basic() throws {
     let tempDir = try TempDirectory.default().createTempDirectory()
+    defer { withExtendedLifetime(tempDir) {} }
     let dfn = FileUtil.joinPath(tempDir.path, "test-dictionary")
     let fn1 = FileUtil.joinPath(tempDir.path, "sec1")
     let fn2 = FileUtil.joinPath(tempDir.path, "sec2")

@@ -27,6 +27,7 @@ import Testing
 
   @Test func multiByteUtf8() throws {
     let dir = makeTempDirectoryOrDie()
+    defer { withExtendedLifetime(dir) {} }
     let path = try write(
       [0xEF, 0xBB, 0xBF] + Array("きょうと\t京都\t名詞\r\nおおさか\t大阪\t地名\rx".utf8), "utf8.txt", in: dir)
     #expect(Importer.guessFileEncodingType(path) == .utf8)
@@ -44,6 +45,7 @@ import Testing
 
   @Test func multiByteShiftJIS() throws {
     let dir = makeTempDirectoryOrDie()
+    defer { withExtendedLifetime(dir) {} }
     // "とうきょう\t東京\t地名\n" in Shift_JIS.
     let sjis: [UInt8] =
       [0x82, 0xC6, 0x82, 0xA4, 0x82, 0xAB, 0x82, 0xE5, 0x82, 0xA4, 0x09, 0x93, 0x8C, 0x8B, 0x9E, 0x09]
@@ -61,6 +63,7 @@ import Testing
 
   @Test func utf16() throws {
     let dir = makeTempDirectoryOrDie()
+    defer { withExtendedLifetime(dir) {} }
     let text = "!Microsoft IME Dictionary Tool\r\nきょうと\t京都\t名詞\r\n\r\nすずき\t鈴木\t人名"
     var le: [UInt8] = [0xFF, 0xFE]
     var be: [UInt8] = [0xFE, 0xFF]

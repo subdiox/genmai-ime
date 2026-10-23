@@ -148,6 +148,7 @@ struct QualityRegressionTests {
 
   @Test func loadTestDataDisabledPrefix() throws {
     let dir = try TempDirectory.default().createTempDirectory()
+    defer { withExtendedLifetime(dir) {} }
     let path = FileUtil.joinPath(dir.path, "t.tsv")
     try Data("# comment\nDISABLED_l\tあ\t亜\tConversion Expected\r\n\nl\tい\t胃\tConversion Expected\n".utf8)
       .write(to: URL(fileURLWithPath: path))

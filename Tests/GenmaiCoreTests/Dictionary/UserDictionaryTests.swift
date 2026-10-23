@@ -572,6 +572,7 @@ struct UserDictionaryTests {
   @Test func asyncLoadTest() async throws {
     try await SystemUtil.withTempUserProfile { _ in
       let tempDir = makeTempDirectoryOrDie()
+      defer { withExtendedLifetime(tempDir) {} }
       let filename = FileUtil.joinPath(tempDir.path, "async_load_test.db")
       var random = Random()
 
@@ -624,6 +625,7 @@ struct UserDictionaryTests {
   @Test func consecutiveReloadTest() async throws {
     try await SystemUtil.withTempUserProfile { _ in
       let tempDir = makeTempDirectoryOrDie()
+      defer { withExtendedLifetime(tempDir) {} }
       let filename = FileUtil.joinPath(tempDir.path, "consecutive_reload_test.db")
       let dic = createDictionaryWithFilename(filename)
       await dic.waitForReloader()

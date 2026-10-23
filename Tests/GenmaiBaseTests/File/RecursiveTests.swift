@@ -8,9 +8,11 @@ import Testing
   @Test func deleteRecursively() throws {
     let temp = TempDirectory.default()
     let dir = try temp.createTempDirectory()
+    defer { withExtendedLifetime(dir) {} }
     try FileUtil.setContents(FileUtil.joinPath(dir.path, "file1"), "")
     try FileUtil.setContents(FileUtil.joinPath(dir.path, "file2"), "")
     let dir2 = try dir.createTempDirectory()
+    defer { withExtendedLifetime(dir2) {} }
     try FileUtil.setContents(FileUtil.joinPath(dir2.path, "file1"), "")
     try FileUtil.setContents(FileUtil.joinPath(dir2.path, "file2"), "")
     try FileRecursive.deleteRecursively(dir.path)
@@ -25,6 +27,7 @@ import Testing
   @Test func deleteRecursivelyNonExistent() throws {
     let temp = TempDirectory.default()
     let dir = try temp.createTempDirectory()
+    defer { withExtendedLifetime(dir) {} }
     // Path leaf that doesn't exist.
     try FileRecursive.deleteRecursively(FileUtil.joinPath(dir.path, "non_existent"))
     // Path component that doesn't exist.

@@ -15,6 +15,7 @@ import Testing
     }
 
     let tempDir = makeTempDirectoryOrDie()
+    defer { withExtendedLifetime(tempDir) {} }
 
     // Single path
     do {
@@ -41,6 +42,7 @@ import Testing
 
   @Test func readSingleFileTest() {
     let tempDir = makeTempDirectoryOrDie()
+    defer { withExtendedLifetime(tempDir) {} }
     let path = FileUtil.joinPath(tempDir.path, "i_am_a_test_file")
 
     // Create a test file
@@ -68,6 +70,7 @@ import Testing
 
   @Test func readMultipleFilesTest() {
     let tempDir = makeTempDirectoryOrDie()
+    defer { withExtendedLifetime(tempDir) {} }
     let kNumFile = 3
     let kNumLinesPerFile = 10
 

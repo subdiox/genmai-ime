@@ -26,6 +26,7 @@ import Testing
   private func writeAndRead(_ codec: DictionaryFileCodec) throws {
     let tempDir = TempDirectory.default()
     let testFile = try tempDir.createTempFile()
+    defer { withExtendedLifetime(testFile) {} }
     do {
       var writeSections: [DictionaryFileSection] = []
       addSection(codec, "Section 0", "Value 0 test", &writeSections)

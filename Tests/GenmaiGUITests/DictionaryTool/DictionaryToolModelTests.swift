@@ -179,6 +179,7 @@ import Testing
   @Test func importAndExportRoundTrip() throws {
     try withTempDictionaryFile { path in
       let dir = makeTempDirectoryOrDie()
+      defer { withExtendedLifetime(dir) {} }
       let importFile = FileUtil.joinPath(dir.path, "import.txt")
       try FileUtil.setContents(importFile, "きょうと\t京都\t名詞\nおおさか\t大阪\t地名\tコメント\n")
       let (model, _) = makeModel(path)
@@ -222,6 +223,7 @@ import Testing
   @Test func importShiftJISAndUTF16Files() throws {
     try withTempDictionaryFile { path in
       let dir = makeTempDirectoryOrDie()
+      defer { withExtendedLifetime(dir) {} }
       // "とうきょう\t東京\t地名\r\n" in Shift_JIS.
       let sjis: [UInt8] =
         [0x82, 0xC6, 0x82, 0xA4, 0x82, 0xAB, 0x82, 0xE5, 0x82, 0xA4, 0x09, 0x93, 0x8C, 0x8B, 0x9E, 0x09]
