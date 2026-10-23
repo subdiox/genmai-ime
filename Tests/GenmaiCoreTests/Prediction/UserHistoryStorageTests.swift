@@ -60,14 +60,14 @@ func runUserHistoryTestThreads(_ count: Int, _ body: @escaping @Sendable (Int) -
 
     #expect(!storage.isEmpty())
 
-    // Serialization.
+    // Serialization. (The C++ test also expects the syncer to be running right
+    // after AsyncSave / AsyncLoad, but it runs on its own thread and can finish
+    // before the check; in an optimized build the load of 100 entries does.)
     storage.asyncSave()
-    #expect(storage.isSyncerRunning())
     await storage.wait()
     #expect(!storage.isSyncerRunning())
 
     storage.asyncLoad()
-    #expect(storage.isSyncerRunning())
     await storage.wait()
     #expect(!storage.isSyncerRunning())
     #expect(!storage.isEmpty())
