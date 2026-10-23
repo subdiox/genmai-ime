@@ -1,8 +1,9 @@
 # Builds the installer package and publishes it as a GitHub release.
 #
-# - Push a tag vX.Y.Z (= kProductVersion in Sources/GenmaiBase/VersionDef.swift) to build Genmai-X.Y.Z.pkg and
+# - Push a tag vX.Y.Z (= kProductVersion in Sources/GenmaiBase/VersionDef.swift) to build Genmai.pkg and
 #   create the release with it (release notes generated from the commits). The IME's update check
-#   (GenmaiAppRelease.latest) finds it from there.
+#   (GenmaiAppRelease.latest) finds it from there. The asset name has no version, so
+#   https://github.com/subdiox/genmai-ime/releases/latest/download/Genmai.pkg is always the newest package.
 # - Run the workflow by hand (Actions › Release › Run workflow) to build the package without publishing it; the
 #   package is kept as a workflow artifact.
 name: Release
@@ -67,20 +68,19 @@ jobs:
       - name: Installer package
         run: |
           Tools/make_installer_pkg.sh
-          cp build/Genmai.pkg "build/Genmai-${{ steps.version.outputs.version }}.pkg"
-          shasum -a 256 "build/Genmai-${{ steps.version.outputs.version }}.pkg"
+          shasum -a 256 build/Genmai.pkg
 
       - name: Keep the package (manual runs)
         if: github.event_name == 'workflow_dispatch'
         uses: actions/upload-artifact@v4
         with:
           name: Genmai-${{ steps.version.outputs.version }}
-          path: build/Genmai-${{ steps.version.outputs.version }}.pkg
+          path: build/Genmai.pkg
 
       - name: GitHub release
         if: github.ref_type == 'tag'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "$GITHUB_REF_NAME" "build/Genmai-${{ steps.version.outputs.version }}.pkg" \
+          gh release create "$GITHUB_REF_NAME" build/Genmai.pkg \
             --title "Genmai ${{ steps.version.outputs.version }}" --generate-notes --verify-tag

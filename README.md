@@ -40,7 +40,7 @@ interval, 45–64 ms when it is pressed right after it.
 
 ## Install
 
-Download `Genmai-X.Y.Z.pkg` from the [latest release](https://github.com/subdiox/genmai-ime/releases/latest) and
+Download [`Genmai.pkg`](https://github.com/subdiox/genmai-ime/releases/latest/download/Genmai.pkg) from the [latest release](https://github.com/subdiox/genmai-ime/releases/latest) and
 open it. The package is not signed with a Developer ID yet: if macOS refuses to open it, allow it in System
 Settings › Privacy & Security (**Open Anyway**). It installs for all users (`/Library/Input Methods`, asks for an
 administrator) or, with "Install for me only", for your account (`~/Library/Input Methods`, no administrator

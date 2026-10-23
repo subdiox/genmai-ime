@@ -1,6 +1,6 @@
 // Updates of Genmai itself (not part of Mozc).
 //
-// Releases are published on GitHub (subdiox/genmai-ime) as vX.Y.Z tags with the installer package (Genmai-X.Y.Z.pkg,
+// Releases are published on GitHub (subdiox/genmai-ime) as vX.Y.Z tags with the installer package (Genmai.pkg,
 // Tools/make_release.sh) attached. `GenmaiAppRelease.latest` asks the GitHub API for the releases and returns the one
 // with the highest version that has a package; `GenmaiUpdater.download` fetches the package into the caches and
 // checks its size and the SHA-256 GitHub lists. The package is then opened with Installer (by the GUI). A package

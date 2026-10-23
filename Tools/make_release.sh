@@ -4,7 +4,7 @@
 # is pushed; this script is the local equivalent.
 #
 # The version is kProductVersion (Sources/GenmaiBase/VersionDef.swift); the release is tag vX.Y.Z with the asset
-# Genmai-X.Y.Z.pkg. The IME and the settings find releases through the GitHub API (GenmaiAppRelease.latest: the
+# Genmai.pkg (no version in the name, so that .../releases/latest/download/Genmai.pkg is the newest one). The IME and the settings find releases through the GitHub API (GenmaiAppRelease.latest: the
 # highest vX.Y.Z release that is not a draft or pre-release and has a .pkg asset) and verify the downloaded package
 # against the size and SHA-256 digest GitHub lists. Publishing a release is therefore all an update needs; bump
 # kProductVersion first.
@@ -32,7 +32,7 @@ done
 
 VERSION=$(sed -n 's/.*kProductVersion = "\(.*\)"/\1/p' "$ROOT/Sources/GenmaiBase/VersionDef.swift")
 TAG=v$VERSION
-ASSET=$ROOT/build/Genmai-$VERSION.pkg
+ASSET=$ROOT/build/Genmai.pkg
 REPOSITORY=subdiox/genmai-ime  # GenmaiAppRelease.repository
 
 if (( PUBLISH )); then
@@ -51,7 +51,6 @@ if (( SKIP_BUILD )); then
 else
   "$ROOT/Tools/make_installer_pkg.sh"
 fi
-cp -f "$ROOT/build/Genmai.pkg" "$ASSET"
 echo "==> $ASSET ($(stat -f%z "$ASSET") bytes, sha256 $(shasum -a 256 "$ASSET" | cut -d' ' -f1))"
 
 if (( ! PUBLISH )); then

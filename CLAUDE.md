@@ -297,7 +297,9 @@ table; use "…" and "ユーザー".
   requests (release build with `-enable-testing`: debug tests took 45 minutes on the runner; code that must hold in
   debug builds only is not checked there) (macos-26 runner, the same Xcode as releases; the data sets are built and cached, model tests skip).
   The local Xcode can be newer than the runner's: code that compiles here can still fail there.
-- Releases: GitHub releases of subdiox/genmai-ime, tag vX.Y.Z (= `kProductVersion`), asset `Genmai-X.Y.Z.pkg`.
+- Releases: GitHub releases of subdiox/genmai-ime, tag vX.Y.Z (= `kProductVersion`), asset `Genmai.pkg`
+  (0.1.0 / 0.1.1: `Genmai-X.Y.Z.pkg`; the update check takes any `.pkg`), so
+  `releases/latest/download/Genmai.pkg` is always the newest package.
   Normally made by the GitHub Actions workflow `.github/workflows/release.yml`: bump `kProductVersion`, commit, push
   the tag `vX.Y.Z`; the workflow (macos-26 runner, newest Xcode ≥ 26 + Metal toolchain) builds the data set and the
   package and creates the release (a manual run only builds and keeps the package as an artifact).
