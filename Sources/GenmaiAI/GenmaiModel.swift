@@ -153,6 +153,8 @@ public final class GenmaiModel {
   private let wpe: MLXArray
   private let lnfW: MLXArray
   private let lnfB: MLXArray
+  /// Every weight array, passed to the compiled decode steps as inputs (see `getStep`).
+  private let weights: [MLXArray]
   private let dtype: DType = .bfloat16
   private let layerCount: Int
   private let embedDim: Int
@@ -250,8 +252,10 @@ public final class GenmaiModel {
       [$0.ln1w, $0.ln1b, $0.attnB, $0.projB, $0.ln2w, $0.ln2b, $0.fcB, $0.mlpProjB]
         + $0.attnW.arrays + $0.projW.arrays + $0.fcW.arrays + $0.mlpProjW.arrays
     }
-    eval(used + [wte, wpe, lnfW, lnfB])
-    self.weightBytes = (used + [wte, wpe, lnfW, lnfB]).reduce(0) { $0 + $1.nbytes }
+    let weights = used + [wte, wpe, lnfW, lnfB]
+    eval(weights)
+    self.weights = weights
+    self.weightBytes = weights.reduce(0) { $0 + $1.nbytes }
     self.config = cfg
     self.layerCount = cfg.nLayer
     self.embedDim = cfg.nEmbd
@@ -425,7 +429,10 @@ public final class GenmaiModel {
         tok.reshaped([rowCount, 1]), (pos - pad).reshaped([rowCount, 1]), pos, kCache, vCache, mask)
       return [lp] + newKCache + newVCache
     }
-    let s = compile(f)
+    // The weights are inputs, not constants of the traced graph: MLX keeps the traces in a per-thread cache and
+    // a compiled function erases its traces only from the cache of the thread that releases it. Constants would
+    // keep (part of) the weights of a released model alive in the caches of the other threads that ran it.
+    let s = compile(inputs: [weights], f)
     steps[key] = s
     return s
   }

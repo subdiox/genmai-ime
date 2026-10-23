@@ -1,4 +1,6 @@
 import Foundation
+import MLX
+import Synchronization
 import Testing
 
 @testable import GenmaiAI
@@ -168,6 +170,26 @@ struct GenmaiConverterTests {
     _ = try await c.convert("きょうはいいてんきなので、こうえんまでさんぽにいってきました")
     #expect(GenmaiConverter.memoryStats.cacheLimit == GenmaiModel.cacheLimitBytes)
     #expect(await c.releaseCachedMemory() == 0)
+  }
+
+  /// A model released on another thread than the one that ran its compiled decode steps frees its weights. MLX
+  /// keeps compiled traces per thread and erases them only on the releasing thread, so weights captured as
+  /// constants of a trace stayed in memory (0.3 GB after AI conversion was turned off in the IME).
+  @Test func modelReleasedOnAnotherThreadFreesItsWeights() async throws {
+    var model: GenmaiModel? = try GenmaiModel(directory: GenmaiTestPaths.modelDirectory)
+    _ = try model?.convert("きょうはいいてんきですね")
+    let weightBytes = model?.weightBytes ?? 0
+    let box = Mutex(model.take())
+    let loaded = Memory.activeMemory
+    await withCheckedContinuation { (done: CheckedContinuation<Void, Never>) in
+      Thread {
+        box.withLock { $0 = nil }
+        done.resume()
+      }.start()
+    }
+    let freed = loaded - Memory.activeMemory
+    // other tests may allocate meanwhile; a leak keeps (almost) all the weights
+    #expect(freed > weightBytes / 2, "freed \(freed >> 20) MB of \(weightBytes >> 20) MB")
   }
 
   /// `writeQuantized` writes 8-bit weights that load and convert like the bf16 ones (needs the bf16 install).

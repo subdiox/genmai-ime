@@ -180,7 +180,10 @@ unchanged; the hook only forwards). GenmaiCore and GenmaiSession contain no AI c
   minutes) and returned to the system after 30 s without typing (`GenmaiAugmenter.idleReleaseDelay`,
   `GenmaiConverter.releaseCachedMemory`). With bf16 weights, session-eval shows ~1.1 GB of arrays in use (weights
   0.62 GB, prompt KV cache, incremental states), a 268 MB cache and a 2.9 GB peak during long batched decodes;
-  `session-eval` prints these (`MLX memory`). The cap did not change the conversion-key latency.
+  `session-eval` prints these (`MLX memory`). The cap did not change the conversion-key latency. Turning AI
+  conversion off releases the model: the compiled decode steps hold it weakly and take the weights as inputs
+  (MLX keeps compiled traces per thread and erases them only on the releasing thread, so weights captured as
+  constants stayed alive), and the buffer cache is cleared.
 - **Readings and forms:** the model gets the conversion key in the *preedit* character form ("？", "（", as in its
   training data); its output gets the *conversion* character form (`CharacterFormManager`).
 - **Merging (`AIConversionMerger`, `AIConversionAligner`):** if the AI top-1 differs from the engine's top, the AI
