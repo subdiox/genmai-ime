@@ -15,14 +15,16 @@
 // the parity target.
 //
 // Fixture runs start with "=== <name> @<unix time>": the time the oracle ran.
-// The clock is mocked to that time (advancing in real time) so that date /
-// time candidates (いま → 20:31, きょう → 2026/10/20, ...) match. The
+// The clock is mocked to that time in the oracle's time zone (JST) so that date
+// / time candidates (いま → 20:31, きょう → 2026/10/20, ...) match on any
+// machine. The
 // prediction fixtures have no header and run with the real clock.
 // Regenerate the fixtures with `Tools/compare_oracle.sh --regenerate`.
 
 import Foundation
 import GenmaiBase
 import GenmaiProtocol
+import Synchronization
 import Testing
 
 @testable import GenmaiCore
@@ -49,14 +51,21 @@ private enum ParityPaths {
   }
 }
 
-/// The clock of `--fake_time_for_testing`: starts at `base` and advances in
-/// real time.
+/// The clock of a fixture run: starts at `base` in JST, where the fixtures
+/// were recorded. It advances by a microsecond per call instead of in real
+/// time: a run takes well under a second for the oracle but can take minutes
+/// in a debug build, and must not cross into the next minute (いま → 20:37).
 private final class ParityClock: ClockInterface {
-  private let base: Date
-  private let start = Date()
-  init(_ base: Date) { self.base = base }
-  func getAbslTime() -> Date { base.addingTimeInterval(Date().timeIntervalSince(start)) }
-  func getTimeZone() -> TimeZone { TimeZone.current }
+  private let now: Mutex<Date>
+  private static let timeZone = TimeZone(identifier: "Asia/Tokyo") ?? .current
+  init(_ base: Date) { now = Mutex(base) }
+  func getAbslTime() -> Date {
+    now.withLock {
+      $0.addTimeInterval(1e-6)
+      return $0
+    }
+  }
+  func getTimeZone() -> TimeZone { Self.timeZone }
 }
 
 /// One converter_main run: a name, the oracle time and lines (banner + output).
