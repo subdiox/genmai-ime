@@ -7,7 +7,7 @@
 public enum VersionDef {
   /// The version of the product (genmai), shown in the About dialog, the bundle and the version rewriter. The
   /// values below are the upstream engine version the port follows.
-  public static let kProductVersion = "0.1.2"
+  public static let kProductVersion = "0.1.3"
   public static let kGenmaiVersion = "3.35.6354.101"
   public static let kGenmaiVersionMajor = 3
   public static let kGenmaiVersionMinor = 35
