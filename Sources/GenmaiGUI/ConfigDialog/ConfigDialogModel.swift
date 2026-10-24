@@ -232,10 +232,10 @@ public enum ConfigDialogEditor: Identifiable, Equatable, Sendable {
   }
 }
 
-/// Not in Mozc: the newest model release, as far as the AI tab knows.
+/// Not in Mozc: the newest release of the selected model, as far as the AI tab knows.
 public enum AIModelLatestState: Equatable, Sendable {
   case unknown
-  case checking
+  case checking(AIModelSize)
   case available(GenmaiModelRelease)
   case failed(String)
 }
@@ -271,6 +271,9 @@ public final class ConfigDialogModel {
       if aiValues.modelDirectory != oldValue.modelDirectory {
         aiModelStatus = AIModelStatus.check(aiValues.resolvedModelDirectory)
       }
+      if aiValues.modelSize != oldValue.modelSize {
+        aiModelLatest = .unknown
+      }
       if !isLoading && aiValues != oldValue {
         noteChange()
       }
@@ -281,18 +284,18 @@ public final class ConfigDialogModel {
   /// Not in Mozc: the model download / installation started from the AI tab.
   public private(set) var aiModelInstall = AIModelInstallState.idle
   private var aiModelInstallTask: Task<Void, Never>?
-  /// Not in Mozc: the newest model release on Hugging Face, looked up when the AI tab is shown.
+  /// Not in Mozc: the newest release of the selected model on Hugging Face, looked up when the AI tab is shown or
+  /// another model is selected.
   public private(set) var aiModelLatest = AIModelLatestState.unknown
-  /// Looks up the newest model release (replaced by tests).
-  var aiModelReleaseFetcher: @Sendable () async throws -> GenmaiModelRelease = {
-    try await GenmaiModelRelease.latest()
+  /// Looks up the newest release of a model (replaced by tests).
+  var aiModelReleaseFetcher: @Sendable (AIModelSize) async throws -> GenmaiModelRelease = {
+    try await GenmaiModelRelease.latest(repository: $0.repository)
   }
-  /// Downloads and installs a variant of a model release into a directory (replaced by tests).
+  /// Downloads and installs a model release into a directory (replaced by tests).
   var aiModelInstaller:
-    @Sendable (GenmaiModelRelease, AIModelVariant, URL, @escaping @Sendable (AIModelInstaller.Phase) -> Void)
-      async throws
-      -> Void = { release, variant, directory, progress in
-        try await AIModelInstaller.install(release, variant: variant, to: directory, progress: progress)
+    @Sendable (GenmaiModelRelease, URL, @escaping @Sendable (AIModelInstaller.Phase) -> Void) async throws -> Void =
+      { release, directory, progress in
+        try await AIModelInstaller.install(release, to: directory, progress: progress)
       }
   /// Edits not saved yet (Mozc's 'Apply' button state: off on launching, on after any edit).
   public private(set) var hasPendingChanges = false
@@ -372,29 +375,35 @@ public final class ConfigDialogModel {
     aiModelStatus = AIModelStatus.check(aiValues.resolvedModelDirectory)
   }
 
-  /// Looks up the newest model release on Hugging Face (when the AI tab is shown; again after a failure or with
-  /// `force`, the "Check again" button).
+  /// Looks up the newest release of the selected model on Hugging Face (when the AI tab is shown or another model
+  /// is selected; again after a failure or with `force`, the "Check again" button).
   public func checkLatestAIModel(force: Bool = false) async {
+    let size = aiValues.modelSize
     switch aiModelLatest {
-    case .checking: return
-    case .available where !force: return
+    case .checking(size): return
+    case .available(let release) where !force && release.info.size == size: return
     default: break
     }
-    aiModelLatest = .checking
+    aiModelLatest = .checking(size)
+    let result: AIModelLatestState
     do {
-      aiModelLatest = .available(try await aiModelReleaseFetcher())
+      result = .available(try await aiModelReleaseFetcher(size))
     } catch {
-      aiModelLatest = .failed("\(error)")
+      result = .failed("\(error)")
     }
+    // another model was selected meanwhile: its own lookup sets the state
+    guard aiModelLatest == .checking(size) else { return }
+    aiModelLatest = result
   }
 
-  /// Downloads the current model release from Hugging Face and installs it into the model directory (the
+  /// Downloads the newest release of the selected model from Hugging Face and installs it into the model directory (the
   /// "Download" / "Update" button). The IME is told to reload, so a running IME switches to the new model.
   public func installAIModel() {
-    guard aiModelInstallTask == nil, case .available(let release) = aiModelLatest else { return }
+    guard aiModelInstallTask == nil, case .available(let release) = aiModelLatest,
+      release.info.size == aiValues.modelSize
+    else { return }
     let directory = aiValues.resolvedModelDirectory
-    let variant = aiValues.modelVariant
-    aiModelInstall = .running(.downloading(received: 0, total: release.downloadSize(for: variant)))
+    aiModelInstall = .running(.downloading(received: 0, total: release.downloadSize))
     let installer = aiModelInstaller
     // Progress arrives for every network chunk: forward it only when the shown permille changes.
     let lastShown = Mutex<Int>(-1)
@@ -418,7 +427,7 @@ public final class ConfigDialogModel {
     aiModelInstallTask = Task { [weak self] in
       let result: AIModelInstallState
       do {
-        try await installer(release, variant, directory, report)
+        try await installer(release, directory, report)
         result = .idle
       } catch is CancellationError {
         result = .idle

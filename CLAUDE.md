@@ -83,9 +83,12 @@ mozc/src/...` provenance comments.
 
 ## AI conversion (GenmaiAI)
 
-The genmai model ([subdiox/genmai](https://huggingface.co/subdiox/genmai), release **0.1.0** = git tag `v0.1.0`, the only release (earlier versions and the history were removed):
-GPT-2, character-level, 24 layers, 1024 dim, 310M parameters, CC BY-SA 4.0) decodes the conversion from the
-reading by beam search on MLX (mlx-swift **0.32.3**, pinned `exact`). The Swift code is a port of the Python MLX reference decoder used in
+The genmai models decode the conversion from the reading by beam search on MLX. Two models, each its own Hugging
+Face repository with its own releases (git tags vX.Y.Z), same tokenizer, prompt format and file layout (CC BY-SA
+4.0): **genmai-310M** ([subdiox/genmai-310M](https://huggingface.co/subdiox/genmai-310M), "medium", the default;
+called subdiox/genmai before the small model existed, which Hugging Face still redirects; GPT-2, character-level,
+24 layers, 1024 dim; releases 0.1.0, 0.1.1) and **genmai-90M** ([subdiox/genmai-90M](https://huggingface.co/subdiox/genmai-90M),
+"small", distilled from genmai-310M 0.1.1 into zenz-v3.2-small; 12 layers, 768 dim; release 0.1.1). Both on MLX (mlx-swift **0.32.3**, pinned `exact`). The Swift code is a port of the Python MLX reference decoder used in
 training and gives bit-identical n-best lists and scores (`Tests/Fixtures/genmai/python_mlx_daily.json`, made with
 `mlx_eval.py --incremental` of the genmai research repo on the 0.1.0 weights; regenerate it when the release
 changes — the reference model directory needs `tokenizer_config.json`, without it the HF tokenizer gets wrong
@@ -98,36 +101,42 @@ BOS / EOS ids and the outputs end in garbage).
   40-character chunks), `GenmaiConverter` (actor owning the model; `mlxLock` serializes all MLX work — two
   converters on MLX's default stream at once crash Metal), `GenmaiIncrementalConverter` (converts finished chunks
   while typing).
-- The model is not bundled. `GenmaiModelRelease.latest()` (GenmaiClient/AIConversion) asks the Hugging Face API
-  for the repository's tags (`/api/models/subdiox/genmai/refs`), takes the vX.Y.Z tags newest first and returns
+- The model is not bundled. `AIModelSize` (small / medium) names the repositories (`AIModelSize(repository:)` maps
+  the old subdiox/genmai to medium, for `genmai_model.json` written before). `GenmaiModelRelease.latest(repository:)`
+  (GenmaiClient/AIConversion) asks the Hugging Face API for the repository's tags
+  (`/api/models/<repository>/refs`), takes the vX.Y.Z tags newest first and returns
   the first whose config.json this IME can run (`isCompatible`: gpt2, `genmai_prompt_format` zenzlc or absent),
   with its files from `/api/models/.../tree/<tag>` (sizes; LFS sha256 for the weights, git blob sha1 for the
   small files). **Nothing about a release is hard-coded**: publishing a new tag is enough, unless it needs decoder
   changes (then give it another prompt format / model type so older IMEs skip it). A release has the fp32
-  `model.safetensors` (HF layout, for transformers) and the runtime weights of each `AIModelVariant`:
-  **`model-8bit.safetensors`** (the default: linear layers MLX-affine-quantized to 8 bits, groups of 64, stored as
-  `<name>` (packed U32) + `<name>.scales` / `.biases`; embeddings, norms, biases bf16; metadata
-  `format=genmai-quantized-out-in`, `bits`, `group_size`; 0.34 GB; written by `genmai-cli quantize <bf16 dir> <file>`
-  = `GenmaiModel.writeQuantized`) and **`model-bf16.safetensors`** ("high precision": bf16 round-to-nearest-even,
-  bit-identical to MLX `astype`; Conv1D weights (out, in); no lm_head / no `transformer.` prefix; metadata
-  `format=genmai-bf16-out-in`; 0.62 GB; written by `GenmaiSafetensors.prepare` = `genmai-cli prepare <HF dir> <out>`).
-  8-bit vs. bf16 (session-eval, settle idle): AJIMEE 186 vs. 187 / 200, daily 92 / 92, hard 20 / 20, conversion key
-  slightly faster; 4-bit lost 6 AJIMEE items and was not released. `AIModelInstaller.install(release, variant:)`
-  downloads config.json, tokenizer.json and the variant's weights (kept in `~/Library/Caches/Genmai/download/<tag>`
-  until the install succeeds), verifies the checksums, the config and the weights' format, and replaces config.json /
-  tokenizer.json / model.safetensors / `genmai_model.json` (installed release and `variant`; none = bf16) one file at
-  a time (other files are left alone); no conversion on the user's Mac. The setting `model_variant` (AI tab "Model
-  type") picks the variant; choosing the other one offers its download (`AIModelStatus.needsInstall(_:variant:)`).
+  `model.safetensors` (HF layout, for transformers), **`model-8bit.safetensors`** (what the IME installs: linear
+  layers MLX-affine-quantized to 8 bits, groups of 64, stored as `<name>` (packed U32) + `<name>.scales` /
+  `.biases`; embeddings, norms, biases bf16; metadata `format=genmai-quantized-out-in`, `bits`, `group_size`;
+  0.34 GB (310M) / 0.10 GB (90M); written by `genmai-cli quantize <bf16 dir> <file>` = `GenmaiModel.writeQuantized`)
+  and `model-bf16.safetensors` (not downloaded by the IME (0.1.0 offered it as "high precision"); GenmaiModel still
+  loads it: bf16 round-to-nearest-even, bit-identical to MLX `astype`; Conv1D weights (out, in); no lm_head / no
+  `transformer.` prefix; metadata `format=genmai-bf16-out-in`; written by `GenmaiSafetensors.prepare` =
+  `genmai-cli prepare <HF dir> <out>`). 8-bit vs. bf16 (310M, session-eval, settle idle): AJIMEE 186 vs. 187 / 200,
+  daily 92 / 92, hard 20 / 20, conversion key slightly faster; 4-bit lost 6 AJIMEE items and was not released.
+  310M vs. 90M (8-bit, `genmai-cli eval`, top-1 / median latency, M4 Pro): daily 94.1 % / 97 ms vs. 93.1 % / 55 ms,
+  AJIMEE 93.0 % / 139 ms vs. 87.0 % / 70 ms, hard 78.6 % vs. 78.6 %. `AIModelInstaller.install(release)` downloads
+  config.json, tokenizer.json and the 8-bit weights (kept in `~/Library/Caches/Genmai/download/<repo>@<tag>` until
+  the install succeeds), verifies the checksums, the config and the weights' format, and replaces config.json /
+  tokenizer.json / model.safetensors / `genmai_model.json` (installed repository and release) one file at a time
+  (other files are left alone); no conversion on the user's Mac. The setting `model_size` (AI tab "Model": Small /
+  Medium) picks the model; choosing the other one looks up its latest release and offers its download
+  (`AIModelStatus.needsInstall`: another model or a newer release).
   `AIModelInstaller.uninstall` removes only those files (and the directory if nothing else is left). Front ends:
   the settings tab "AI" (looks up the latest release when shown; Download / Update when it is newer than the
   installed one, with progress and cancel; "Remove Model…" after a confirmation; both send RELOAD and
   `GenmaiAugmenter` reloads because `AIModelStatus.identity` — size and mtime of the weights — changed),
-  `genmai-cli install [--tag vX.Y.Z]` and `Tools/prepare_genmai_model.sh`. The prompt format is
+  `genmai-cli install [--size small|medium] [--tag vX.Y.Z]` and `Tools/prepare_genmai_model.sh [--size small]`. The prompt format is
   `genmai_prompt_format` in config.json. For a new release upload `model-bf16.safetensors` (the model.safetensors
   that `genmai-cli prepare` writes) and `model-8bit.safetensors` (`genmai-cli quantize`) next to the fp32 weights,
   and
   also regenerate the Python fixture and the score in `convertDaily` (they test the installed model; the comparisons
-  with the bf16 Python reference run only when the installed weights are bf16). Tests use
+  with the bf16 Python reference run only when the installed weights are bf16; the fixtures are genmai-310M's: with
+  genmai-90M installed, point `$GENMAI_MODEL_DIR` at a 310M model). Tests use
   `$GENMAI_MODEL_DIR`, else `~/Library/Application Support/Genmai/model`, and skip without it.
 - `genmai-cli`: `install`, `prepare` (local HF directory), `convert`, `eval [--incremental] [--every-key] [--draft]
   [--no-kv-reuse]` (per-item latency in the JSON), `compare`, `logprobs`, `session-eval` (below).
@@ -219,9 +228,9 @@ unchanged; the hook only forwards). GenmaiCore and GenmaiSession contain no AI c
   activation, RESET_CONTEXT or an empty preceding text. The model tends to copy the context: a wrong conversion
   committed earlier in the same field can be repeated.
 - **Settings:** `<profile>/ai_conversion.json` (`AIConversionSettings`: `enabled`, `timeout_ms`, `candidates`,
-  `model_directory`, `model_variant`, `reading_check`, `debug_log`), edited in the settings tab "AI" and re-read on the
+  `model_directory`, `model_size`, `reading_check`, `debug_log`), edited in the settings tab "AI" and re-read on the
   reload notification. `model_directory`, `reading_check` and `debug_log` have no UI (development / diagnosis);
-  the model folder is managed by the installer, so the AI tab shows only which release and variant is installed.
+  the model folder is managed by the installer, so the AI tab shows only which model and release is installed.
 - **Debug log (opt-in):** `"debug_log": true` appends one line per AI event to `<profile>/ai_debug.log` (rotated at
   8 MB): source (`ready` / `awaited` / `timeout` / `error` / `suggestion` / `refine`), reading, last 40 characters of
   context, latency, n-best and what was shown. **It contains the typed text**; turn it off after diagnosing.

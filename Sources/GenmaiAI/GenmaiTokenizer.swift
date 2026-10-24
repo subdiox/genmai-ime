@@ -1,6 +1,6 @@
 // Byte-level BPE tokenizer (GPT-2 style) read from a Hugging Face `tokenizer.json`.
 //
-// Reproduces the ids of the HF tokenizers pipeline used by the genmai model (subdiox/genmai):
+// Reproduces the ids of the HF tokenizers pipeline used by the genmai model (subdiox/genmai-310M and genmai-90M share it):
 //   added (special) tokens split out of the text  ->  ByteLevel pre-tokenizer (GPT-2 regex, add_prefix_space
 //   false)  ->  byte-to-unicode mapping  ->  BPE merges (lowest rank first, leftmost on ties; characters missing
 //   from the vocabulary are dropped, since the model has no unk token / byte fallback)  ->  ids.

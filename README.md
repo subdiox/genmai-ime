@@ -84,15 +84,21 @@ Settings and learning data live in `~/Library/Application Support/Genmai`.
 
 ### AI conversion
 
-The model is not part of the app. The settings (tab "AI") look up the latest model release on Hugging Face
-([subdiox/genmai](https://huggingface.co/subdiox/genmai)) and offer **Download**: it downloads the model (0.34 GB,
-8-bit quantized; "High precision" in the same tab picks the bf16 weights, 0.62 GB, practically the same accuracy;
-checked against the checksums Hugging Face lists) and installs it into
+The model is not part of the app. There are two, picked under **Model** in the settings (tab "AI"):
+
+| model | download | accuracy (daily / AJIMEE, top-1) | conversion time (median) |
+|---|---|---|---|
+| Medium: [genmai-310M](https://huggingface.co/subdiox/genmai-310M) (default) | 0.34 GB | 94 % / 93 % | 97 / 139 ms |
+| Small: [genmai-90M](https://huggingface.co/subdiox/genmai-90M) | 0.10 GB | 93 % / 87 % | 55 / 70 ms |
+
+(8-bit weights, one conversion of the whole reading without the IME's background conversion, M4 Pro.) The tab looks
+up the latest release of the chosen model on Hugging Face and offers **Download**: it downloads the model (8-bit
+quantized; checked against the checksums Hugging Face lists) and installs it into
 `~/Library/Application Support/Genmai/model`. When a newer model is released, the same place offers **Update**;
 **Remove Model…** deletes it. From the command line:
 
 ```sh
-Tools/prepare_genmai_model.sh      # = genmai-cli install
+Tools/prepare_genmai_model.sh [--size small]     # = genmai-cli install [--size small]
 ```
 
 Then turn on **Use AI conversion** in the same tab. The settings are stored in
@@ -141,9 +147,11 @@ without AI conversion and reports accuracy and latency (see `CLAUDE.md`).
 - The dictionary data built into `genmai.data` contains data derived from IPAdic (NAIST; see `LICENSE`), the
   [Japanese usage dictionary](https://github.com/hiroyuki-komatsu/japanese-usage-dictionary) (BSD 2-Clause)
   and Japan Post zip code data. Build scripts download the latter two at pinned versions.
-- The AI model [subdiox/genmai](https://huggingface.co/subdiox/genmai) is distributed separately
-  under CC BY-SA 4.0. It is fine-tuned from [zenz-v2.5-medium](https://huggingface.co/Miwa-Keita/zenz-v2.5-medium)
-  by Miwa-Keita (CC BY-SA 4.0).
+- The AI models are distributed separately under CC BY-SA 4.0:
+  [genmai-310M](https://huggingface.co/subdiox/genmai-310M) is fine-tuned from
+  [zenz-v2.5-medium](https://huggingface.co/Miwa-Keita/zenz-v2.5-medium) by Miwa-Keita (CC BY-SA 4.0),
+  [genmai-90M](https://huggingface.co/subdiox/genmai-90M) is distilled from genmai-310M into
+  [zenz-v3.2-small](https://huggingface.co/Miwa-Keita/zenz-v3.2-small-gguf) by Miwa-Keita (Apache 2.0).
 - Uses [mlx-swift](https://github.com/ml-explore/mlx-swift) (MIT) and
   [swift-protobuf](https://github.com/apple/swift-protobuf) (Apache 2.0).
 - genmai is not affiliated with or endorsed by Google.

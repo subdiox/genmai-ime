@@ -404,11 +404,11 @@ func conversionRequest() -> ConversionRequest {
     #expect(decoded.readingCheck)
     let off = try JSONDecoder().decode(AIConversionSettings.self, from: Data(#"{"reading_check": false}"#.utf8))
     #expect(!off.readingCheck)
-    #expect(d.modelVariant == .q8)
-    let bf16 = try JSONDecoder().decode(AIConversionSettings.self, from: Data(#"{"model_variant": "bf16"}"#.utf8))
-    #expect(bf16.modelVariant == .bf16)
-    let unknown = try JSONDecoder().decode(AIConversionSettings.self, from: Data(#"{"model_variant": "2bit"}"#.utf8))
-    #expect(unknown.modelVariant == .q8)
+    #expect(d.modelSize == .medium)
+    let small = try JSONDecoder().decode(AIConversionSettings.self, from: Data(#"{"model_size": "small"}"#.utf8))
+    #expect(small.modelSize == .small)
+    let unknown = try JSONDecoder().decode(AIConversionSettings.self, from: Data(#"{"model_size": "huge"}"#.utf8))
+    #expect(unknown.modelSize == .medium)
   }
 
   @Test func brokenFileFallsBackToDefaults() throws {
@@ -430,34 +430,44 @@ func conversionRequest() -> ConversionRequest {
     #expect(status == .found(dir, info: nil))
     #expect(AIModelStatus.identity(dir) != nil)
     let release = GenmaiModelReleaseTests.release("0.2.0")
-    #expect(status.needsInstall(release, variant: .q8))
-    var info = release.info
-    info.variant = .q8
-    try info.save(to: dir)
-    #expect(AIModelStatus.check(dir) == .found(dir, info: info))
-    #expect(!AIModelStatus.check(dir).needsInstall(release, variant: .q8))
-    // another variant is chosen in the settings
-    #expect(AIModelStatus.check(dir).needsInstall(release, variant: .bf16))
-    #expect(AIModelStatus.check(dir).needsInstall(GenmaiModelReleaseTests.release("0.10.0"), variant: .q8))
-    #expect(!AIModelStatus.check(dir).needsInstall(GenmaiModelReleaseTests.release("0.1.0"), variant: .q8))
-    #expect(AIModelStatus.check(dir.appending(path: "none")).needsInstall(release, variant: .q8))
-    // genmai_model.json without a variant: bf16
+    #expect(status.needsInstall(release))
+    #expect(status.installedSize == nil)
     try release.info.save(to: dir)
-    #expect(!AIModelStatus.check(dir).needsInstall(release, variant: .bf16))
-    #expect(AIModelStatus.check(dir).needsInstall(release, variant: .q8))
+    #expect(AIModelStatus.check(dir) == .found(dir, info: release.info))
+    #expect(AIModelStatus.check(dir).installedSize == .medium)
+    #expect(!AIModelStatus.check(dir).needsInstall(release))
+    // the other model is chosen in the settings
+    #expect(AIModelStatus.check(dir).needsInstall(GenmaiModelReleaseTests.release("0.2.0", size: .small)))
+    #expect(AIModelStatus.check(dir).needsInstall(GenmaiModelReleaseTests.release("0.10.0")))
+    #expect(!AIModelStatus.check(dir).needsInstall(GenmaiModelReleaseTests.release("0.1.0")))
+    #expect(AIModelStatus.check(dir.appending(path: "none")).needsInstall(release))
+    // genmai_model.json of earlier versions: repository subdiox/genmai (= medium), with a variant
+    try Data(
+      #"{"repository": "subdiox/genmai", "revision": "v0.2.0", "variant": "8bit", "version": "0.2.0"}"#.utf8
+    ).write(to: dir.appending(path: GenmaiModelInfo.fileName))
+    #expect(AIModelStatus.check(dir).installedSize == .medium)
+    #expect(!AIModelStatus.check(dir).needsInstall(release))
   }
 }
 
 // MARK: - Model installation
 
 @Suite struct GenmaiModelReleaseTests {
-  static func release(_ version: String) -> GenmaiModelRelease {
+  static func release(_ version: String, size: AIModelSize = .medium) -> GenmaiModelRelease {
     GenmaiModelRelease(
-      info: GenmaiModelInfo(version: version, repository: GenmaiModelRelease.repository, revision: "v\(version)"),
-      files: [])
+      info: GenmaiModelInfo(version: version, repository: size.repository, revision: "v\(version)"), files: [])
   }
 
-  /// Excerpts of the Hugging Face API answers for subdiox/genmai.
+  @Test func modelSizes() {
+    #expect(AIModelSize.small.repository == "subdiox/genmai-90M")
+    #expect(AIModelSize.medium.repository == "subdiox/genmai-310M")
+    #expect(AIModelSize.small.modelName == "genmai-90M")
+    #expect(AIModelSize(repository: "subdiox/genmai-90M") == .small)
+    #expect(AIModelSize(repository: "subdiox/genmai") == .medium)
+    #expect(AIModelSize(repository: "someone/else") == nil)
+  }
+
+  /// Excerpts of the Hugging Face API answers for subdiox/genmai-310M.
   static let refs = Data(
     #"""
     {"tags":[{"name":"v0.1.0","ref":"refs/tags/v0.1.0","targetCommit":"876391d"},
@@ -485,31 +495,28 @@ func conversionRequest() -> ConversionRequest {
     #expect(GenmaiModelRelease.compareVersions("1.0.0", "1.0.0") == .orderedSame)
   }
 
+  /// Only config.json, tokenizer.json and the 8-bit weights are downloaded (not the bf16 or fp32 weights).
   @Test func filesWithChecksums() throws {
     let files = try GenmaiModelRelease.files(Self.tree)
-    #expect(
-      files.map(\.name) == ["config.json", "tokenizer.json", "model-8bit.safetensors", "model-bf16.safetensors"])
+    #expect(files.map(\.name) == ["config.json", "tokenizer.json", "model-8bit.safetensors"])
     #expect(
       files[0] == .init(name: "config.json", size: 921, checksum: .gitBlob("70bb1e6b8b32086b8bccd5dcbb6d84ef3847669e")))
     #expect(
-      files[3]
+      files[2]
         == .init(
-          name: "model-bf16.safetensors", size: 619_034_840,
-          checksum: .sha256("f3caa5b616114699a79d595ff8a88b4ba33e3fffe77ad0bf5cc13dbfed314411")))
+          name: "model-8bit.safetensors", size: 336_000_000,
+          checksum: .sha256("0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef")))
     #expect(throws: AIModelInstallError.self) { try GenmaiModelRelease.files(Data("[]".utf8)) }
     let r = GenmaiModelRelease(
-      info: GenmaiModelInfo(version: "0.1.0", repository: "subdiox/genmai", revision: "v0.1.0"), files: files)
-    #expect(r.variants == [.q8, .bf16])
-    // The fp32 model.safetensors (for transformers) is not downloaded.
-    #expect(r.files(for: .bf16)?.map(\.name) == ["config.json", "tokenizer.json", "model-bf16.safetensors"])
-    #expect(r.downloadSize(for: .bf16) == 921 + 394_106 + 619_034_840)
-    #expect(r.downloadSize(for: .q8) == 921 + 394_106 + 336_000_000)
+      info: GenmaiModelInfo(version: "0.1.0", repository: "subdiox/genmai-310M", revision: "v0.1.0"), files: files)
+    #expect(r.downloadSize == 921 + 394_106 + 336_000_000)
     #expect(
-      r.url(of: files[3]).absoluteString
-        == "https://huggingface.co/subdiox/genmai/resolve/v0.1.0/model-bf16.safetensors")
-    let bf16Only = GenmaiModelRelease(info: r.info, files: files.filter { $0.name != "model-8bit.safetensors" })
-    #expect(bf16Only.variants == [.bf16])
-    #expect(bf16Only.files(for: .q8) == nil)
+      r.url(of: files[2]).absoluteString
+        == "https://huggingface.co/subdiox/genmai-310M/resolve/v0.1.0/model-8bit.safetensors")
+    // a release without 8-bit weights cannot be installed
+    let bf16Only = Data(
+      String(decoding: Self.tree, as: UTF8.self).replacing("model-8bit.safetensors", with: "other.safetensors").utf8)
+    #expect(throws: AIModelInstallError.self) { try GenmaiModelRelease.files(bf16Only) }
   }
 
   @Test func compatibility() {

@@ -105,14 +105,15 @@ public final class WelcomeModel {
 
   public private(set) var aiState = AIState.off
 
-  /// Looks up the newest model release (replaced by tests).
-  var releaseFetcher: @Sendable () async throws -> GenmaiModelRelease = { try await GenmaiModelRelease.latest() }
+  /// Looks up the newest release of a model (replaced by tests).
+  var releaseFetcher: @Sendable (AIModelSize) async throws -> GenmaiModelRelease = {
+    try await GenmaiModelRelease.latest(repository: $0.repository)
+  }
   /// Installs a release (replaced by tests).
   var installer:
-    @Sendable (GenmaiModelRelease, AIModelVariant, URL, @escaping @Sendable (AIModelInstaller.Phase) -> Void)
-      async throws
-      -> Void = { release, variant, directory, progress in
-        try await AIModelInstaller.install(release, variant: variant, to: directory, progress: progress)
+    @Sendable (GenmaiModelRelease, URL, @escaping @Sendable (AIModelInstaller.Phase) -> Void) async throws -> Void =
+      { release, directory, progress in
+        try await AIModelInstaller.install(release, to: directory, progress: progress)
       }
 
   private let client: any GenmaiClientProtocol
@@ -139,7 +140,7 @@ public final class WelcomeModel {
     let settingsURL = settingsURL
     var settings = AIConversionSettings.load(from: settingsURL)
     let directory = settings.resolvedModelDirectory
-    let variant = settings.modelVariant
+    let size = settings.modelSize
     let fetcher = releaseFetcher
     let installer = installer
     // Progress arrives for every network chunk: forward it only when the shown permille changes.
@@ -167,9 +168,9 @@ public final class WelcomeModel {
     }
     task = Task { [weak self] in
       do {
-        let release = try await fetcher()
-        if AIModelStatus.check(directory).needsInstall(release, variant: variant) {
-          try await installer(release, variant, directory, report)
+        let release = try await fetcher(size)
+        if AIModelStatus.check(directory).needsInstall(release) {
+          try await installer(release, directory, report)
         }
         settings.enabled = true
         try settings.save(to: settingsURL)

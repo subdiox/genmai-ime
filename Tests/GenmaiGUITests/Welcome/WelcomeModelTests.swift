@@ -17,7 +17,7 @@ import Testing
   }
 
   nonisolated static let release = GenmaiModelRelease(
-    info: GenmaiModelInfo(version: "0.1.0", repository: "subdiox/genmai", revision: "v0.1.0"),
+    info: GenmaiModelInfo(version: "0.1.0", repository: "subdiox/genmai-310M", revision: "v0.1.0"),
     files: [
       .init(name: "config.json", size: 10, checksum: .gitBlob("00")),
       .init(name: "tokenizer.json", size: 20, checksum: .gitBlob("00")),
@@ -30,9 +30,11 @@ import Testing
     let client = ConfigDialogMockClient()
     let model = WelcomeModel(client: client, settingsURL: dir.settings)
     #expect(model.aiState == .off)
-    model.releaseFetcher = { Self.release }
-    model.installer = { release, variant, directory, progress in
-      #expect(variant == .q8)
+    model.releaseFetcher = { size in
+      #expect(size == .medium)
+      return Self.release
+    }
+    model.installer = { release, directory, progress in
       progress(.downloading(received: 500, total: 1000))
       try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
       for f in AIModelStatus.requiredFiles {
@@ -58,7 +60,7 @@ import Testing
     let dir = TempDir()
     try AIConversionSettings(modelDirectory: dir.model.path).save(to: dir.settings)
     let model = WelcomeModel(client: ConfigDialogMockClient(), settingsURL: dir.settings)
-    model.releaseFetcher = { throw AIModelInstallError.download("release list", status: 503) }
+    model.releaseFetcher = { _ in throw AIModelInstallError.download("release list", status: 503) }
     model.enableAI()
     while model.aiState == .checking { await Task.yield() }
     #expect(model.aiState == .failed("downloading release list failed (HTTP 503)"))
