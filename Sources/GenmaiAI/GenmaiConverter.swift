@@ -25,6 +25,9 @@ public actor GenmaiConverter {
   }
 
   private static let busy = Mutex(BusyStats())
+  /// Whether an MLX model was ever loaded: until then MLX (and Metal) stay untouched, so that a process running the
+  /// Core ML model does not pay for them.
+  private static let mlxUsed = Atomic(false)
 
   public static var busyStats: BusyStats { busy.withLock { $0 } }
 
@@ -61,6 +64,7 @@ public actor GenmaiConverter {
   }
 
   public init(directory: URL = GenmaiConverter.defaultModelDirectory) throws {
+    Self.mlxUsed.store(true, ordering: .relaxed)
     let m = try Self.mlxLock.withLock { _ in try GenmaiModel(directory: directory) }
     model = m
     loadSeconds = m.loadSeconds
@@ -162,8 +166,10 @@ public actor GenmaiConverter {
   }
 
   /// Returns MLX's cached buffers to the system when no converter needs them any more (AI conversion turned
-  /// off: the buffers of the released model end up in the cache).
+  /// off, or another model loaded: the buffers of the released model end up in the cache). Nothing to do if MLX
+  /// was never used.
   public static func releaseUnusedMemory() {
+    guard mlxUsed.load(ordering: .relaxed) else { return }
     withMLX { Memory.clearCache() }
   }
 

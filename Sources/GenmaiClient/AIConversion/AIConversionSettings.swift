@@ -144,12 +144,18 @@ public enum AIModelStatus: Equatable, Sendable {
   case found(URL, info: GenmaiModelInfo?)
   case missing(URL, missingFiles: [String])
 
-  /// The files the model installer writes (besides `genmai_model.json`).
-  public static let requiredFiles = ["config.json", "tokenizer.json", "model.safetensors"]
+  /// The files every model needs; besides them the MLX weights (model.safetensors) or a Core ML model
+  /// (`genmai_coreml.json` + `genmai*.mlmodelc` / `.mlpackage`).
+  public static let requiredFiles = ["config.json", "tokenizer.json"]
 
   public static func check(_ directory: URL) -> AIModelStatus {
-    let missing = requiredFiles.filter {
-      !FileManager.default.fileExists(atPath: directory.appending(path: $0).path)
+    let exists = { (name: String) in FileManager.default.fileExists(atPath: directory.appending(path: name).path) }
+    var missing = requiredFiles.filter { !exists($0) }
+    let coreML =
+      exists(AIModelInstaller.coreMLConfigFileName)
+      && !AIModelInstaller.coreMLModelFiles(in: directory).isEmpty
+    if !coreML && !exists(AIModelInstaller.mlxWeightsFileName) {
+      missing.append(AIModelInstaller.mlxWeightsFileName)
     }
     return missing.isEmpty
       ? .found(directory, info: GenmaiModelInfo.load(from: directory)) : .missing(directory, missingFiles: missing)
@@ -174,16 +180,21 @@ public enum AIModelStatus: Equatable, Sendable {
       || GenmaiModelRelease.compareVersions(info.version, release.info.version) == .orderedAscending
   }
 
-  /// Identifies the installed weights (size and modification date of model.safetensors): changes when the model
-  /// is replaced, so that the IME reloads it.
+  /// Identifies the installed model (size and modification date of model.safetensors and of the Core ML model's
+  /// files): changes when the model is replaced, so that the IME reloads it.
   public static func identity(_ directory: URL) -> String? {
-    guard
-      let attributes = try? FileManager.default.attributesOfItem(
-        atPath: directory.appending(path: "model.safetensors").path),
-      let size = attributes[.size] as? Int, let date = attributes[.modificationDate] as? Date
-    else {
-      return nil
+    let names =
+      [AIModelInstaller.mlxWeightsFileName, AIModelInstaller.coreMLConfigFileName]
+      + AIModelInstaller.coreMLModelFiles(in: directory)
+    let parts = names.compactMap { name -> String? in
+      guard
+        let attributes = try? FileManager.default.attributesOfItem(atPath: directory.appending(path: name).path),
+        let size = attributes[.size] as? Int, let date = attributes[.modificationDate] as? Date
+      else {
+        return nil
+      }
+      return "\(name):\(size)-\(date.timeIntervalSinceReferenceDate)"
     }
-    return "\(size)-\(date.timeIntervalSinceReferenceDate)"
+    return parts.isEmpty ? nil : parts.joined(separator: ",")
   }
 }

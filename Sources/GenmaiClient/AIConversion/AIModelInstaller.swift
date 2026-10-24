@@ -3,14 +3,21 @@
 // The model is not bundled with the IME. There are two models, each in its own Hugging Face repository
 // (`AIModelSize`: medium = subdiox/genmai-310M, the default; small = subdiox/genmai-90M). The config dialog
 // (GenmaiApp) and `genmai-cli install` look up the newest release of the chosen model (`GenmaiModelRelease.latest`:
-// the highest vX.Y.Z tag whose config.json this IME can run) and download its 8-bit weights in the runtime layout
-// GenmaiAI loads (`model-8bit.safetensors`: the linear layers quantized to 8 bits), with config.json and
-// tokenizer.json, each checked against the checksum Hugging Face lists. They are installed into the model directory
-// as model.safetensors / config.json / tokenizer.json with `genmai_model.json` (which model and release is
-// installed). The releases' other weights (`model-bf16.safetensors`, the fp32 `model.safetensors` in the HF layout
+// the highest vX.Y.Z tag whose config.json this IME can run) and download, with config.json and tokenizer.json, each
+// checked against the checksum Hugging Face lists, either
+// - the Core ML model for the Neural Engine, when the release has one (`model-coreml.zip`: `genmai_coreml.json` +
+//   `genmai.mlpackage`, or `genmai_0.mlpackage`, ... for a model split into chunks; preferred: a fraction of the
+//   MLX model's memory). The archive is extracted (ditto) and the packages compiled on installation, and installed
+//   as `genmai*.mlmodelc` + `genmai_coreml.json` (GenmaiAI loads the Core ML model when `genmai_coreml.json` is
+//   there);
+// - or the 8-bit weights in the runtime layout GenmaiAI's MLX model loads (`model-8bit.safetensors`: the linear
+//   layers quantized to 8 bits), installed as model.safetensors.
+// An installation removes the other kind's files. `genmai_model.json` records which model and release is
+// installed. The releases' other weights (`model-bf16.safetensors`, the fp32 `model.safetensors` in the HF layout
 // for transformers) are not downloaded; `genmai-cli prepare` converts an HF checkpoint to bf16 runtime weights
 // locally (`GenmaiSafetensors.prepare`, plain Swift, the same bits as MLX's `astype(bfloat16)`).
 
+import CoreML
 import Foundation
 import GenmaiBase
 
@@ -77,8 +84,14 @@ public struct GenmaiModelInfo: Codable, Equatable, Sendable {
 }
 
 /// A model release on Hugging Face (a vX.Y.Z tag of a model repository), with the files the IME installs (config,
-/// tokenizer, 8-bit weights) and their checksums, as listed by the Hugging Face API.
+/// tokenizer, and the Core ML package or the 8-bit weights) and their checksums, as listed by the Hugging Face API.
 public struct GenmaiModelRelease: Equatable, Sendable {
+  /// What runs the model: Core ML (Neural Engine) or MLX (GPU).
+  public enum Backend: String, Sendable {
+    case coreML
+    case mlx
+  }
+
   public struct File: Equatable, Sendable {
     public enum Checksum: Equatable, Sendable {
       /// LFS files: sha256 of the content.
@@ -100,10 +113,12 @@ public struct GenmaiModelRelease: Equatable, Sendable {
 
   public var info: GenmaiModelInfo
   public var files: [File]
+  public var backend: Backend
 
-  public init(info: GenmaiModelInfo, files: [File]) {
+  public init(info: GenmaiModelInfo, files: [File], backend: Backend = .mlx) {
     self.info = info
     self.files = files
+    self.backend = backend
   }
 
   /// The weights the IME installs: the linear layers quantized to 8 bits (MLX affine, groups of 64), embeddings,
@@ -111,6 +126,11 @@ public struct GenmaiModelRelease: Equatable, Sendable {
   public static let weightsFileName = "model-8bit.safetensors"
   /// The files to download, in this order: config.json, tokenizer.json, the weights.
   public static let fileNames = ["config.json", "tokenizer.json", weightsFileName]
+  /// The Core ML model of a release: an archive of its shapes (`genmai_coreml.json`) and its packages
+  /// (`genmai*.mlpackage`). A Core ML model in a format this IME cannot run must be released under another name.
+  public static let coreMLArchiveName = "model-coreml.zip"
+  /// The Core ML package format this IME runs (`GenmaiCoreMLConfig.supportedFormat` in GenmaiAI).
+  public static let coreMLFormat = "genmai-coreml-1"
 
   public var downloadSize: Int64 { files.reduce(0) { $0 + $1.size } }
 
@@ -122,13 +142,16 @@ public struct GenmaiModelRelease: Equatable, Sendable {
   // MARK: - Hugging Face API
 
   /// The newest release this IME can run: the release tags (vX.Y.Z) newest first, the first whose config.json
-  /// `isCompatible`.
-  public static func latest(repository: String, session: URLSession = .shared) async throws -> GenmaiModelRelease {
+  /// `isCompatible`; with its Core ML model if it has one and `preferCoreML`.
+  public static func latest(repository: String, preferCoreML: Bool = true, session: URLSession = .shared) async throws
+    -> GenmaiModelRelease
+  {
     let refs = try await fetch(apiURL(repository, "refs"), name: "release list", session: session)
     let tags = try releaseTags(refs)
     guard !tags.isEmpty else { throw AIModelInstallError.noRelease(repository) }
     for (version, tag) in tags {
-      let release = try await fetch(repository: repository, tag: tag, version: version, session: session)
+      let release = try await fetch(
+        repository: repository, tag: tag, version: version, preferCoreML: preferCoreML, session: session)
       let config = try await Self.fetch(
         release.url(of: release.files[0]), name: "config.json of \(tag)", session: session)  // files[0]: config.json
       if isCompatible(config: config) {
@@ -138,14 +161,18 @@ public struct GenmaiModelRelease: Equatable, Sendable {
     throw AIModelInstallError.noRelease(repository)
   }
 
-  /// The release with tag `tag` (its file list).
+  /// The release with tag `tag` (its file list): its Core ML model if it has one and `preferCoreML`, else its 8-bit
+  /// weights.
   public static func fetch(
-    repository: String, tag: String, version: String? = nil, session: URLSession = .shared
+    repository: String, tag: String, version: String? = nil, preferCoreML: Bool = true, session: URLSession = .shared
   ) async throws -> GenmaiModelRelease {
     let tree = try await fetch(apiURL(repository, "tree/\(tag)"), name: "file list of \(tag)", session: session)
-    let version = version ?? Self.version(ofTag: tag) ?? tag
-    return GenmaiModelRelease(
-      info: GenmaiModelInfo(version: version, repository: repository, revision: tag), files: try files(tree))
+    let info = GenmaiModelInfo(
+      version: version ?? Self.version(ofTag: tag) ?? tag, repository: repository, revision: tag)
+    if preferCoreML, let files = try coreMLFiles(tree) {
+      return GenmaiModelRelease(info: info, files: files, backend: .coreML)
+    }
+    return GenmaiModelRelease(info: info, files: try files(tree))
   }
 
   static func apiURL(_ repository: String, _ path: String) -> URL {
@@ -195,24 +222,53 @@ public struct GenmaiModelRelease: Equatable, Sendable {
     return releases.sorted { compareVersions($0.version, $1.version) == .orderedDescending }
   }
 
-  /// The files to install from a `/api/models/<repo>/tree/<rev>` response (`fileNames`).
+  /// The MLX files to install from a `/api/models/<repo>/tree/<rev>` response (`fileNames`).
   static func files(_ tree: Data) throws -> [File] {
+    let entries = try fileEntries(tree)
+    return try fileNames.map { name in
+      guard let e = entries[name] else { throw AIModelInstallError.badResponse("\(name) is missing in the release") }
+      return try file(name, e)
+    }
+  }
+
+  /// The Core ML files to install from a tree response: config.json, tokenizer.json and `coreMLArchiveName`; nil if
+  /// the release has no Core ML model.
+  static func coreMLFiles(_ tree: Data) throws -> [File]? {
+    let entries = try fileEntries(tree)
+    guard entries[coreMLArchiveName] != nil else { return nil }
+    return try ["config.json", "tokenizer.json", coreMLArchiveName].map { name in
+      guard let e = entries[name] else { throw AIModelInstallError.badResponse("\(name) is missing in the release") }
+      return try file(name, e)
+    }
+  }
+
+  /// The files (not directories) of a tree response by path.
+  private static func fileEntries(_ tree: Data) throws -> [String: [String: Any]] {
     guard let entries = try JSONSerialization.jsonObject(with: tree) as? [[String: Any]] else {
       throw AIModelInstallError.badResponse("tree")
     }
-    func entry(_ name: String) -> [String: Any]? {
-      entries.first { $0["path"] as? String == name && $0["type"] as? String == "file" }
+    var files: [String: [String: Any]] = [:]
+    for e in entries where e["type"] as? String == "file" {
+      if let path = e["path"] as? String { files[path] = e }
     }
-    return try fileNames.map { name in
-      guard let e = entry(name), let size = (e["size"] as? NSNumber)?.int64Value else {
-        throw AIModelInstallError.badResponse("\(name) is missing in the release")
-      }
-      if let lfs = e["lfs"] as? [String: Any], let sha = lfs["oid"] as? String {
-        return File(name: name, size: (lfs["size"] as? NSNumber)?.int64Value ?? size, checksum: .sha256(sha))
-      }
-      guard let oid = e["oid"] as? String else { throw AIModelInstallError.badResponse("no checksum for \(name)") }
-      return File(name: name, size: size, checksum: .gitBlob(oid))
+    return files
+  }
+
+  private static func file(_ name: String, _ e: [String: Any]) throws -> File {
+    guard let size = (e["size"] as? NSNumber)?.int64Value else {
+      throw AIModelInstallError.badResponse("no size for \(name)")
     }
+    if let lfs = e["lfs"] as? [String: Any], let sha = lfs["oid"] as? String {
+      return File(name: name, size: (lfs["size"] as? NSNumber)?.int64Value ?? size, checksum: .sha256(sha))
+    }
+    guard let oid = e["oid"] as? String else { throw AIModelInstallError.badResponse("no checksum for \(name)") }
+    return File(name: name, size: size, checksum: .gitBlob(oid))
+  }
+
+  /// Whether this IME runs a Core ML package with this `genmai_coreml.json`.
+  public static func isSupportedCoreML(config: Data) -> Bool {
+    guard let json = try? JSONSerialization.jsonObject(with: config) as? [String: Any] else { return false }
+    return json["format"] as? String == coreMLFormat
   }
 
   /// Whether this IME can run a model with this config.json: GPT-2 (the decoder in GenmaiAI) with the zenzlc
@@ -297,37 +353,111 @@ public enum AIModelInstaller {
     guard GenmaiModelRelease.isCompatible(config: try Data(contentsOf: downloads.appending(path: "config.json"))) else {
       throw AIModelInstallError.badModel("config.json of \(release.info.revision) is not a model this IME can run")
     }
-    let weights = downloads.appending(path: GenmaiModelRelease.weightsFileName)
-    guard try GenmaiSafetensors.format(of: weights) == GenmaiSafetensors.quantizedFormat else {
-      throw AIModelInstallError.badModel("\(GenmaiModelRelease.weightsFileName) is not in the runtime layout")
-    }
     try Task.checkCancellation()
-    progress(.installing)
     try fm.createDirectory(at: directory, withIntermediateDirectories: true)
     let staging = directory.appending(path: ".install-\(UUID().uuidString)", directoryHint: .isDirectory)
     try fm.createDirectory(at: staging, withIntermediateDirectories: false)
     defer { try? fm.removeItem(at: staging) }
-    try fm.moveItem(at: weights, to: staging.appending(path: "model.safetensors"))
+    // The weights / compiled model next to last and genmai_model.json last: a directory with the new model always
+    // has the matching config and tokenizer. The other kind's files go after that.
+    let names: [String]
+    let stale: [String]
+    switch release.backend {
+    case .mlx:
+      let weights = downloads.appending(path: GenmaiModelRelease.weightsFileName)
+      guard try GenmaiSafetensors.format(of: weights) == GenmaiSafetensors.quantizedFormat else {
+        throw AIModelInstallError.badModel("\(GenmaiModelRelease.weightsFileName) is not in the runtime layout")
+      }
+      progress(.installing)
+      try fm.moveItem(at: weights, to: staging.appending(path: mlxWeightsFileName))
+      names = ["config.json", "tokenizer.json", mlxWeightsFileName]
+      stale = [coreMLConfigFileName] + coreMLModelFiles(in: directory)
+    case .coreML:
+      let extracted = downloads.appending(path: "coreml", directoryHint: .isDirectory)
+      try? fm.removeItem(at: extracted)
+      try await unzip(downloads.appending(path: GenmaiModelRelease.coreMLArchiveName), to: extracted)
+      let config = extracted.appending(path: coreMLConfigFileName)
+      guard let data = try? Data(contentsOf: config), GenmaiModelRelease.isSupportedCoreML(config: data) else {
+        throw AIModelInstallError.badModel("\(GenmaiModelRelease.coreMLArchiveName) is not a model this IME runs")
+      }
+      let packages = coreMLModelFiles(in: extracted).filter { $0.hasSuffix(".mlpackage") }
+      guard !packages.isEmpty else {
+        throw AIModelInstallError.badModel("no Core ML package in \(GenmaiModelRelease.coreMLArchiveName)")
+      }
+      progress(.installing)
+      // compiling takes seconds; the Neural Engine compiles each once more on the first load (cached by the system)
+      var compiledNames: [String] = []
+      for package in packages {
+        let name = String(package.dropLast(".mlpackage".count)) + ".mlmodelc"
+        let compiled = try await MLModel.compileModel(at: extracted.appending(path: package))
+        defer { try? fm.removeItem(at: compiled) }
+        try fm.moveItem(at: compiled, to: staging.appending(path: name))
+        compiledNames.append(name)
+      }
+      try fm.moveItem(at: config, to: staging.appending(path: coreMLConfigFileName))
+      // genmai_coreml.json makes GenmaiAI load the Core ML model: after the compiled models
+      names = ["config.json", "tokenizer.json"] + compiledNames + [coreMLConfigFileName]
+      stale = [mlxWeightsFileName] + coreMLModelFiles(in: directory).filter { !compiledNames.contains($0) }
+    }
     for name in ["config.json", "tokenizer.json"] {
       try fm.moveItem(at: downloads.appending(path: name), to: staging.appending(path: name))
     }
     try release.info.save(to: staging)
     try Task.checkCancellation()
-    // The weights last: a directory with the new weights always has the matching config and tokenizer.
-    for name in ["config.json", "tokenizer.json", "model.safetensors", GenmaiModelInfo.fileName] {
+    for name in names + [GenmaiModelInfo.fileName] {
       try replace(directory.appending(path: name), with: staging.appending(path: name))
+    }
+    for name in stale {
+      try? fm.removeItem(at: directory.appending(path: name))
     }
     try? fm.removeItem(at: downloads)
   }
 
-  /// The files an installation writes (and `uninstall` removes).
-  static let installedFiles = ["config.json", "tokenizer.json", "model.safetensors", GenmaiModelInfo.fileName]
+  /// The model files in the model directory: MLX weights, or the Core ML model (`genmai*.mlmodelc`, or packages)
+  /// with its shapes (`GenmaiModel` / `GenmaiCoreMLModel` in GenmaiAI).
+  public static let mlxWeightsFileName = "model.safetensors"
+  public static let coreMLConfigFileName = "genmai_coreml.json"
+
+  /// Extracts the zip archive `archive` into `directory` with ditto (Foundation has no zip API).
+  static func unzip(_ archive: URL, to directory: URL) async throws {
+    let process = Process()
+    process.executableURL = URL(filePath: "/usr/bin/ditto")
+    process.arguments = ["-x", "-k", archive.path(percentEncoded: false), directory.path(percentEncoded: false)]
+    let output = Pipe()
+    process.standardOutput = output
+    process.standardError = output
+    let status: Int32 = await withCheckedContinuation { continuation in
+      process.terminationHandler = { continuation.resume(returning: $0.terminationStatus) }
+      do {
+        try process.run()
+      } catch {
+        process.terminationHandler = nil
+        continuation.resume(returning: -1)
+      }
+    }
+    guard status == 0 else {
+      let message = String(decoding: output.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
+      throw AIModelInstallError.badModel("cannot extract \(archive.lastPathComponent): \(message)")
+    }
+  }
+
+  /// The Core ML models in `directory` (`genmai*.mlmodelc` / `genmai*.mlpackage`).
+  public static func coreMLModelFiles(in directory: URL) -> [String] {
+    let names = (try? FileManager.default.contentsOfDirectory(atPath: directory.path)) ?? []
+    return names.filter { $0.hasPrefix("genmai") && ($0.hasSuffix(".mlmodelc") || $0.hasSuffix(".mlpackage")) }
+      .sorted()
+  }
+
+  /// The files an installation writes (and `uninstall` removes), besides the Core ML models.
+  static let installedFiles = [
+    "config.json", "tokenizer.json", mlxWeightsFileName, coreMLConfigFileName, GenmaiModelInfo.fileName,
+  ]
 
   /// Removes the model from `directory`: only the model's own files; the directory itself only if nothing else
   /// is left in it. Also drops downloads kept from an interrupted installation.
   public static func uninstall(from directory: URL, cacheDirectory: URL = AIModelInstaller.cacheDirectory) throws {
     let fm = FileManager.default
-    for name in installedFiles {
+    for name in installedFiles + coreMLModelFiles(in: directory) {
       let url = directory.appending(path: name)
       if fm.fileExists(atPath: url.path) {
         try fm.removeItem(at: url)

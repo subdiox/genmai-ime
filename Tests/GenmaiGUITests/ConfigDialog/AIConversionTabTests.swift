@@ -58,7 +58,7 @@ import Testing
     model.aiValues.modelDirectory = dir.url.path
     #expect(!model.aiModelStatus.isFound)
     #expect(AIStrings.modelStatus(model.aiModelStatus, language: .english) == "No model is installed.")
-    for f in AIModelStatus.requiredFiles {
+    for f in AIModelStatus.requiredFiles + [AIModelInstaller.mlxWeightsFileName] {
       try Data().write(to: dir.url.appending(path: f))
     }
     model.refreshAIModelStatus()
@@ -125,7 +125,7 @@ import Testing
       #expect(release == Self.release)
       progress(.downloading(received: 500, total: 1000))
       progress(.installing)
-      for f in AIModelStatus.requiredFiles {
+      for f in AIModelStatus.requiredFiles + [AIModelInstaller.mlxWeightsFileName] {
         try Data().write(to: directory.appending(path: f))
       }
       try release.info.save(to: directory)
@@ -177,7 +177,7 @@ import Testing
     let modelDir = dir.url.appending(path: "model")
     try FileManager.default.createDirectory(at: modelDir, withIntermediateDirectories: true)
     model.aiValues.modelDirectory = modelDir.path
-    for f in AIModelStatus.requiredFiles {
+    for f in AIModelStatus.requiredFiles + [AIModelInstaller.mlxWeightsFileName] {
       try Data().write(to: modelDir.appending(path: f))
     }
     try Self.release.info.save(to: modelDir)
@@ -195,7 +195,7 @@ import Testing
 
     // an otherwise empty model directory is removed too
     try FileManager.default.removeItem(at: modelDir.appending(path: "notes.txt"))
-    for f in AIModelStatus.requiredFiles {
+    for f in AIModelStatus.requiredFiles + [AIModelInstaller.mlxWeightsFileName] {
       try Data().write(to: modelDir.appending(path: f))
     }
     model.refreshAIModelStatus()

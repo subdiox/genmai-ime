@@ -37,7 +37,7 @@ import Testing
     model.installer = { release, directory, progress in
       progress(.downloading(received: 500, total: 1000))
       try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-      for f in AIModelStatus.requiredFiles {
+      for f in AIModelStatus.requiredFiles + [AIModelInstaller.mlxWeightsFileName] {
         try Data().write(to: directory.appending(path: f))
       }
     }

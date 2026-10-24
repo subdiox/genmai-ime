@@ -393,6 +393,7 @@ public final class GenmaiAugmenter: ConversionAugmenter {
     func load(directory: URL, options: GenmaiOptions) async throws {
       converter = nil
       incrementals = []
+      GenmaiConverter.releaseUnusedMemory()  // the previous model's buffers (MLX)
       let c = try await GenmaiConverter.load(directory: directory)
       try Task.checkCancellation()
       await c.warmup()

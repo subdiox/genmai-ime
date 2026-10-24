@@ -91,11 +91,14 @@ The model is not part of the app. There are two, picked under **Model** in the s
 | Medium: [genmai-310M](https://huggingface.co/subdiox/genmai-310M) (default) | 0.34 GB | 94 % / 93 % | 97 / 139 ms |
 | Small: [genmai-90M](https://huggingface.co/subdiox/genmai-90M) | 0.10 GB | 93 % / 87 % | 55 / 70 ms |
 
-(8-bit weights, one conversion of the whole reading without the IME's background conversion, M4 Pro.) The tab looks
-up the latest release of the chosen model on Hugging Face and offers **Download**: it downloads the model (8-bit
-quantized; checked against the checksums Hugging Face lists) and installs it into
+(8-bit weights on MLX, one conversion of the whole reading without the IME's background conversion, M4 Pro.) The tab
+looks up the latest release of the chosen model on Hugging Face and offers **Download**: it downloads the model
+(checked against the checksums Hugging Face lists) and installs it into
 `~/Library/Application Support/Genmai/model`. When a newer model is released, the same place offers **Update**;
-**Remove Model…** deletes it. From the command line:
+**Remove Model…** deletes it. Releases that include a Core ML version of the model (v0.1.2 of both models) run on
+the Neural Engine: about 50–140 MB of memory instead of 1–2.7 GB with MLX on the GPU, at a somewhat slower conversion
+(genmai-310M, conversion key while typing: median 30 / 39 ms vs. 19 / 21 ms, daily / AJIMEE). The first use after
+the download compiles the model for the Neural Engine (about 20 s). From the command line:
 
 ```sh
 Tools/prepare_genmai_model.sh [--size small]     # = genmai-cli install [--size small]

@@ -10,6 +10,11 @@
 // Beam reordering does not copy the cache: each row attends to its ancestors' output slots through `smask`. The
 // state keeps the last prompt, so a prompt that shares a token prefix with it only prefills the new tail.
 //
+// A large model is split into `chunks` packages `genmai_0.mlpackage` ... (a package with the weights of more than
+// ~12 layers of genmai-310M does not load on the Neural Engine), each with the same two functions for its layers
+// and its own state; chunk 0 takes the tokens, the others the previous chunk's `hidden` output, and the last one
+// returns the log-probs.
+//
 // The B rows hold one search, so the contexts of a batch are searched one after another (`GenmaiModel` decodes
 // them as one batch); `GenmaiSearchBound` stops those that cannot change the result of an `extend`. Drafts are
 // verified by prefilling them after the prompt: the accepted tokens' KV stays in the prompt slots.
@@ -29,6 +34,8 @@ public struct GenmaiCoreMLConfig: Sendable, Codable {
   public var rows: Int
   /// C: prompt tokens per prefill call.
   public var prefillChunk: Int
+  /// Packages the layers are split into (nil: 1, `genmai.mlpackage`).
+  public var chunks: Int?
 
   enum CodingKeys: String, CodingKey {
     case format
@@ -36,12 +43,17 @@ public struct GenmaiCoreMLConfig: Sendable, Codable {
     case outputSteps = "output_steps"
     case rows
     case prefillChunk = "prefill_chunk"
+    case chunks
+  }
+
+  /// The packages' base names: "genmai", or "genmai_0", "genmai_1", ...
+  public var packageNames: [String] {
+    let n = chunks ?? 1
+    return n == 1 ? ["genmai"] : (0..<n).map { "genmai_\($0)" }
   }
 }
 
 public final class GenmaiCoreMLModel: GenmaiDecoder {
-  public static let fileName = "genmai.mlpackage"
-  public static let compiledFileName = "genmai.mlmodelc"
   public static let configFileName = "genmai_coreml.json"
 
   public let config: GenmaiCoreMLConfig
@@ -57,9 +69,10 @@ public final class GenmaiCoreMLModel: GenmaiDecoder {
   public private(set) var prefillSeconds = 0.0
   public private(set) var decodeSeconds = 0.0
 
-  private let prefillModel: MLModel
-  private let decodeModel: MLModel
-  private let state: MLState
+  /// Per chunk: the two functions and the state they share.
+  private let prefillModels: [MLModel]
+  private let decodeModels: [MLModel]
+  private let states: [MLState]
   private let eos: Int32
   private let vocabSize: Int
   /// The tokens whose KV is in the prompt slots [0, cached.count).
@@ -71,6 +84,7 @@ public final class GenmaiCoreMLModel: GenmaiDecoder {
   private let decodeTok, decodePos, decodePMask, decodeSMask: MLMultiArray
   /// Per decode step t: the inputs with `wsel` / `keep` placing the rows at slots t * B + r.
   private let decodeInputs: [MLDictionaryFeatureProvider]
+  private let decodeSelections: [(wsel: MLMultiArray, keep: MLMultiArray)]
 
   private static let masked = Float16(-1e4)
 
@@ -84,38 +98,42 @@ public final class GenmaiCoreMLModel: GenmaiDecoder {
     guard config.format == GenmaiCoreMLConfig.supportedFormat else {
       throw GenmaiError.badModel("unsupported Core ML format \(config.format)")
     }
-    var modelURL = directory.appending(path: compiledFileName)
-    if !FileManager.default.fileExists(atPath: modelURL.path) {
-      let package = directory.appending(path: fileName)
-      guard FileManager.default.fileExists(atPath: package.path) else { throw GenmaiError.missingFile(package) }
-      modelURL = try await MLModel.compileModel(at: package)
-    }
-    func function(_ name: String) throws -> MLModel {
-      let c = MLModelConfiguration()
-      c.computeUnits = computeUnits
-      c.functionName = name
-      return try MLModel(contentsOf: modelURL, configuration: c)
+    var prefill: [MLModel] = []
+    var decode: [MLModel] = []
+    for name in config.packageNames {
+      var modelURL = directory.appending(path: "\(name).mlmodelc")
+      if !FileManager.default.fileExists(atPath: modelURL.path) {
+        let package = directory.appending(path: "\(name).mlpackage")
+        guard FileManager.default.fileExists(atPath: package.path) else { throw GenmaiError.missingFile(package) }
+        modelURL = try await MLModel.compileModel(at: package)
+      }
+      func function(_ name: String) throws -> MLModel {
+        let c = MLModelConfiguration()
+        c.computeUnits = computeUnits
+        c.functionName = name
+        return try MLModel(contentsOf: modelURL, configuration: c)
+      }
+      prefill.append(try function("prefill"))
+      decode.append(try function("decode"))
     }
     let tokenizer = try GenmaiTokenizer(url: directory.appending(path: "tokenizer.json"))
     let modelConfig = try JSONDecoder().decode(
       GenmaiConfig.self, from: Data(contentsOf: directory.appending(path: "config.json")))
-    let prefill = try function("prefill")
-    let decode = try function("decode")
     return try GenmaiCoreMLModel(
       config: config, tokenizer: tokenizer, vocabSize: modelConfig.vocabSize, prefill: prefill, decode: decode,
       loadSeconds: Date().timeIntervalSince(start))
   }
 
   private init(
-    config: GenmaiCoreMLConfig, tokenizer: GenmaiTokenizer, vocabSize: Int, prefill: MLModel, decode: MLModel,
+    config: GenmaiCoreMLConfig, tokenizer: GenmaiTokenizer, vocabSize: Int, prefill: [MLModel], decode: [MLModel],
     loadSeconds: Double
   ) throws {
     self.config = config
     self.tokenizer = tokenizer
     self.vocabSize = vocabSize
-    self.prefillModel = prefill
-    self.decodeModel = decode
-    self.state = decode.makeState()
+    self.prefillModels = prefill
+    self.decodeModels = decode
+    self.states = decode.map { $0.makeState() }
     self.eos = tokenizer.eosTokenID
     self.loadSeconds = loadSeconds
     let b = config.rows
@@ -134,6 +152,7 @@ public final class GenmaiCoreMLModel: GenmaiDecoder {
     decodePMask = try Self.array([1, p], .float16)
     decodeSMask = try Self.array([b, slots], .float16)
     var inputs: [MLDictionaryFeatureProvider] = []
+    var selections: [(wsel: MLMultiArray, keep: MLMultiArray)] = []
     for t in 0..<config.outputSteps {
       var wsel = [Float16](repeating: 0, count: slots * b)
       var keep = [Float16](repeating: 1, count: slots)
@@ -145,6 +164,7 @@ public final class GenmaiCoreMLModel: GenmaiDecoder {
       let keepArray = try Self.array([slots, 1], .float16)
       Self.write(wsel, to: wselArray)
       Self.write(keep, to: keepArray)
+      selections.append((wselArray, keepArray))
       inputs.append(
         try MLDictionaryFeatureProvider(dictionary: [
           "tok": decodeTok, "pos": decodePos, "wsel": wselArray, "keep": keepArray, "pmask": decodePMask,
@@ -152,6 +172,7 @@ public final class GenmaiCoreMLModel: GenmaiDecoder {
         ]))
     }
     decodeInputs = inputs
+    decodeSelections = selections
   }
 
   private static func array(_ shape: [Int], _ type: MLMultiArrayDataType) throws -> MLMultiArray {
@@ -215,7 +236,10 @@ public final class GenmaiCoreMLModel: GenmaiDecoder {
       Self.write(pos, to: prefillPos)
       Self.write([Int32(s0)], to: prefillStart)
       Self.write(mask, to: prefillMask)
-      let lp = try Self.logProbs(prefillModel.prediction(from: prefillInput, using: state))
+      let lp = try Self.logProbs(
+        run(prefillModels, prefillInput) {
+          ["hidden": $0, "start": self.prefillStart, "mask": self.prefillMask]
+        })
       if let from = outputsFrom, max(s, from) < min(n, s0 + c) {
         for slot in max(s, from)..<min(n, s0 + c) {
           rows.append(Array(lp[((slot - s0) * vocabSize)..<((slot - s0 + 1) * vocabSize)]))
@@ -235,7 +259,31 @@ public final class GenmaiCoreMLModel: GenmaiDecoder {
     Self.write(toks, to: decodeTok)
     Self.write([Int32(position)], to: decodePos)
     Self.write(smask, to: decodeSMask)
-    return try Self.logProbs(decodeModel.prediction(from: decodeInputs[step], using: state))
+    let selection = decodeSelections[step]
+    return try Self.logProbs(
+      run(decodeModels, decodeInputs[step]) {
+        [
+          "hidden": $0, "wsel": selection.wsel, "keep": selection.keep, "pmask": self.decodePMask,
+          "smask": self.decodeSMask,
+        ]
+      })
+  }
+
+  /// Runs `models` (one per chunk, each with its state): the first on `input`, each later one on the previous
+  /// one's `hidden` output (`next` builds its inputs).
+  private func run(
+    _ models: [MLModel], _ input: any MLFeatureProvider, next: (MLMultiArray) -> [String: MLMultiArray]
+  ) throws -> any MLFeatureProvider {
+    var out = try models[0].prediction(from: input, using: states[0])
+    for k in models.indices.dropFirst() {
+      guard let hidden = out.featureValue(for: "hidden")?.multiArrayValue else {
+        throw GenmaiError.badModel("no hidden output in chunk \(k - 1)")
+      }
+      out = try models[k].prediction(
+        from: try MLDictionaryFeatureProvider(dictionary: next(hidden).mapValues { MLFeatureValue(multiArray: $0) }),
+        using: states[k])
+    }
+    return out
   }
 
   // MARK: - Beam search

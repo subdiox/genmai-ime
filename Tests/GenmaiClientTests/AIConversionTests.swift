@@ -434,12 +434,36 @@ func conversionRequest() -> ConversionRequest {
     }
   }
 
+  @Test func coreMLModelStatus() throws {
+    let dir = FileManager.default.temporaryDirectory.appending(path: "ai-model-status-\(UUID())")
+    try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: dir) }
+    for f in AIModelStatus.requiredFiles + [AIModelInstaller.coreMLConfigFileName] {
+      try Data().write(to: dir.appending(path: f))
+    }
+    // genmai_coreml.json without a model
+    #expect(!AIModelStatus.check(dir).isFound)
+    try FileManager.default.createDirectory(
+      at: dir.appending(path: "genmai_0.mlmodelc"), withIntermediateDirectories: false)
+    #expect(AIModelStatus.check(dir).isFound)
+    #expect(AIModelInstaller.coreMLModelFiles(in: dir) == ["genmai_0.mlmodelc"])
+    let identity = AIModelStatus.identity(dir)
+    #expect(identity != nil)
+    try FileManager.default.createDirectory(
+      at: dir.appending(path: "genmai_1.mlmodelc"), withIntermediateDirectories: false)
+    #expect(AIModelStatus.identity(dir) != identity)
+    try AIModelInstaller.uninstall(from: dir, cacheDirectory: dir.appending(path: "cache"))
+    #expect(!FileManager.default.fileExists(atPath: dir.path))
+  }
+
   @Test func modelStatus() throws {
     let dir = FileManager.default.temporaryDirectory.appending(path: "ai-model-status-\(UUID())")
     try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
     defer { try? FileManager.default.removeItem(at: dir) }
-    #expect(AIModelStatus.check(dir) == .missing(dir, missingFiles: AIModelStatus.requiredFiles))
-    for f in AIModelStatus.requiredFiles {
+    #expect(
+      AIModelStatus.check(dir)
+        == .missing(dir, missingFiles: AIModelStatus.requiredFiles + [AIModelInstaller.mlxWeightsFileName]))
+    for f in AIModelStatus.requiredFiles + [AIModelInstaller.mlxWeightsFileName] {
       try Data().write(to: dir.appending(path: f))
     }
     let status = AIModelStatus.check(dir)
@@ -533,6 +557,55 @@ func conversionRequest() -> ConversionRequest {
     let bf16Only = Data(
       String(decoding: Self.tree, as: UTF8.self).replacing("model-8bit.safetensors", with: "other.safetensors").utf8)
     #expect(throws: AIModelInstallError.self) { try GenmaiModelRelease.files(bf16Only) }
+  }
+
+  /// A release tree with a Core ML model.
+  static let coreMLTree = Data(
+    String(decoding: tree.dropLast(), as: UTF8.self).appending(
+      #"""
+      ,{"type":"file","oid":"z1","size":282924021,"lfs":{"oid":"bb","size":282924021,"pointerSize":134},"path":"model-coreml.zip"}]
+      """#
+    ).utf8)
+
+  @Test func coreMLFiles() throws {
+    #expect(try GenmaiModelRelease.coreMLFiles(Self.tree) == nil)
+    let files = try #require(try GenmaiModelRelease.coreMLFiles(Self.coreMLTree))
+    #expect(files.map(\.name) == ["config.json", "tokenizer.json", "model-coreml.zip"])
+    #expect(files[2] == .init(name: "model-coreml.zip", size: 282_924_021, checksum: .sha256("bb")))
+    #expect(GenmaiModelRelease.isSupportedCoreML(config: Data(#"{"format": "genmai-coreml-1", "chunks": 2}"#.utf8)))
+    #expect(!GenmaiModelRelease.isSupportedCoreML(config: Data(#"{"format": "genmai-coreml-2"}"#.utf8)))
+  }
+
+  /// A Core ML archive is extracted and its packages are found.
+  @Test func unzipCoreMLArchive() async throws {
+    let dir = FileManager.default.temporaryDirectory.appending(path: "coreml-zip-\(UUID())")
+    defer { try? FileManager.default.removeItem(at: dir) }
+    let source = dir.appending(path: "source")
+    try FileManager.default.createDirectory(
+      at: source.appending(path: "genmai_0.mlpackage"), withIntermediateDirectories: true)
+    try Data("{}".utf8).write(to: source.appending(path: "genmai_0.mlpackage/Manifest.json"))
+    try Data(#"{"format": "genmai-coreml-1"}"#.utf8).write(to: source.appending(path: "genmai_coreml.json"))
+    let archive = dir.appending(path: "model-coreml.zip")
+    let zip = Process()
+    zip.executableURL = URL(filePath: "/usr/bin/ditto")
+    zip.arguments = ["-c", "-k", source.path, archive.path]
+    let status: Int32 = try await withCheckedThrowingContinuation { continuation in
+      zip.terminationHandler = { continuation.resume(returning: $0.terminationStatus) }
+      do {
+        try zip.run()
+      } catch {
+        zip.terminationHandler = nil
+        continuation.resume(throwing: error)
+      }
+    }
+    #expect(status == 0)
+    let out = dir.appending(path: "out")
+    try await AIModelInstaller.unzip(archive, to: out)
+    #expect(AIModelInstaller.coreMLModelFiles(in: out) == ["genmai_0.mlpackage"])
+    #expect(FileManager.default.fileExists(atPath: out.appending(path: "genmai_coreml.json").path))
+    await #expect(throws: AIModelInstallError.self) {
+      try await AIModelInstaller.unzip(dir.appending(path: "missing.zip"), to: out)
+    }
   }
 
   @Test func compatibility() {

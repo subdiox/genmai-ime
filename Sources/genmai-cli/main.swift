@@ -1,8 +1,9 @@
 // genmai-cli: model preparation, conversion, evaluation and parity checks for GenmaiAI.
 //
-//   genmai-cli install [--size small|medium] [--tag vX.Y.Z] [destination dir]
+//   genmai-cli install [--size small|medium] [--tag vX.Y.Z] [--mlx] [destination dir]
 //       downloads the newest model release this IME can run (or the given tag) from Hugging Face and installs it
-//       like the config dialog does (8-bit weights; default: medium, into the IME's model directory)
+//       like the config dialog does (its Core ML model if it has one, else (or with --mlx) the 8-bit MLX weights;
+//       default: medium, into the IME's model directory)
 //   genmai-cli prepare <source model dir> <destination dir>
 //       writes the compact runtime model (bf16, Conv1D weights as (out, in)) + tokenizer.json, config.json for a
 //       local HF model directory (e.g. a checkpoint that is not a release)
@@ -205,23 +206,24 @@ func prefix(_ s: String, _ n: Int) -> String {
 switch command {
 case "install":
   let tag = option("--tag")
+  let preferCoreML = !flag("--mlx")
   guard let size = AIModelSize(rawValue: option("--size") ?? AIModelSize.default.rawValue) else {
     fail("--size must be one of \(AIModelSize.allCases.map(\.rawValue).joined(separator: ", "))")
   }
   let release: GenmaiModelRelease
   do {
     if let tag {
-      release = try await GenmaiModelRelease.fetch(repository: size.repository, tag: tag)
+      release = try await GenmaiModelRelease.fetch(repository: size.repository, tag: tag, preferCoreML: preferCoreML)
     } else {
-      release = try await GenmaiModelRelease.latest(repository: size.repository)
+      release = try await GenmaiModelRelease.latest(repository: size.repository, preferCoreML: preferCoreML)
     }
   } catch {
     fail("cannot look up the model release: \(error)")
   }
   let dst = args.first.map { URL(filePath: $0) } ?? GenmaiConverter.defaultModelDirectory
   print(
-    "installing \(size.modelName) \(release.info.version) (\(release.info.repository)@\(release.info.revision))"
-      + " into \(dst.path)")
+    "installing \(size.modelName) \(release.info.version) (\(release.info.repository)@\(release.info.revision),"
+      + " \(release.backend == .coreML ? "Core ML" : "MLX")) into \(dst.path)")
   let last = Mutex<String>("")
   do {
     let t = Date()
@@ -242,7 +244,7 @@ case "install":
       if changed { print(line) }
     }
     print(String(format: "installed in %.1f s", Date().timeIntervalSince(t)))
-    let c = try GenmaiConverter(directory: dst)
+    let c = try await GenmaiConverter.load(directory: dst)
     print("check:", try await c.convert("きょうはいいてんきですね").first?.text ?? "-")
   } catch {
     fail("install failed: \(error)")
