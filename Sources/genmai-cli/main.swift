@@ -21,6 +21,8 @@
 //       draft-and-verify decoding (GenmaiOptions.draft).
 //   genmai-cli compare <ours.json> <reference.json>
 //       per-item parity: identical top-1 / identical n-best (texts) / max score difference.
+//   genmai-cli dict-hints [--data FILE] [--jobs N] <in.jsonl> <out.jsonl>
+//       Mozc's conversion and dictionary proper nouns for each reading (AIDictionaryHinter), for training data.
 //   genmai-cli session-eval [--timeout-ms N] [--settle none|chunks|idle] [--errors] [--out-dir DIR] <anco set.json>...
 //       types the readings through the IME session layer (SessionHandlerBackend) with AI conversion off and on
 //       and reports top-1 accuracy and conversion-key latency (see SessionEval.swift).
@@ -31,6 +33,7 @@
 import CoreML
 import Foundation
 import GenmaiAI
+import GenmaiBase
 import GenmaiClient
 import GenmaiCore
 import Synchronization
@@ -466,6 +469,65 @@ case "rescore":
     }
     print(line)
   }
+
+case "dict-hints":
+  // dict-hints [--data FILE] [--jobs N] <in.jsonl> <out.jsonl>: the dictionary hints (AIDictionaryHinter) of each
+  // line's "reading", for training data: {"id", "reading", "h1" (Mozc's conversion), "segments", "proper_nouns"}
+  // per line, in input order. Default data set: Data/genmai_extended.data (what the IME bundles).
+  let dataPath =
+    option("--data")
+    ?? URL(filePath: OssDataManager.defaultDataPath).deletingLastPathComponent().appending(path: "genmai_extended.data")
+    .path
+  let jobs = option("--jobs").flatMap(Int.init) ?? ProcessInfo.processInfo.activeProcessorCount
+  guard args.count == 2 else { fail("usage: genmai-cli dict-hints [--data FILE] [--jobs N] <in.jsonl> <out.jsonl>") }
+  var rows: [[String: Any]] = []
+  for line in try String(contentsOf: URL(filePath: args[0]), encoding: .utf8).split(whereSeparator: \.isNewline) {
+    guard let row = try JSONSerialization.jsonObject(with: Data(line.utf8)) as? [String: Any], row["reading"] is String
+    else { fail("no \"reading\" in: \(line)") }
+    rows.append(row)
+  }
+  let readings = rows.compactMap { $0["reading"] as? String }
+  // a fresh profile: no user dictionary, no learning
+  let profile = FileManager.default.temporaryDirectory.appending(path: "genmai-dict-hints-\(UUID().uuidString)")
+  try FileManager.default.createDirectory(at: profile, withIntermediateDirectories: true)
+  defer { try? FileManager.default.removeItem(at: profile) }
+  SystemUtil.setUserProfileDirectory(profile.path)
+  let start = Date()
+  let sliceSize = (readings.count + jobs - 1) / max(jobs, 1)
+  let slices = stride(from: 0, to: readings.count, by: max(sliceSize, 1)).map {
+    Array(readings[$0..<min($0 + sliceSize, readings.count)])
+  }
+  var hints = [[AIDictionaryHints]](repeating: [], count: slices.count)
+  do {
+    try await withThrowingTaskGroup(of: (Int, [AIDictionaryHints]).self) { group in
+      for (i, slice) in slices.enumerated() {
+        group.addTask {
+          let dataManager = try OssDataManager.create(path: dataPath)
+          let hinter = try AIDictionaryHinter(engine: try Engine.createEngine(dataManager), dataManager: dataManager)
+          return (i, slice.map { hinter.hints(reading: $0) })
+        }
+      }
+      for try await (i, h) in group { hints[i] = h }
+    }
+  } catch {
+    fail("cannot load \(dataPath): \(error)")
+  }
+  var out = Data()
+  for (row, h) in zip(rows, hints.joined()) {
+    var o: [String: Any] = [
+      "reading": row["reading"] ?? "", "h1": h.segments.joined(), "segments": h.segments,
+      "proper_nouns": h.properNouns,
+    ]
+    o["id"] = row["id"]
+    out += try JSONSerialization.data(withJSONObject: o, options: [.sortedKeys, .withoutEscapingSlashes])
+    out += Data("\n".utf8)
+  }
+  try out.write(to: URL(filePath: args[1]))
+  let seconds = Date().timeIntervalSince(start)
+  print(
+    String(
+      format: "%d readings in %.1f s (%.0f / s, %d jobs) with %@", rows.count, seconds,
+      Double(rows.count) / seconds, slices.count, dataPath))
 
 case "session-eval":
   await runSessionEval(args)

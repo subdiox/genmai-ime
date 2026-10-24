@@ -77,7 +77,7 @@ public final class AIDictionaryScorer: Sendable {
     String(text.filter { !AIReadingChecker.isKanji($0) })
   }
 
-  private struct Word {
+  struct Word {
     let keyLength: Int
     let value: [Character]
     let lid: UInt16
@@ -85,7 +85,7 @@ public final class AIDictionaryScorer: Sendable {
     let cost: Int
   }
 
-  private final class Collector: DictionaryCallback {
+  final class Collector: DictionaryCallback {
     var words: [Word] = []
     func onKey(_ key: String) -> DictionaryCallbackResult { .traverseContinue }
     func onActualKey(_ key: String, _ actualKey: String, _ numExpanded: Int) -> DictionaryCallbackResult {

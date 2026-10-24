@@ -149,6 +149,7 @@ BOS / EOS ids and the outputs end in garbage).
 - `genmai-cli`: `install`, `prepare` (local HF directory), `convert`, `eval [--incremental] [--every-key] [--draft]
   [--no-kv-reuse]` (per-item latency in the JSON), `compare`, `logprobs`, `session-eval` (below). `convert` / `eval`
   take `--coreml DIR [--units ane|cpu|gpu|all]` for the Core ML decoder; `eval` prints the process footprint.
+  `rescore`, `dict-hints`: see "Dictionary in the AI conversion".
 
 ### Core ML decoder (Neural Engine)
 
@@ -302,6 +303,14 @@ unchanged; the hook only forwards). GenmaiCore and GenmaiSession contain no AI c
   (`keptDictionaryWords` in the debug log). A better dictionary thus improves the AI conversion. `genmai-cli rescore
   [--data FILE] [--weights ...] [--verbose] gen_*.json` replays (1) on `eval` n-best lists; `session-eval
   --dictionary-weight W`. Proper-noun eval sets (template sentences) live outside the repo.
+- **Dictionary hints (for training; not used by the IME yet):** the next model is to get Mozc's view of the reading
+  in its prompt and learn to take the dictionary's spelling of words it does not know. `AIDictionaryHinter` computes
+  the hints: `segments` (Mozc's conversion, no user dictionary / learning) and `properNouns` (system dictionary proper
+  nouns for parts of the reading the conversion lacks; ≥ 3 reading characters, ≥ 2 characters with a kanji, not
+  inside a longer one's reading, at most 3). `genmai-cli dict-hints [--data FILE] [--jobs N] in.jsonl out.jsonl`
+  writes them for training data (`{"id", "reading"}` lines → `{"id", "reading", "h1", "segments", "proper_nouns"}`;
+  default data set `Data/genmai_extended.data`; ~750 readings / s on an M4 Pro). The training data's hints must come
+  from this code, and the IME must compute them the same way once a model with the new prompt format exists.
 - **Known model weaknesses:** readings that repeat one sound (きしゃのきしゃがきしゃできしゃした,
   にわにはにわにわとりがいる) map every occurrence to the same word or drop part of the reading; fine homophone
   distinctions and rare proper nouns.
