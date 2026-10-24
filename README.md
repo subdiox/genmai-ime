@@ -146,7 +146,10 @@ without AI conversion and reports accuracy and latency (see `CLAUDE.md`).
   parts of the UI are ported from [Mozc](https://github.com/google/mozc), Copyright Google Inc., BSD 3-Clause.
 - The dictionary data built into `genmai.data` contains data derived from IPAdic (NAIST; see `LICENSE`), the
   [Japanese usage dictionary](https://github.com/hiroyuki-komatsu/japanese-usage-dictionary) (BSD 2-Clause)
-  and Japan Post zip code data. Build scripts download the latter two at pinned versions.
+  and Japan Post zip code data. The data set the input method ships (`genmai_extended.data`) adds proper nouns
+  from Japan Post's zip code data (place names) and [SudachiDict](https://github.com/WorksApplications/SudachiDict)
+  (Works Applications, Apache 2.0; it includes UniDic and part of NEologd); its notice is in the bundled
+  credits. Build scripts download these at pinned versions.
 - The AI models are distributed separately under CC BY-SA 4.0:
   [genmai-310M](https://huggingface.co/subdiox/genmai-310M) is fine-tuned from
   [zenz-v2.5-medium](https://huggingface.co/Miwa-Keita/zenz-v2.5-medium) by Miwa-Keita (CC BY-SA 4.0),

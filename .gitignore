@@ -4,6 +4,7 @@
 /Tools/bin/
 /Data/genmai.data
 /Data/mock_genmai.data
+/Data/genmai_extended.data
 /Tests/Fixtures/oracle/*.tmp
 .DS_Store
 build/

@@ -61,6 +61,7 @@ final class FakeAugmenter: ConversionAugmenter, Sendable {
     readyResult(reading: reading, context: context, maxResults: 1) == nil
       ? nil : AIResultInfo(latency: .milliseconds(1), exact: false)
   }
+  func setReranker(_ reranker: AIReranker?) {}
 
   /// Simulates a speculation in flight: `resultUpdate` returns a task that stores `texts` (as ready) when
   /// `release()` is called.
@@ -348,6 +349,21 @@ func conversionRequest() -> ConversionRequest {
       ["陽稀が来た"], to: kept, request: conversionRequest(), converter: ResizingConverterStub(), maxCandidates: 5)
     #expect(used.keptUserWords == 0)
     #expect(tops(kept) == ["陽稀が", "来た"])
+  }
+
+  @Test func dictionaryWordsWinOverInventedSpellings() {
+    let segments = makeSegments([("くさかべちょうに", ["日下部町に", "草壁町に"]), ("いく", ["行く"])])
+    var asked: [(AIConversionMerger.Piece, String)] = []
+    let outcome = AIConversionMerger.apply(
+      ["草壁町に行く"], to: segments, request: conversionRequest(), converter: ResizingConverterStub(),
+      maxCandidates: 5,
+      keepsDictionaryWord: { engine, ai, tops in
+        asked.append((engine, ai))
+        return tops.first?.value == "日下部町に"
+      })
+    #expect(outcome.keptDictionaryWords == 1)
+    #expect(asked.first?.0 == AIConversionMerger.Piece(key: "くさかべちょうに", value: "日下部町に"))
+    #expect(tops(segments) == ["日下部町に", "行く"])
   }
 
   @Test func userDictionaryWordIsPromotedWhenMozcRanksItLower() {

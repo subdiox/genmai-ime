@@ -62,8 +62,8 @@ jobs:
             Data/external
           key: spm-${{ runner.os }}-${{ hashFiles('Package.resolved', 'Tools/build_data.sh') }}
 
-      - name: Data set (genmai-datagen)
-        run: Tools/build_data.sh --oss
+      - name: Data set (genmai-datagen; the shipped set has the extra dictionary)
+        run: Tools/build_data.sh --oss --extended
 
       - name: Installer package
         run: |

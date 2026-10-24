@@ -46,7 +46,14 @@ public protocol ConversionAugmenter: AnyObject, Sendable {
 
   /// Diagnostics of the ready result for `reading` / `context` (debug log), if any.
   func resultInfo(reading: String, context: String) -> AIResultInfo?
+
+  /// Reorders each result (texts best first with the model's scores, for the reading) before it is stored or
+  /// returned; nil: the model's order (`AIConversionHook` sets `AIDictionaryScorer.rerank`).
+  func setReranker(_ reranker: AIReranker?)
 }
+
+/// Reorders AI candidates: (texts best first, the model's log-probs, reading) → texts.
+public typealias AIReranker = @Sendable (_ texts: [String], _ scores: [Double], _ reading: String) -> [String]
 
 /// Diagnostics of a finished AI result.
 public struct AIResultInfo: Equatable, Sendable {

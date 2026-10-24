@@ -1,17 +1,20 @@
-// Concurrency-safe entry points of the genmai converter: `GenmaiConverter` (an actor owning the MLX model) and
-// `GenmaiIncrementalConverter` (port of the Python reference `IncrementalConverter`).
+// Concurrency-safe entry points of the genmai converter: `GenmaiConverter` (an actor owning the decoder: the MLX
+// model or the Core ML model) and `GenmaiIncrementalConverter` (port of the Python reference
+// `IncrementalConverter`).
 
+import CoreML
 import Foundation
 import MLX
 import Synchronization
 
-/// The genmai converter. All MLX work happens on this actor (MLX arrays are not Sendable). Loading takes about a
-/// second, so create it off the main actor (e.g. in a detached task). Every conversion method checks for task
-/// cancellation between decode steps and throws `CancellationError`.
+/// The genmai converter. All decoder work happens on this actor (MLX arrays and Core ML states are not Sendable).
+/// Loading takes about a second, so create it off the main actor (e.g. in a detached task). Every conversion
+/// method checks for task cancellation between decode steps and throws `CancellationError`.
 public actor GenmaiConverter {
   /// MLX evaluates on a process-wide default stream that must not be used from two threads at once. Every
   /// converter (there may briefly be two, e.g. while a model is reloaded or in tests) takes this lock around
-  /// its MLX work; each operation is synchronous, so the lock is never held across a suspension point.
+  /// its MLX work; each operation is synchronous, so the lock is never held across a suspension point. Core ML
+  /// converters take it too, so that `busyStats` counts their work the same way.
   static let mlxLock = Mutex(())
 
   /// Total time spent doing MLX work (inside `mlxLock`) by all converters of the process, and the number of
@@ -41,13 +44,15 @@ public actor GenmaiConverter {
     }
   }
 
-  private let model: GenmaiModel
+  private let model: any GenmaiDecoder
   public nonisolated let loadSeconds: Double
-  /// Bytes of the model's weights in memory.
+  /// Bytes of the MLX model's weights in memory (0 for Core ML).
   public nonisolated let weightBytes: Int
-  /// Bits per weight of the quantized linear layers; nil for bf16 weights.
+  /// Bits per weight of the MLX model's quantized linear layers; nil for bf16 weights and Core ML.
   public nonisolated let quantizationBits: Int?
   public nonisolated let tokenizer: GenmaiTokenizer
+  /// Whether the decoder is the MLX model (MLX's buffer cache and the diagnostics below apply).
+  public nonisolated let usesMLX: Bool
 
   /// The directory the IME loads the model from: `~/Library/Application Support/Genmai/model`
   /// (installed by the config dialog, `genmai-cli install` or Tools/prepare_genmai_model.sh).
@@ -62,11 +67,39 @@ public actor GenmaiConverter {
     weightBytes = m.weightBytes
     quantizationBits = m.quantizationBits
     tokenizer = m.tokenizer
+    usesMLX = true
   }
 
-  /// Pre-compiles the common decode steps (a few hundred ms) so that the first conversion is fast.
+  /// Loads the Core ML model in `coreMLDirectory` (`GenmaiCoreMLModel`). The first load on a Mac compiles the
+  /// model for the Neural Engine (seconds); the system caches that.
+  public init(coreMLDirectory: URL, computeUnits: MLComputeUnits = .cpuAndNeuralEngine) async throws {
+    let m = try await GenmaiCoreMLModel.load(directory: coreMLDirectory, computeUnits: computeUnits)
+    model = m
+    loadSeconds = m.loadSeconds
+    weightBytes = 0
+    quantizationBits = nil
+    tokenizer = m.tokenizer
+    usesMLX = false
+  }
+
+  /// Loads the model in `directory`: the Core ML model if it has `genmai_coreml.json`, else the MLX model.
+  public static func load(directory: URL) async throws -> GenmaiConverter {
+    if FileManager.default.fileExists(atPath: directory.appending(path: GenmaiCoreMLModel.configFileName).path) {
+      return try await GenmaiConverter(coreMLDirectory: directory)
+    }
+    return try GenmaiConverter(directory: directory)
+  }
+
+  /// Pre-compiles the common decode steps of the MLX model (a few hundred ms), or runs one conversion on Core ML,
+  /// so that the first conversion is fast.
   public func warmup() {
-    Self.withMLX { model.warmup() }
+    Self.withMLX {
+      if let m = model as? GenmaiModel {
+        m.warmup()
+      } else {
+        _ = try? model.convert("きょうはいいてんきですね", context: "あ")
+      }
+    }
   }
 
   /// Converts `reading` (hiragana) after `context` (left context; the last 500 characters are used).
@@ -77,19 +110,21 @@ public actor GenmaiConverter {
     try Self.withMLX { try model.convert(reading, context: context, options: options) }
   }
 
-  /// Diagnostics: see `GenmaiModel.debugLogProbs`.
+  /// Diagnostics: see `GenmaiModel.debugLogProbs` (MLX only; empty on Core ML).
   public func debugLogProbs(_ reading: String, context: String = "", continuation: [Int32] = []) -> [[Float]] {
-    Self.withMLX { model.debugLogProbs(reading, context: context, continuation: continuation) }
+    Self.withMLX {
+      (model as? GenmaiModel)?.debugLogProbs(reading, context: context, continuation: continuation) ?? []
+    }
   }
 
-  /// Beam across one chunk (see `GenmaiModel.extend`).
+  /// Beam across one chunk (see `GenmaiDecoder.extend`).
   public func extend(_ hyps: [GenmaiCandidate], part: String, context: String = "", options: GenmaiOptions = .init())
     throws -> [GenmaiCandidate]
   {
     try Self.withMLX { try model.extend(hyps, part: part, context: context, options: options) }
   }
 
-  /// One beam search per left context, decoded as one batch (see `GenmaiModel.genBatch`).
+  /// One beam search per left context (see `GenmaiDecoder.genBatch`).
   public func genBatch(
     _ reading: String, contexts: [String], beams: Int = 5, minRatio: Double = 0,
     reusePromptKV: Bool = true, draft: Bool = false, draftMargin: Float = 2
@@ -99,7 +134,7 @@ public actor GenmaiConverter {
     try Self.withMLX {
       try model.genBatch(
         reading, contexts: contexts, beams: beams, minRatio: minRatio, reusePromptKV: reusePromptKV,
-        draft: draft, draftMargin: draftMargin)
+        draft: draft, draftMargin: draftMargin, bound: nil)
     }
   }
 
@@ -115,10 +150,12 @@ public actor GenmaiConverter {
   }
 
   /// Returns MLX's cached buffers to the system (the input method calls this when typing has paused for a
-  /// while); the model, the prompt KV cache and the drafts stay. Returns the cache size right after (0).
+  /// while); the model, the prompt KV cache and the drafts stay. Returns the cache size right after (0). Nothing
+  /// to do on Core ML.
   @discardableResult
   public func releaseCachedMemory() -> Int {
-    Self.withMLX {
+    guard usesMLX else { return 0 }
+    return Self.withMLX {
       Memory.clearCache()
       return Memory.cacheMemory
     }

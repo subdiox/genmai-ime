@@ -13,10 +13,12 @@
 #                                                   it to ~/Library/Application Support/Genmai/model.
 #   Genmai.app/Contents/Resources/*.tiff, *.icns   <- data/images/mac (input mode icons, product icon, logo)
 #   Genmai.app/Contents/Resources/{English,Japanese}.lproj/InfoPlist.strings
-#   Genmai.app/Contents/Resources/credits_en.html  <- data/installer/credits_en.html
-#   Genmai.app/Contents/Resources/genmai.data        <- Data/genmai.data (the OSS data set, Tools/build_oracle.sh);
-#                                                   OssDataManager finds it via Bundle.main (the Genmai app
-#                                                   finds it next to itself)
+#   Genmai.app/Contents/Resources/credits_en.html  <- data/installer/credits_en.html (+ Tools/assets/
+#                                                   credits_extended.html for the extended data set)
+#   Genmai.app/Contents/Resources/genmai.data        <- Data/genmai_extended.data (the OSS data set + the extra
+#                                                   proper nouns, Tools/build_data.sh --extended); OssDataManager
+#                                                   finds it via Bundle.main (the Genmai app finds it next to
+#                                                   itself)
 #   Genmai.app/Contents/Resources/Genmai.app       <- GenmaiApp (config dialog, dictionary tool, word register,
 #                                                   about, error, update), named after the product so that the
 #                                                   Dock, the app switcher and Activity Monitor show "Genmai"
@@ -26,10 +28,11 @@
 # All bundles are ad-hoc code signed.
 #
 # Usage: Tools/make_ime_bundle.sh [--debug] [--build-data]
-#   --build-data                 first (re)builds Data/genmai.data with Tools/build_data.sh --oss (Swift
-#                                genmai-datagen; no Bazel needed).
+#   --build-data                 first (re)builds Data/genmai_extended.data with Tools/build_data.sh --oss
+#                                --extended (Swift genmai-datagen; no Bazel needed).
 #   UPSTREAM_SRC=<path to mozc/src>  defaults to Vendor/mozc/src (the git submodule).
-#   DATA_SET=<path>             the data set to bundle, defaults to Data/genmai.data.
+#   DATA_SET=<path>             the data set to bundle, defaults to Data/genmai_extended.data (Data/genmai.data
+#                                = Mozc's own, e.g. to compare).
 #   BUILD_PATH=<dir>             the SwiftPM build directory, defaults to .build-bundle.
 # After assembling, `GenmaiIME --self_test` is run from the bundle (loads the bundled data set, converts a few
 # sentences with a temporary user profile, with AI conversion off and, if the model is installed, on; nothing is
@@ -65,11 +68,11 @@ VERSION=$(sed -n 's/.*kProductVersion = "\(.*\)"/\1/p' "$ROOT/Sources/GenmaiBase
 SHORT_VERSION=$VERSION
 COPYRIGHT="Copyright © 2026 subdiox"
 
-DATA_SET=${DATA_SET:-$ROOT/Data/genmai.data}
+DATA_SET=${DATA_SET:-$ROOT/Data/genmai_extended.data}
 if (( BUILD_DATA )); then
-  echo "==> Tools/build_data.sh --oss (genmai-datagen)"
-  "$ROOT/Tools/build_data.sh" --oss --output-dir "${DATA_SET:h}"
-  [[ ${DATA_SET:t} == genmai.data ]] || mv -f "${DATA_SET:h}/genmai.data" "$DATA_SET"
+  echo "==> Tools/build_data.sh --oss --extended (genmai-datagen)"
+  "$ROOT/Tools/build_data.sh" --oss --extended --output-dir "${DATA_SET:h}"
+  [[ ${DATA_SET:t} == genmai_extended.data ]] || mv -f "${DATA_SET:h}/genmai_extended.data" "$DATA_SET"
 fi
 if [[ ! -f $DATA_SET ]]; then
   echo "error: data set not found at $DATA_SET (pass --build-data, run Tools/build_data.sh, or set DATA_SET)" >&2
@@ -128,7 +131,16 @@ done
 cp "$ROOT/Tools/assets/genmai.icns" "$OUT/Contents/Resources/product_icon.icns"
 cp "$ROOT/Tools/assets/genmai.car" "$OUT/Contents/Resources/Assets.car"
 cp "$ROOT/Tools/assets/product_logo.png" "$OUT/Contents/Resources/product_logo.png"
-[[ -f $UPSTREAM_SRC/data/installer/credits_en.html ]] && cp "$UPSTREAM_SRC/data/installer/credits_en.html" "$OUT/Contents/Resources/"
+if [[ -f $UPSTREAM_SRC/data/installer/credits_en.html ]]; then
+  if [[ ${DATA_SET:t} == genmai.data ]]; then
+    cp "$UPSTREAM_SRC/data/installer/credits_en.html" "$OUT/Contents/Resources/"
+  else
+    # the extended data set's extra dictionary: SudachiDict's notice before </body>
+    awk -v extra="$ROOT/Tools/assets/credits_extended.html" \
+      '/<\/body><\/html>/ { while ((getline line < extra) > 0) print line } { print }' \
+      "$UPSTREAM_SRC/data/installer/credits_en.html" >| "$OUT/Contents/Resources/credits_en.html"
+  fi
+fi
 for lproj in English Japanese; do
   mkdir -p "$OUT/Contents/Resources/$lproj.lproj"
   # Convert to UTF-8 if the file is UTF-16 (CFBundle accepts both).

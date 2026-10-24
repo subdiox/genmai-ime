@@ -15,6 +15,14 @@ Code, comments and docs are in English.
   ports of every upstream data generator, `Sources/GenmaiDataGen`) and writes `Data/genmai.data` /
   `Data/mock_genmai.data` (git-ignored), byte-identical to the upstream Bazel outputs. The zip code CSVs and the
   usage dictionary are downloaded (pinned, sha256-checked) into `Data/external/` (git-ignored).
+- **Extended data set (not in Mozc)**: `Tools/build_data.sh --extended` also writes `Data/genmai_extended.data`, the
+  set the IME bundles (`Tools/make_ime_bundle.sh`, release workflow): the OSS set + an extra dictionary
+  (`genmai-datagen extra-dictionary`, `GenExtraDictionary.swift`; ~67k proper nouns the OSS dictionary lacks:
+  municipality / town names of KEN_ALL.CSV, SudachiDict 20261015 small_lex + core_lex proper nouns (person names
+  from small_lex only; core's ~180k mostly rare names flood common readings), no addresses (prefecture / city +
+  more), Mozc proper noun ids, cost = the OSS dictionary's 90th percentile for the id). `Data/genmai.data` stays
+  Mozc's (parity tests). SudachiDict is Apache 2.0: `Tools/assets/credits_extended.html` is added to the bundled
+  credits. Foundation's NFKC leaves half-width voiced kana decomposed (ﾍﾞ → ヘ + U+3099): NFC after it.
 - `Tools/build_oracle.sh` builds the reference C++ tools (converter_main, immutable_converter_main) and the Bazel
   data sets with bazelisk (`Tools/bin/`, git-ignored). Only needed to regenerate parity fixtures.
 - `Tools/oracle.sh [flags] < commands` runs the C++ converter_main (`s <reading>` = start conversion,
@@ -139,7 +147,36 @@ BOS / EOS ids and the outputs end in garbage).
   genmai-90M installed, point `$GENMAI_MODEL_DIR` at a 310M model). Tests use
   `$GENMAI_MODEL_DIR`, else `~/Library/Application Support/Genmai/model`, and skip without it.
 - `genmai-cli`: `install`, `prepare` (local HF directory), `convert`, `eval [--incremental] [--every-key] [--draft]
-  [--no-kv-reuse]` (per-item latency in the JSON), `compare`, `logprobs`, `session-eval` (below).
+  [--no-kv-reuse]` (per-item latency in the JSON), `compare`, `logprobs`, `session-eval` (below). `convert` / `eval`
+  take `--coreml DIR [--units ane|cpu|gpu|all]` for the Core ML decoder; `eval` prints the process footprint.
+
+### Core ML decoder (Neural Engine)
+
+Two decoders behind `GenmaiConverter`, protocol `GenmaiDecoder` (GenmaiDecoder.swift): `GenmaiModel` (MLX, GPU) and
+`GenmaiCoreMLModel` (Core ML, Neural Engine; `GenmaiConverter(coreMLDirectory:)`). A decoder implements only
+`genBatch`; `gen` / `extend` / `convert`, the drafts (`GenmaiDraftStore`: verification `accept`, only single-context
+searches store a draft), max_new, truncation and the result lists (`GenmaiSearch`) are shared, so both return the
+same candidates up to backend rounding (genmai-90M 8-bit, M4 Pro: top-1 identical 101/101 daily, 199/200 AJIMEE,
+27/28 hard, plain and `--draft`; n-best lists 64–82 % identical, fp16).
+
+- Model directory: `genmai.mlpackage` (or compiled `genmai.mlmodelc`), `genmai_coreml.json` (format
+  `genmai-coreml-1`; static shapes: prompt slots P, output steps S, rows B, prefill chunk C), tokenizer.json,
+  config.json. One multifunction package, functions `prefill` (C prompt tokens at a slot offset; log-probs after each)
+  and `decode` (B rows, one token each), sharing one `MLState`: prompt KV (P slots, the last prompt; a new prompt
+  prefills from its first differing token) and output KV (S × B slots, row r's step-t token at t·B + r; rows attend to
+  their ancestors through a mask, so beam reordering copies nothing). The decode step writes its output slots by a
+  blend (`state * keep + onehot @ k`): a dynamic slice update of a state runs on the CPU and splits the ANE graph
+  (6.8 vs 3.3 ms per step). Every function must use every state (prefill reads the output states × 0), or conversion
+  fails. Drafts are prefilled after the prompt; the accepted tokens' KV stays in the prompt slots.
+- The B rows hold one search, so `genBatch` searches its contexts one after another (MLX: one batch). `extend` passes a
+  `GenmaiSearchBound` (hypothesis texts / scores, beams): a search stops once all its rows are below the `beams`-th best
+  distinct text found so far, which does not change the result (log-probs only decrease). Drafts with several contexts
+  are verified for all first (the accepted prefix is the minimum), then the searches run.
+- The package is made by a coremltools script (not in the repo yet; torch GPT-2 with per-layer `(H, slots, D)` fp16
+  states, int8 per-channel linear weights, iOS 18 target). P = 256, S = 64, B = 5, C = 32: 87 MB, decode 4 ms per step
+  on the ANE, footprint ~46 MB (MLX: ~1.3 GB peak). The first load compiles for the ANE (~18 s, cached by the system).
+  The same package gave garbage on `.cpuAndGPU` (unexplained); ANE and CPU are correct.
+- Tests: `GenmaiSearchTests` (shared helpers), `GenmaiCoreMLModelTests` (need `$GENMAI_COREML_MODEL_DIR`).
 
 ### MLX Metal kernels
 
@@ -228,8 +265,9 @@ unchanged; the hook only forwards). GenmaiCore and GenmaiSession contain no AI c
   activation, RESET_CONTEXT or an empty preceding text. The model tends to copy the context: a wrong conversion
   committed earlier in the same field can be repeated.
 - **Settings:** `<profile>/ai_conversion.json` (`AIConversionSettings`: `enabled`, `timeout_ms`, `candidates`,
-  `model_directory`, `model_size`, `reading_check`, `debug_log`), edited in the settings tab "AI" and re-read on the
-  reload notification. `model_directory`, `reading_check` and `debug_log` have no UI (development / diagnosis);
+  `model_directory`, `model_size`, `reading_check`, `dictionary_weight`, `debug_log`), edited in the settings tab "AI"
+  and re-read on the reload notification. `model_directory`, `reading_check`, `dictionary_weight` and `debug_log` have
+  no UI (development / diagnosis);
   the model folder is managed by the installer, so the AI tab shows only which model and release is installed.
 - **Debug log (opt-in):** `"debug_log": true` appends one line per AI event to `<profile>/ai_debug.log` (rotated at
   8 MB): source (`ready` / `awaited` / `timeout` / `error` / `suggestion` / `refine`), reading, last 40 characters of
@@ -252,6 +290,18 @@ unchanged; the hook only forwards). GenmaiCore and GenmaiSession contain no AI c
   (speculative n-best lists of partial readings included), never a correct one; with `--settle chunks`
   (AJIMEE / daily / hard) it changes top-1 by 187 / 94 / 20 vs. 186 / 94 / 20 without it, at the same key latency.
 
+- **Dictionary in the AI conversion (`AIDictionaryScorer`, setting `dictionary_weight`, default 0.2, no UI):** the
+  model invents spellings for proper nouns it does not know (日下部町 → 草壁町, 西神吉 → 西換気) and used to override
+  Mozc's correct ones (proper nouns of the Mozc dictionary: Mozc alone 96/110, with AI 58/110). The scorer computes
+  the cost of the cheapest path through Mozc's lattice that produces exactly a text (system dictionary tokens +
+  connection costs; uncovered kana / symbols 3000 each; nil if a kanji has no token). (1) `rerank` (in
+  `GenmaiAugmenter.Core.convert`, before results are cached): among the AI candidates that differ from the top only
+  in kanji (same `kanaSkeleton`: 晩ご飯 / 晩ごはん is style, left to the model), the best of model log-prob −
+  weight × cost / 500 becomes the top. (2) the merger keeps Mozc's text for a group of segments whose top is a proper
+  noun (`PosMatcher.isUniqueNoun`) when the AI's differs only in kanji and costs ≥ 2000 more (or is unreachable)
+  (`keptDictionaryWords` in the debug log). A better dictionary thus improves the AI conversion. `genmai-cli rescore
+  [--data FILE] [--weights ...] [--verbose] gen_*.json` replays (1) on `eval` n-best lists; `session-eval
+  --dictionary-weight W`. Proper-noun eval sets (template sentences) live outside the repo.
 - **Known model weaknesses:** readings that repeat one sound (きしゃのきしゃがきしゃできしゃした,
   にわにはにわにわとりがいる) map every occurrence to the same word or drop part of the reading; fine homophone
   distinctions and rare proper nouns.

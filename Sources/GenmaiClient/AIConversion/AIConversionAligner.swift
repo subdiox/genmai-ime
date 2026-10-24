@@ -303,6 +303,9 @@ public enum AIConversionMerger {
     public var keptLearned = 0
     /// AI pieces not used because they would replace a word of the user dictionary (the word stays on top).
     public var keptUserWords = 0
+    /// AI pieces not used because they would replace a proper noun of Mozc's dictionary with a spelling the
+    /// dictionary does not support (`keepsDictionaryWord`).
+    public var keptDictionaryWords = 0
     /// The segments that got the AI's text on top (key → value), for `AIConversionHook` to see whether the user
     /// commits them or chooses something else.
     public var aiSegments: [Piece] = []
@@ -319,11 +322,14 @@ public enum AIConversionMerger {
   }
 
   /// Applies `texts` (AI n-best, best first) to `segments` (just converted by Mozc with `request`).
-  /// `converter` is the Mozc converter (used to resize segments).
+  /// `converter` is the Mozc converter (used to resize segments). `keepsDictionaryWord(engine, ai, tops)`: whether
+  /// Mozc's text for a group of segments (key, value; `tops` the segments' top candidates) stays instead of the AI's
+  /// (`AIConversionHook`: a proper noun the dictionary prefers to an invented spelling).
   @discardableResult
   public static func apply(
     _ texts: [String], to segments: Segments, request: ConversionRequest, converter: any ConverterInterface,
-    maxCandidates: Int, rejected: (Piece) -> Bool = { _ in false }
+    maxCandidates: Int, rejected: (Piece) -> Bool = { _ in false },
+    keepsDictionaryWord: (_ engine: Piece, _ ai: String, _ tops: [Candidate]) -> Bool = { _, _, _ in false }
   ) -> Outcome {
     var outcome = Outcome()
     guard let aiTop = texts.first, !aiTop.isEmpty, maxCandidates >= 1 else {
@@ -363,7 +369,16 @@ public enum AIConversionMerger {
         // user's word on top (names such as 陽稀 for はるき, which the model would write the common way).
         let dropsUserWord =
           g.text != engineText && !Self.userWords(in: g.segments, of: segments, coveredBy: g.text)
-        if g.text != engineText && (dropsUserWord || rejected(Piece(key: keys[g.segments].joined(), value: g.text))) {
+        // Proper nouns of the dictionary win over an AI spelling the dictionary does not support (the model invents
+        // one for names it does not know: 日下部町 → 草壁町).
+        let keepsWord =
+          g.text != engineText && !dropsUserWord
+          && keepsDictionaryWord(
+            Piece(key: keys[g.segments].joined(), value: engineText), g.text,
+            g.segments.map { segments.conversionSegment($0).candidate(0) })
+        if g.text != engineText
+          && (dropsUserWord || keepsWord || rejected(Piece(key: keys[g.segments].joined(), value: g.text)))
+        {
           for i in g.segments {
             let segment = segments.conversionSegment(i)
             groups.append(AIConversionAligner.Group(segments: i..<(i + 1), text: Self.userWord(segment) ?? tops[i]))
@@ -371,6 +386,8 @@ public enum AIConversionMerger {
           }
           if dropsUserWord {
             outcome.keptUserWords += 1
+          } else if keepsWord {
+            outcome.keptDictionaryWords += 1
           } else {
             outcome.keptLearned += 1
           }

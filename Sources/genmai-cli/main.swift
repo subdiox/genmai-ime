@@ -25,10 +25,14 @@
 //       types the readings through the IME session layer (SessionHandlerBackend) with AI conversion off and on
 //       and reports top-1 accuracy and conversion-key latency (see SessionEval.swift).
 //   GENMAI_MODEL_DIR overrides the default model directory (~/Library/Application Support/Genmai/model).
+//   convert / eval / logprobs take --coreml DIR [--units ane|cpu|gpu|all] to use the Core ML model in DIR
+//   (GenmaiCoreMLModel) instead of the MLX model.
 
+import CoreML
 import Foundation
 import GenmaiAI
 import GenmaiClient
+import GenmaiCore
 import Synchronization
 
 func fail(_ msg: String) -> Never {
@@ -64,6 +68,28 @@ args.removeFirst()
 }
 
 @MainActor func loadConverter() async -> GenmaiConverter {
+  if let dir = option("--coreml") {
+    let units: MLComputeUnits =
+      switch option("--units") ?? "ane" {
+      case "cpu": .cpuOnly
+      case "gpu": .cpuAndGPU
+      case "ane": .cpuAndNeuralEngine
+      case "all": .all
+      default: fail("--units: cpu, gpu, ane or all")
+      }
+    do {
+      let c = try await GenmaiConverter(coreMLDirectory: URL(filePath: dir), computeUnits: units)
+      let t = Date()
+      await c.warmup()
+      print(
+        String(
+          format: "Core ML model %@: load %.2f s, warmup %.2f s, footprint %.1f MB", dir, c.loadSeconds,
+          Date().timeIntervalSince(t), physicalFootprintMB().current))
+      return c
+    } catch {
+      fail("cannot load \(dir): \(error)")
+    }
+  }
   let dir = modelDirectory()
   do {
     let c = try GenmaiConverter(directory: dir)
@@ -152,6 +178,7 @@ struct EvalResultFile: Decodable {
     var id: JSONScalarText
     var query: String
     var outputs: [Output]?
+    var answers: [String]?
   }
 
   var items: [Item]
@@ -332,9 +359,11 @@ case "eval":
     }
     let (pre, re) = await c.promptTokenStats
     let (acc, steps) = await c.draftStats
+    let fp = physicalFootprintMB()
     print(
       "  so far: prompt tokens prefilled \(pre), reused from the KV cache \(re); output tokens accepted from drafts \(acc), decode steps \(steps)"
     )
+    print(String(format: "  footprint %.1f MB (peak %.1f MB)", fp.current, fp.peak))
   }
 
 case "compare":
@@ -392,6 +421,50 @@ case "logprobs":
   for r in rows {
     let top = r.enumerated().sorted { $0.element > $1.element }.prefix(8)
     print(top.map { String(format: "%d:%.5f", $0.offset, $0.element) }.joined(separator: " "))
+  }
+
+case "rescore":
+  // rescore [--data FILE] [--weights 0,0.25,...] <gen_*.json>...: top-1 accuracy of the n-best lists of `eval`
+  // reordered by AIDictionaryScorer (model score + weight × Mozc's dictionary score) for each weight.
+  let dataPath = option("--data") ?? OssDataManager.defaultDataPath
+  let weights = (option("--weights") ?? "0,0.1,0.2,0.3,0.5,0.75,1,1.5,2").split(separator: ",").compactMap {
+    Double($0)
+  }
+  let scorer: AIDictionaryScorer
+  do { scorer = try AIDictionaryScorer(dataManager: try OssDataManager.create(path: dataPath)) } catch {
+    fail("cannot load \(dataPath): \(error)")
+  }
+  let verbose = flag("--verbose")
+  for path in args {
+    let file = try JSONDecoder().decode(EvalResultFile.self, from: Data(contentsOf: URL(filePath: path)))
+    if verbose, let w = weights.last {
+      // the items whose top-1 the reordering changes, with each text's score and dictionary cost
+      for x in file.items {
+        let outputs = x.outputs ?? []
+        let reranked = scorer.rerank(outputs.map(\.text), scores: outputs.map(\.score), reading: x.query, weight: w)
+        guard let top = reranked.first, top != outputs.first?.text else { continue }
+        let mark = { (t: String) in (x.answers ?? []).contains(t) ? "✓" : "✗" }
+        print("\(x.query)  \(mark(outputs.first?.text ?? ""))→\(mark(top))")
+        for o in outputs {
+          let c = scorer.cost(o.text, reading: x.query).map(String.init) ?? "-"
+          print(String(format: "    %7.3f  %6@  %@", o.score, c, o.text))
+        }
+      }
+    }
+    var line = URL(filePath: path).lastPathComponent + ":"
+    for w in weights {
+      var hits = 0
+      var changed = 0
+      for x in file.items {
+        let outputs = x.outputs ?? []
+        let texts = outputs.map(\.text)
+        let reranked = scorer.rerank(texts, scores: outputs.map(\.score), reading: x.query, weight: w)
+        if let top = reranked.first, (x.answers ?? []).contains(top) { hits += 1 }
+        if reranked.first != texts.first { changed += 1 }
+      }
+      line += String(format: "  w=%g %d/%d (%d changed)", w, hits, file.items.count, changed)
+    }
+    print(line)
   }
 
 case "session-eval":

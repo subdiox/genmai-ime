@@ -104,8 +104,11 @@ public struct DataGenSources: Sendable {
   /// `mozc_dataset_for_oss`.  `auxDictionary` and `filteredDictionary` are the
   /// outputs of `//data/dictionary_oss:aux_dictionary` and
   /// `:filtered_dictionary` (see `OssDictionarySources.generate`).
+  /// `extraDictionaries` (not in Mozc): more dictionary texts, e.g. `GenExtraDictionary`'s, for the extended data
+  /// set (empty: the set is byte-identical to Mozc's).
   public static func oss(
-    srcRoot: String, auxDictionary: String, filteredDictionary: String, usageDict: String?
+    srcRoot: String, auxDictionary: String, filteredDictionary: String, usageDict: String?,
+    extraDictionaries: [String] = []
   ) -> DataGenSources {
     DataGenSources(
       srcRoot: srcRoot, tag: "oss", magic: ossMagic, dictionaryDir: "data/dictionary_oss",
@@ -113,7 +116,7 @@ public struct DataGenSources: Sendable {
         auxDictionary, filteredDictionary,
         path(srcRoot, "data/dictionary_oss/reading_correction.tsv"),
         path(srcRoot, "data/dictionary_manual/domain.txt"),
-      ],
+      ] + extraDictionaries,
       usageDict: usageDict)
   }
 

@@ -335,6 +335,11 @@ public final class GenmaiAugmenter: ConversionAugmenter {
     state.withLock { s in s.entry(reading, context).map { AIResultInfo(latency: $0.latency, exact: $0.exact) } }
   }
 
+  public func setReranker(_ reranker: AIReranker?) {
+    let core = self.core
+    Task.detached { await core.setReranker(reranker) }
+  }
+
   public func convert(reading: String, context: String, maxResults: Int) async throws -> [String] {
     enum Plan {
       case cached([String])
@@ -388,7 +393,7 @@ public final class GenmaiAugmenter: ConversionAugmenter {
     func load(directory: URL, options: GenmaiOptions) async throws {
       converter = nil
       incrementals = []
-      let c = try GenmaiConverter(directory: directory)
+      let c = try await GenmaiConverter.load(directory: directory)
       try Task.checkCancellation()
       await c.warmup()
       try Task.checkCancellation()
@@ -436,7 +441,18 @@ public final class GenmaiAugmenter: ConversionAugmenter {
       fast.draft = true
       let candidates = try await incremental(context).convert(reading, lastGroup: draft ? fast : nil)
       var seen = Set<String>()
-      return candidates.map(\.text).filter { !$0.isEmpty && seen.insert($0).inserted }.prefix(maxResults).map { $0 }
+      let unique = candidates.filter { !$0.text.isEmpty && seen.insert($0.text).inserted }
+      var texts = unique.map(\.text)
+      if let reranker {
+        texts = reranker(texts, unique.map(\.score), reading)
+      }
+      return Array(texts.prefix(maxResults))
+    }
+
+    private var reranker: AIReranker?
+
+    func setReranker(_ reranker: AIReranker?) {
+      self.reranker = reranker
     }
   }
 }

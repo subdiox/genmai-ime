@@ -103,11 +103,14 @@ public final class AIConversionHook: Sendable {
     /// The engine's data set (set by `AugmentedEngine`).
     var dataManager: DataManager?
     var checker: AIReadingChecker?
+    var scorer: AIDictionaryScorer?
+    var posMatcher: PosMatcher?
     var task: Task<Void, Never>?
   }
 
-  /// The reading check of AI candidates, built in the background from the engine's system dictionary once AI
-  /// conversion is enabled. Until it is ready, candidates are not checked.
+  /// The reading check of AI candidates and the dictionary scorer that reorders them, built in the background from
+  /// the engine's data set once AI conversion is enabled. Until they are ready, candidates are not checked / kept in
+  /// the model's order.
   private let readingCheck = Mutex(ReadingCheckState())
 
   public init(
@@ -143,18 +146,31 @@ public final class AIConversionHook: Sendable {
 
   private func startReadingCheckIfNeeded() {
     let s = settings
-    guard s.enabled, s.readingCheck else { return }
+    guard s.enabled else { return }
     readingCheck.withLock { r in
-      guard r.checker == nil, r.task == nil, let dataManager = r.dataManager else { return }
+      guard r.checker == nil, r.scorer == nil, r.task == nil, let dataManager = r.dataManager else { return }
       r.task = Task.detached { [weak self] in
-        let checker: AIReadingChecker?
+        var checker: AIReadingChecker?
+        var scorer: AIDictionaryScorer?
         do {
           checker = try AIReadingChecker(dataManager: dataManager)
+          scorer = try AIDictionaryScorer(dataManager: dataManager)
         } catch {
           GenmaiLog.error("AI reading check unavailable: \(error)")
-          checker = nil
         }
-        self?.readingCheck.withLock { $0.checker = checker }
+        guard let self else { return }
+        self.readingCheck.withLock {
+          $0.checker = checker
+          $0.scorer = scorer
+          $0.posMatcher = PosMatcher(dataManager.getPosMatcherData())
+        }
+        if let scorer {
+          // the weight is read at each conversion, so that a settings reload applies at once
+          self.augmenter.setReranker { [weak self] texts, scores, reading in
+            guard let weight = self?.settings.dictionaryWeight, weight > 0 else { return texts }
+            return scorer.rerank(texts, scores: scores, reading: reading, weight: weight)
+          }
+        }
       }
     }
   }
@@ -179,6 +195,26 @@ public final class AIConversionHook: Sendable {
     let kept = checker.filter(texts, reading: key)
     return (kept, texts.filter { !kept.contains($0) })
   }
+
+  /// Mozc's text for a group of segments stays instead of the AI's when one of the segments' top is a proper noun
+  /// (`PosMatcher.isUniqueNoun`), the two differ only in kanji and the dictionary rates the AI's spelling at least
+  /// `dictionaryWordMargin` worse (or cannot produce it): the model invents spellings for names it does not know
+  /// (日下部町 → 草壁町), Mozc's dictionary knows them. Off without the scorer or with `dictionary_weight` 0.
+  func dictionaryWordRule(_ settings: AIConversionSettings) -> (AIConversionMerger.Piece, String, [Candidate]) -> Bool {
+    let (scorer, posMatcher) = readingCheck.withLock { ($0.scorer, $0.posMatcher) }
+    guard settings.dictionaryWeight > 0, let scorer, let posMatcher else { return { _, _, _ in false } }
+    return { engine, ai, tops in
+      guard tops.contains(where: { posMatcher.isUniqueNoun($0.lid) }),
+        AIDictionaryScorer.kanaSkeleton(engine.value) == AIDictionaryScorer.kanaSkeleton(ai),
+        let engineCost = scorer.cost(engine.value, reading: engine.key)
+      else { return false }
+      guard let aiCost = scorer.cost(ai, reading: engine.key) else { return true }
+      return aiCost - engineCost >= Self.dictionaryWordMargin
+    }
+  }
+
+  /// See `dictionaryWordRule` (Mozc cost units: 500 = one nat).
+  static let dictionaryWordMargin = 2000
 
   /// Re-reads `ai_conversion.json` (on the reload notification from GenmaiApp).
   public func reloadSettings() {
@@ -339,7 +375,7 @@ public final class AIConversionHook: Sendable {
       let rejected = Set(state.withLock { $0.rejected })
       record.outcome = AIConversionMerger.apply(
         texts, to: segments, request: request, converter: converter, maxCandidates: settings.candidateCount,
-        rejected: { rejected.contains($0) })
+        rejected: { rejected.contains($0) }, keepsDictionaryWord: dictionaryWordRule(settings))
     }
     let finished = record
     state.withLock {
@@ -354,6 +390,9 @@ public final class AIConversionHook: Sendable {
       if let info { note += info.exact ? " exact" : " draft" }
       if record.outcome.keptLearned > 0 { note += " keptLearned=\(record.outcome.keptLearned)" }
       if record.outcome.keptUserWords > 0 { note += " keptUserWords=\(record.outcome.keptUserWords)" }
+      if record.outcome.keptDictionaryWords > 0 {
+        note += " keptDictionaryWords=\(record.outcome.keptDictionaryWords)"
+      }
       if !record.unreadable.isEmpty { note += " unreadable=\(record.unreadable)" }
       if let error = record.error { note += " error=\(error)" }
       note +=
@@ -426,7 +465,8 @@ public final class AIConversionHook: Sendable {
     let rejected = Set(state.withLock { $0.rejected })
     let outcome = AIConversionMerger.apply(
       texts, to: conversion, request: conversionRequest, converter: converter,
-      maxCandidates: settings.candidateCount, rejected: { rejected.contains($0) })
+      maxCandidates: settings.candidateCount, rejected: { rejected.contains($0) },
+      keepsDictionaryWord: dictionaryWordRule(settings))
     let shown = Self.topValue(conversion)
     state.withLock { s in
       s.sessions[s.activeSession]?.lastSuggestion = Suggestion(reading: reading, text: shown)
@@ -445,6 +485,7 @@ public final class AIConversionHook: Sendable {
       if shown == engineTop { note += " same-as-engine-suggestion" }
       if outcome.keptLearned > 0 { note += " keptLearned=\(outcome.keptLearned)" }
       if outcome.keptUserWords > 0 { note += " keptUserWords=\(outcome.keptUserWords)" }
+      if outcome.keptDictionaryWords > 0 { note += " keptDictionaryWords=\(outcome.keptDictionaryWords)" }
       if !dropped.isEmpty { note += " unreadable=\(dropped)" }
       debugLog.write(
         AIConversionDebugLog.Event(

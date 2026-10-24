@@ -15,12 +15,16 @@ func usage() -> Never {
                          [--zip-code-ken-all FILE --zip-code-jigyosyo FILE] [--work-dir DIR]
                          [--compare REF.data] [--timings]
                          [--aux-dictionary FILE --filtered-dictionary FILE]  (oss: skip the dictionary preprocessing)
+                         [--extra-dictionary FILE[,FILE...]]  (oss: the extended data set, see extra-dictionary)
       genmai-datagen sections --set oss|mock --only GEN[,GEN...] --compare REF.data [options as above]
           Runs only the named generators (\(DataGenerator.allCases.map(\.rawValue).joined(separator: ", ")))
           and compares their sections with those of REF.data.  --user-pos-manager-data FILE (e.g.
           bazel-bin/data_manager/oss/user_pos_manager.data) skips the POS generators.
       genmai-datagen oss-dictionary --output-dir DIR [--src-root DIR] [--zip-code-ken-all FILE --zip-code-jigyosyo FILE]
           Writes zip_code.tsv, dictionary.txt (filtered) and aux_dictionary.txt.
+      genmai-datagen extra-dictionary --output FILE [--src-root DIR] [--zip-code-ken-all FILE]
+                                      [--sudachi-small small_lex.csv] [--sudachi-core core_lex.csv]
+          Writes the proper nouns of KEN_ALL.CSV / SudachiDict that the OSS dictionary lacks (GenExtraDictionary).
       genmai-datagen diff ACTUAL.data EXPECTED.data
     defaults: --src-root ./Vendor/mozc/src; --usage-dict omitted = no usage sections.
     """
@@ -71,8 +75,11 @@ let srcRoot = options["src-root"] ?? FileManager.default.currentDirectoryPath + 
   case "mock":
     return .mock(srcRoot: srcRoot, usageDict: options["usage-dict"])
   case "oss":
+    let extra = options["extra-dictionary"].map { $0.split(separator: ",").map(String.init) } ?? []
     if let aux = options["aux-dictionary"], let filtered = options["filtered-dictionary"] {
-      return .oss(srcRoot: srcRoot, auxDictionary: aux, filteredDictionary: filtered, usageDict: options["usage-dict"])
+      return .oss(
+        srcRoot: srcRoot, auxDictionary: aux, filteredDictionary: filtered, usageDict: options["usage-dict"],
+        extraDictionaries: extra)
     }
     let workDir =
       options["work-dir"]
@@ -83,7 +90,9 @@ let srcRoot = options["src-root"] ?? FileManager.default.currentDirectoryPath + 
     if flags.contains("timings") {
       print(timingLine("oss_dictionary (zip+filtered+aux)", Date().timeIntervalSince(start)))
     }
-    return .oss(srcRoot: srcRoot, auxDictionary: aux, filteredDictionary: filtered, usageDict: options["usage-dict"])
+    return .oss(
+      srcRoot: srcRoot, auxDictionary: aux, filteredDictionary: filtered, usageDict: options["usage-dict"],
+      extraDictionaries: extra)
   default:
     usage()
   }
@@ -158,6 +167,17 @@ do {
     try FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
     let (aux, filtered) = try ossDictionarySources().generate(workDir: dir)
     print("wrote \(aux), \(filtered)")
+  case "extra-dictionary":
+    guard let output = options["output"] else { usage() }
+    let start = Date()
+    let text = try GenExtraDictionary.generate(
+      idDef: ossDictionarySources().idDef, baseDictionaries: ossDictionarySources().baseDictionaryTexts,
+      kenAll: options["zip-code-ken-all"], sudachiSmall: options["sudachi-small"], sudachiCore: options["sudachi-core"])
+    try FileUtil.setContents(output, Array(text.utf8))
+    print(
+      String(
+        format: "wrote %@ (%d entries) in %.1f s", output as NSString, text.utf8.count(where: { $0 == 10 }),
+        Date().timeIntervalSince(start)))
   case "diff":
     guard positional.count == 2 else { usage() }
     let a = try FileUtil.getContentBytes(positional[0])

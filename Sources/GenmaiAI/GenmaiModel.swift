@@ -96,7 +96,7 @@ public struct GenmaiConfig: Sendable, Codable {
 
 /// The genmai model and its synchronous decoder. Not Sendable (MLX arrays are not): use it through the
 /// `GenmaiConverter` actor, which owns one instance.
-public final class GenmaiModel {
+public final class GenmaiModel: GenmaiDecoder {
   /// KV cache sizes; a decode step is compiled per (rows, bucket).
   public static let buckets = [128, 256, 512, maxBucket]
   /// The largest cache bucket (the longest prompt + output).
@@ -176,12 +176,8 @@ public final class GenmaiModel {
   private var promptCache: [PromptKV] = []
   /// Budget of the prompt KV cache in tokens (~98 KB per token: 24 layers x K/V x 1024 x bf16).
   static let promptCacheTokens = 4096
-  /// The best output of recent searches, keyed by their left context (most recent last): the drafts of
-  /// draft-and-verify decoding.
-  private var drafts: [(context: String, tokens: [Int32])] = []
-  static let maxDrafts = 16
-  /// Draft tokens verified per row at most.
-  static let maxDraftTokens = 128
+  /// The drafts of draft-and-verify decoding.
+  private var draftStore = GenmaiDraftStore()
   /// Statistics of draft-and-verify (diagnostics): output tokens accepted from drafts / decode steps run.
   public private(set) var draftTokensAccepted = 0
   public private(set) var decodeSteps = 0
@@ -488,18 +484,13 @@ public final class GenmaiModel {
 
   // MARK: - Beam search
 
-  public func gen(_ reading: String, context: String = "", beams: Int = 5, minRatio: Double = 0) throws
-    -> [GenmaiCandidate]
-  {
-    try genBatch(reading, contexts: [context], beams: beams, minRatio: minRatio)[0]
-  }
-
   /// Independent beam searches for one reading under several left contexts, decoded as one batch
   /// (G groups x `beams` rows). Returns, per context, the candidates (text, sum log-prob) best first.
   /// Throws `CancellationError` (checked between decode steps) when the task is cancelled.
+  /// `bound` is not used: all contexts are decoded as one batch, so stopping some of them early saves nothing.
   public func genBatch(
     _ reading: String, contexts: [String], beams b: Int = 5, minRatio: Double = 0,
-    reusePromptKV: Bool = true, draft: Bool = false, draftMargin: Float = 2
+    reusePromptKV: Bool = true, draft: Bool = false, draftMargin: Float = 2, bound: GenmaiSearchBound? = nil
   ) throws
     -> [[GenmaiCandidate]]
   {
@@ -507,7 +498,7 @@ public final class GenmaiModel {
     guard !contexts.isEmpty else { return [] }
     let groupCount = contexts.count
     let readingLength = reading.unicodeScalars.count
-    let maxNew = Int(Double(readingLength) * 1.3) + 8
+    let maxNew = GenmaiSearch.maxNewTokens(reading)
     let maxT = Self.maxBucket
     var prompts: [[Int32]] = []
     for ctx in contexts {
@@ -545,7 +536,7 @@ public final class GenmaiModel {
     let draftTokens: [[Int32]] =
       draft
       ? contexts.map { c in
-        Array((drafts.last { $0.context == c }?.tokens ?? []).prefix(min(Self.maxDraftTokens, maxNew - 2)))
+        draftStore.tokens(for: c, maxNew: maxNew)
       }
       : Array(repeating: [], count: groupCount)
     let draftLen = draftTokens.map(\.count).max() ?? 0
@@ -592,17 +583,13 @@ public final class GenmaiModel {
       var accepted = Int.max
       var sums: [[Float]] = []
       for g in 0..<groupCount {
-        var a = 0
-        var sum: [Float] = [0]
-        while a < draftTokens[g].count {
+        let sum = GenmaiDraftStore.accept(draftTokens[g], margin: draftMargin) { a in
           let i = (g * (1 + draftLen) + a) * 2
           let first = v2[i] >= v2[i + 1] ? 0 : 1
-          guard t2[i + first] == draftTokens[g][a], v2[i + first] - v2[i + 1 - first] >= draftMargin else { break }
-          sum.append(sum[a] + v2[i + first])
-          a += 1
+          return ((t2[i + first], v2[i + first]), v2[i + 1 - first])
         }
         sums.append(sum)
-        accepted = min(accepted, a)
+        accepted = min(accepted, sum.count - 1)
       }
       start = accepted
       for g in 0..<groupCount { prefixScores[g] = sums[g][start] }
@@ -636,11 +623,10 @@ public final class GenmaiModel {
     let padRows = repeated(padv, count: b, axis: 0)
     let step = getStep(rows: totalRows, bucket: bucket)
     defer {
-      // the next search's draft: this search's best sequence (also when cancelled)
+      // the next search's draft: a single-context search's best sequence (also when cancelled; see GenmaiDecoder)
       do {
-        for g in 0..<groupCount {
-          let best = Self.stableSorted(done[g]) { $0.score > $1.score }.first?.seq ?? seqs[g][0]
-          storeDraft(contexts[g], best.filter { $0 != eos })
+        if groupCount == 1 {
+          draftStore.store(contexts[0], GenmaiSearch.bestSequence(done: done[0], seqs: seqs[0], eos: eos))
         }
       }
     }
@@ -679,27 +665,11 @@ public final class GenmaiModel {
         }
       }
     }
-    var resAll: [[GenmaiCandidate]] = []
-    for g in 0..<groupCount {
-      var dg = done[g]
-      if dg.count < b {
-        for j in 0..<b where seqs[g][j].last != eos && scL[g * b + j].isFinite {
-          dg.append((seqs[g][j], scL[g * b + j]))
-        }
-      }
-      let sorted = Self.stableSorted(dg) { $0.score > $1.score }
-      var res: [GenmaiCandidate] = []
-      var seen = Set<String>()
-      for (sq, sc) in sorted.prefix(b) {
-        var t = tokenizer.decode(sq.filter { $0 != eos })
-        if let nl = t.firstIndex(of: "\n") { t = String(t[..<nl]) }
-        if seen.insert(t).inserted {
-          res.append(GenmaiCandidate(text: t, score: Double(sc)))
-        }
-      }
-      resAll.append(res)
+    return (0..<groupCount).map { g in
+      GenmaiSearch.candidates(
+        done: done[g], seqs: seqs[g], scores: Array(scL[(g * b)..<(g * b + b)]), beams: b, eos: eos,
+        tokenizer: tokenizer)
     }
-    return resAll
   }
 
   // MARK: - Prompt KV cache
@@ -769,16 +739,7 @@ public final class GenmaiModel {
   /// Drops the prompt KV cache and the drafts (tests, memory pressure).
   public func clearPromptCache() {
     promptCache = []
-    drafts = []
-  }
-
-  private func storeDraft(_ context: String, _ tokens: [Int32]) {
-    drafts.removeAll { $0.context == context }
-    guard !tokens.isEmpty else { return }
-    drafts.append((context, tokens))
-    if drafts.count > Self.maxDrafts {
-      drafts.removeFirst(drafts.count - Self.maxDrafts)
-    }
+    draftStore.clear()
   }
 
   /// Python `list.sort` is stable; Swift's `sort` is not guaranteed to be.
@@ -817,39 +778,5 @@ public final class GenmaiModel {
       }
     }
     return parts.map { String(String.UnicodeScalarView($0)) }
-  }
-
-  /// Beam across one chunk: decode `part` after every hypothesis (one batch) and keep the best `beams`.
-  public func extend(_ hyps: [GenmaiCandidate], part: String, context: String = "", options: GenmaiOptions = .init())
-    throws -> [GenmaiCandidate]
-  {
-    let outs = try genBatch(
-      part, contexts: hyps.map { context + $0.text },
-      beams: hyps.count == 1 ? options.beams : options.chunkBeams, minRatio: options.minRatio,
-      reusePromptKV: options.reusePromptKV, draft: options.draft,
-      draftMargin: options.draftMargin)
-    var nxt: [GenmaiCandidate] = []
-    for (h, o) in zip(hyps, outs) {
-      for c in o { nxt.append(GenmaiCandidate(text: h.text + c.text, score: h.score + c.score)) }
-    }
-    nxt = Self.stableSorted(nxt) { $0.score > $1.score }
-    var seen = Set<String>()
-    var res: [GenmaiCandidate] = []
-    for c in nxt where seen.insert(c.text).inserted {
-      res.append(c)
-    }
-    return Array(res.prefix(options.beams))
-  }
-
-  /// Converts `reading` (hiragana) after the left `context`; long readings are split at punctuation and the
-  /// beam continues across chunks (all hypotheses of a chunk are decoded in one batch). Best first.
-  public func convert(_ reading: String, context: String = "", options: GenmaiOptions = .init()) throws
-    -> [GenmaiCandidate]
-  {
-    var hyps = [GenmaiCandidate(text: "", score: 0)]
-    for c in Self.split(reading, chunk: options.chunk) {
-      hyps = try extend(hyps, part: c, context: context, options: options)
-    }
-    return hyps
   }
 }

@@ -21,6 +21,9 @@ public struct AIConversionSettings: Codable, Equatable, Sendable {
   /// Drops AI candidates that cannot be read as the input (`AIReadingChecker`). On by default; off only for
   /// evaluation.
   public var readingCheck: Bool
+  /// Weight of Mozc's dictionary when choosing among AI candidates that differ only in kanji
+  /// (`AIDictionaryScorer.rerank`; 0 = the model's order). No UI.
+  public var dictionaryWeight: Double
   /// Appends one line per AI conversion event to `<profile>/ai_debug.log` (`AIConversionDebugLog`). Off by
   /// default: the log contains the typed text and its left context.
   public var debugLog: Bool
@@ -29,11 +32,14 @@ public struct AIConversionSettings: Codable, Equatable, Sendable {
   public static let defaultCandidateCount = 5
   public static let timeoutRange = 50...5000
   public static let candidateCountRange = 1...10
+  public static let defaultDictionaryWeight = 0.2
+  public static let dictionaryWeightRange = 0.0...2.0
 
   public init(
     enabled: Bool = false, timeoutMilliseconds: Int = AIConversionSettings.defaultTimeoutMilliseconds,
     candidateCount: Int = AIConversionSettings.defaultCandidateCount, modelDirectory: String? = nil,
-    modelSize: AIModelSize = .default, readingCheck: Bool = true, debugLog: Bool = false
+    modelSize: AIModelSize = .default, readingCheck: Bool = true,
+    dictionaryWeight: Double = AIConversionSettings.defaultDictionaryWeight, debugLog: Bool = false
   ) {
     self.enabled = enabled
     self.timeoutMilliseconds = timeoutMilliseconds
@@ -41,6 +47,7 @@ public struct AIConversionSettings: Codable, Equatable, Sendable {
     self.modelDirectory = modelDirectory
     self.modelSize = modelSize
     self.readingCheck = readingCheck
+    self.dictionaryWeight = dictionaryWeight
     self.debugLog = debugLog
   }
 
@@ -51,6 +58,7 @@ public struct AIConversionSettings: Codable, Equatable, Sendable {
     case modelDirectory = "model_directory"
     case modelSize = "model_size"
     case readingCheck = "reading_check"
+    case dictionaryWeight = "dictionary_weight"
     case debugLog = "debug_log"
   }
 
@@ -67,6 +75,7 @@ public struct AIConversionSettings: Codable, Equatable, Sendable {
     }
     modelSize = (try? c.decodeIfPresent(AIModelSize.self, forKey: .modelSize)) ?? modelSize
     readingCheck = try c.decodeIfPresent(Bool.self, forKey: .readingCheck) ?? readingCheck
+    dictionaryWeight = try c.decodeIfPresent(Double.self, forKey: .dictionaryWeight) ?? dictionaryWeight
     debugLog = try c.decodeIfPresent(Bool.self, forKey: .debugLog) ?? debugLog
   }
 
@@ -76,6 +85,8 @@ public struct AIConversionSettings: Codable, Equatable, Sendable {
     s.timeoutMilliseconds = min(max(s.timeoutMilliseconds, Self.timeoutRange.lowerBound), Self.timeoutRange.upperBound)
     s.candidateCount = min(
       max(s.candidateCount, Self.candidateCountRange.lowerBound), Self.candidateCountRange.upperBound)
+    s.dictionaryWeight = min(
+      max(s.dictionaryWeight, Self.dictionaryWeightRange.lowerBound), Self.dictionaryWeightRange.upperBound)
     return s
   }
 

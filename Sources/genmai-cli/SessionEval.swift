@@ -2,7 +2,8 @@
 //
 //   genmai-cli session-eval [--timeout-ms N] [--candidates N] [--settle none|chunks|idle] [--limit N] [--errors]
 //                           [--typing-ms N[,N...]] [--space-delay-ms N] [--out-dir DIR] [--profile-copy DIR]
-//                           [--trace] [--debug-log] [--no-reading-check] <anco-format set.json>...
+//                           [--trace] [--debug-log] [--no-reading-check] [--dictionary-weight W]
+//                           <anco-format set.json>...
 //
 // Every item is typed into a `SessionHandlerBackend` (Mozc Engine + SessionHandler) as direct kana input
 // (one SEND_KEY per character with key_string, hiragana mode), the left context is given as the IMK surrounding
@@ -242,6 +243,8 @@ func runSessionEval(_ arguments: [String]) async {
   let trace = flag("--trace")
   let debugLog = flag("--debug-log")
   let readingCheck = !flag("--no-reading-check")
+  let dictionaryWeight =
+    option("--dictionary-weight").flatMap(Double.init) ?? AIConversionSettings.defaultDictionaryWeight
   if args.isEmpty {
     fail(
       "usage: genmai-cli session-eval [--timeout-ms N] [--settle none|chunks|idle] [--typing-ms N[,N]] [--space-delay-ms N] [--errors] [--out-dir D] <set.json>..."
@@ -281,6 +284,7 @@ func runSessionEval(_ arguments: [String]) async {
   }
   var settings = AIConversionSettings(
     enabled: true, timeoutMilliseconds: timeout, candidateCount: candidates, readingCheck: readingCheck,
+    dictionaryWeight: dictionaryWeight,
     debugLog: debugLog)
   if let model {
     settings.modelDirectory = model
@@ -300,7 +304,7 @@ func runSessionEval(_ arguments: [String]) async {
       "settle \(settle.rawValue)"))
   let ai = SessionHandlerBackend(aiHook: hook)
   await hook.waitForReadingCheck()
-  print("reading check \(readingCheck ? "on" : "off")")
+  print("reading check \(readingCheck ? "on" : "off"), dictionary weight \(dictionaryWeight)")
 
   for path in args {
     var items = (try? loadSet(path)) ?? []
