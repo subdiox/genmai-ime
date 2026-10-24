@@ -10,3 +10,4 @@
 build/
 /Data/external/
 .claude/worktrees/
+__pycache__/
