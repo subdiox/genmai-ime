@@ -58,7 +58,7 @@ import Testing
     model.aiValues.modelDirectory = dir.url.path
     #expect(!model.aiModelStatus.isFound)
     #expect(AIStrings.modelStatus(model.aiModelStatus, language: .english) == "No model is installed.")
-    for f in AIModelStatus.requiredFiles + [AIModelInstaller.mlxWeightsFileName] {
+    for f in AIModelStatus.requiredFiles + ["genmai.mlmodelc"] {
       try Data().write(to: dir.url.appending(path: f))
     }
     model.refreshAIModelStatus()
@@ -78,7 +78,7 @@ import Testing
     files: [
       .init(name: "config.json", size: 10, checksum: .gitBlob("00")),
       .init(name: "tokenizer.json", size: 20, checksum: .gitBlob("00")),
-      .init(name: "model-8bit.safetensors", size: 1000, checksum: .sha256("00")),
+      .init(name: "model-coreml.zip", size: 1000, checksum: .sha256("00")),
     ])
   nonisolated static let smallRelease = GenmaiModelRelease(
     info: GenmaiModelInfo(version: "0.1.1", repository: "subdiox/genmai-90M", revision: "v0.1.1"),
@@ -125,7 +125,7 @@ import Testing
       #expect(release == Self.release)
       progress(.downloading(received: 500, total: 1000))
       progress(.installing)
-      for f in AIModelStatus.requiredFiles + [AIModelInstaller.mlxWeightsFileName] {
+      for f in AIModelStatus.requiredFiles + ["genmai.mlmodelc"] {
         try Data().write(to: directory.appending(path: f))
       }
       try release.info.save(to: directory)
@@ -177,7 +177,7 @@ import Testing
     let modelDir = dir.url.appending(path: "model")
     try FileManager.default.createDirectory(at: modelDir, withIntermediateDirectories: true)
     model.aiValues.modelDirectory = modelDir.path
-    for f in AIModelStatus.requiredFiles + [AIModelInstaller.mlxWeightsFileName] {
+    for f in AIModelStatus.requiredFiles + ["genmai.mlmodelc"] {
       try Data().write(to: modelDir.appending(path: f))
     }
     try Self.release.info.save(to: modelDir)
@@ -195,7 +195,7 @@ import Testing
 
     // an otherwise empty model directory is removed too
     try FileManager.default.removeItem(at: modelDir.appending(path: "notes.txt"))
-    for f in AIModelStatus.requiredFiles + [AIModelInstaller.mlxWeightsFileName] {
+    for f in AIModelStatus.requiredFiles + ["genmai.mlmodelc"] {
       try Data().write(to: modelDir.appending(path: f))
     }
     model.refreshAIModelStatus()
@@ -216,7 +216,8 @@ import Testing
     #expect(downloading.hasPrefix("Downloading… "))
     let note = AIStrings.downloadNote(Self.release, language: .japanese)
     #expect(note.contains("subdiox/genmai-310M"))
-    #expect(AIStrings.sizeName(.small, language: .japanese) == "Small（genmai-90M）")
+    #expect(AIStrings.sizeName(.small, language: .japanese) == "Small（genmai-90M、メモリ約 90 MB）")
+    #expect(AIStrings.sizeName(.medium, language: .english) == "Medium (genmai-310M, about 150 MB of memory)")
     #expect(AIStrings.modelStatus(.found(URL(filePath: "/x"), info: nil), language: .japanese).contains("不明"))
   }
 

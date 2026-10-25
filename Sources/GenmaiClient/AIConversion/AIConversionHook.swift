@@ -166,10 +166,18 @@ public final class AIConversionHook: Sendable {
         }
         if let scorer {
           // the weight is read at each conversion, so that a settings reload applies at once
-          self.augmenter.setReranker { [weak self] texts, scores, reading in
-            guard let weight = self?.settings.dictionaryWeight, weight > 0 else { return texts }
-            return scorer.rerank(texts, scores: scores, reading: reading, weight: weight)
-          }
+          self.augmenter.setDictionaryAdvice(
+            AIDictionaryAdvice(
+              propose: { [weak self] reading, texts in
+                guard let weight = self?.settings.dictionaryWeight, weight > 0 else { return [] }
+                return scorer.propose(reading: reading, texts: texts)
+              },
+              rerank: { [weak self] texts, scores, reading, proposals in
+                guard let settings = self?.settings.sanitized, settings.dictionaryWeight > 0 else { return texts }
+                return scorer.rerank(
+                  texts, scores: scores, reading: reading, weight: settings.dictionaryWeight, proposals: proposals,
+                  proposalWeight: settings.dictionaryProposalWeight)
+              }))
         }
       }
     }
@@ -197,15 +205,19 @@ public final class AIConversionHook: Sendable {
   }
 
   /// Mozc's text for a group of segments stays instead of the AI's when one of the segments' top is a proper noun
-  /// (`PosMatcher.isUniqueNoun`), the two differ only in kanji and the dictionary rates the AI's spelling at least
-  /// `dictionaryWordMargin` worse (or cannot produce it): the model invents spellings for names it does not know
-  /// (日下部町 → 草壁町), Mozc's dictionary knows them. Off without the scorer or with `dictionary_weight` 0.
+  /// (`PosMatcher.isUniqueNoun`) and the AI either wrote the segments' reading in kana where Mozc has kanji
+  /// (莇平 → アザミヒラ) or differs only in kanji and the dictionary rates the AI's spelling at least
+  /// `dictionaryWordMargin` worse (or cannot produce it): the model writes names it does not know in kana or invents
+  /// spellings (日下部町 → 草壁町), Mozc's dictionary knows them. Off without the scorer or with `dictionary_weight` 0.
   func dictionaryWordRule(_ settings: AIConversionSettings) -> (AIConversionMerger.Piece, String, [Candidate]) -> Bool {
     let (scorer, posMatcher) = readingCheck.withLock { ($0.scorer, $0.posMatcher) }
     guard settings.dictionaryWeight > 0, let scorer, let posMatcher else { return { _, _, _ in false } }
     return { engine, ai, tops in
-      guard tops.contains(where: { posMatcher.isUniqueNoun($0.lid) }),
-        AIDictionaryScorer.kanaSkeleton(engine.value) == AIDictionaryScorer.kanaSkeleton(ai),
+      guard tops.contains(where: { posMatcher.isUniqueNoun($0.lid) }) else { return false }
+      if engine.value.contains(where: AIReadingChecker.isKanji), Japanese.katakanaToHiragana(ai) == engine.key {
+        return true
+      }
+      guard AIDictionaryScorer.kanaSkeleton(engine.value) == AIDictionaryScorer.kanaSkeleton(ai),
         let engineCost = scorer.cost(engine.value, reading: engine.key)
       else { return false }
       guard let aiCost = scorer.cost(ai, reading: engine.key) else { return true }

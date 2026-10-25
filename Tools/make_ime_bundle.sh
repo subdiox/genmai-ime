@@ -5,12 +5,9 @@
 # which run in-process in the Swift port):
 #   Genmai.app/Contents/Info.plist                 <- mac/Info.plist with the ${...} variables substituted
 #   Genmai.app/Contents/MacOS/GenmaiIME              <- IMKServer + GenmaiImkInputController + candidate window
-#                                                   (+ AI conversion hook; mlx-swift is linked statically)
-#   Genmai.app/Contents/MacOS/mlx.metallib         <- MLX's Metal kernels for AI conversion (genmai), compiled
-#                                                   with MLX's own safe-math flags (Tools/build_mlx_metallib.sh);
-#                                                   MLX loads a metallib colocated with the executable. The genmai
-#                                                   model itself is not bundled: the settings (tab "AI") download
-#                                                   it to ~/Library/Application Support/Genmai/model.
+#                                                   (+ AI conversion hook, Core ML). The genmai model is not
+#                                                   bundled: the settings (tab "AI") download it to
+#                                                   ~/Library/Application Support/Genmai/model.
 #   Genmai.app/Contents/Resources/*.tiff, *.icns   <- data/images/mac (input mode icons, product icon, logo)
 #   Genmai.app/Contents/Resources/{English,Japanese}.lproj/InfoPlist.strings
 #   Genmai.app/Contents/Resources/credits_en.html  <- data/installer/credits_en.html (+ Tools/assets/
@@ -89,9 +86,6 @@ swift build --package-path "$ROOT" --build-path "$BUILD_PATH" -c $CONFIGURATION 
 swift build --package-path "$ROOT" --build-path "$BUILD_PATH" -c $CONFIGURATION --product GenmaiApp
 BIN_DIR=$(swift build --package-path "$ROOT" --build-path "$BUILD_PATH" -c $CONFIGURATION --show-bin-path)
 
-echo "==> mlx.metallib (Tools/build_mlx_metallib.sh, safe math)"
-OUT="$BIN_DIR/mlx.metallib" "$ROOT/Tools/build_mlx_metallib.sh" "$BUILD_PATH" $CONFIGURATION
-
 echo "==> assembling $OUT"
 rm -rf "$OUT"
 mkdir -p "$OUT/Contents/MacOS" "$OUT/Contents/Resources"
@@ -122,7 +116,6 @@ substitute "$UPSTREAM_SRC/mac/Info.plist" GenmaiIME "$BUNDLE_ID" \
 /usr/libexec/PlistBuddy -c "Add :CFBundleIconName string genmai" "$OUT/Contents/Info.plist"
 plutil -lint "$OUT/Contents/Info.plist" >/dev/null
 cp "$BIN_DIR/GenmaiIME" "$OUT/Contents/MacOS/GenmaiIME"
-cp "$BIN_DIR/mlx.metallib" "$OUT/Contents/MacOS/mlx.metallib"
 cp "$DATA_SET" "$OUT/Contents/Resources/genmai.data"
 
 for image in "$UPSTREAM_SRC"/data/images/mac/*.tiff; do
@@ -211,8 +204,6 @@ ditto "$ROOT/build/UninstallGenmai.app" "$OUT/Contents/Resources/UninstallGenmai
 
 echo "==> codesign (ad hoc)"
 codesign --force --sign - --timestamp=none "$TOOL"
-# A non-Mach-O file in Contents/MacOS is a code subcomponent: sign it, or --verify --strict rejects the bundle.
-codesign --force --sign - --timestamp=none "$OUT/Contents/MacOS/mlx.metallib"
 codesign --force --sign - --timestamp=none "$OUT"
 codesign --verify --strict --deep "$OUT"
 

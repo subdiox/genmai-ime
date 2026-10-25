@@ -21,7 +21,7 @@ import Testing
     files: [
       .init(name: "config.json", size: 10, checksum: .gitBlob("00")),
       .init(name: "tokenizer.json", size: 20, checksum: .gitBlob("00")),
-      .init(name: "model-8bit.safetensors", size: 1000, checksum: .sha256("00")),
+      .init(name: "model-coreml.zip", size: 1000, checksum: .sha256("00")),
     ])
 
   @Test func enablingAIInstallsTheModelAndTurnsItOn() async throws {
@@ -37,7 +37,7 @@ import Testing
     model.installer = { release, directory, progress in
       progress(.downloading(received: 500, total: 1000))
       try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-      for f in AIModelStatus.requiredFiles + [AIModelInstaller.mlxWeightsFileName] {
+      for f in AIModelStatus.requiredFiles + ["genmai.mlmodelc"] {
         try Data().write(to: directory.appending(path: f))
       }
     }

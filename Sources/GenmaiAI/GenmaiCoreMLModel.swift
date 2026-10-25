@@ -15,8 +15,8 @@
 // and its own state; chunk 0 takes the tokens, the others the previous chunk's `hidden` output, and the last one
 // returns the log-probs.
 //
-// The B rows hold one search, so the contexts of a batch are searched one after another (`GenmaiModel` decodes
-// them as one batch); `GenmaiSearchBound` stops those that cannot change the result of an `extend`. Drafts are
+// The B rows hold one search, so the contexts of a batch are searched one after another; `GenmaiSearchBound` stops
+// those that cannot change the result of an `extend`. Drafts are
 // verified by prefilling them after the prompt: the accepted tokens' KV stays in the prompt slots.
 
 import CoreML
@@ -251,6 +251,15 @@ public final class GenmaiCoreMLModel: GenmaiDecoder {
     return rows
   }
 
+  public func logProbs(of continuation: [Int32], after prompt: [Int32]) throws -> [Float]? {
+    let room = config.promptSlots - continuation.count
+    guard !prompt.isEmpty, !continuation.isEmpty, room >= 2 else { return nil }
+    let p = prompt.count > room ? [prompt[0]] + prompt.suffix(room - 1) : prompt
+    // rows after the prompt's last token and each continuation token but the last
+    let rows = try prefill(p + continuation, outputsFrom: p.count - 1)
+    return zip(rows, continuation).map { $0[Int($1)] }
+  }
+
   /// One decode step of all rows; returns (B * V) log-probs.
   private func decode(_ toks: [Int32], position: Int, step: Int, smask: [Float16]) throws -> [Float] {
     let started = Date()
@@ -302,8 +311,8 @@ public final class GenmaiCoreMLModel: GenmaiDecoder {
     let draftTokens = contexts.map { draft ? draftStore.tokens(for: $0, maxNew: maxNew) : [] }
     let prompts = zip(contexts, draftTokens).map { context, d in
       var ids = GenmaiPrompt.ids(tokenizer, reading: reading, context: context)
-      // as GenmaiModel (BOS + prompt tail), and the prompt and its draft fit into the prompt slots
-      let limit = min(GenmaiModel.maxBucket - maxNew, config.promptSlots - d.count)
+      // BOS + the prompt's tail, so that the prompt and its draft fit into the prompt slots
+      let limit = config.promptSlots - d.count
       if ids.count > limit { ids = [ids[0]] + ids.suffix(limit - 1) }
       return ids
     }

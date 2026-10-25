@@ -39,9 +39,6 @@ jobs:
           sudo xcode-select -s "$XCODE/Contents/Developer"
           xcodebuild -version
           swift --version
-          # Needed by Tools/build_mlx_metallib.sh (metal / metallib).
-          xcodebuild -downloadComponent MetalToolchain || true
-          xcrun -sdk macosx metal --version
 
       - name: Version
         id: version

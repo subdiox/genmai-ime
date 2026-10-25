@@ -1,7 +1,7 @@
-// The beam search shared by the genmai decoders: `GenmaiModel` (MLX, GPU) and `GenmaiCoreMLModel` (Core ML, Neural
-// Engine). A decoder implements `genBatch` (one beam search per left context, with drafts and prompt KV reuse);
-// the chunked conversion on top of it (`gen`, `extend`, `convert`), the drafts and how a search ends are shared, so
-// both decoders return the same candidates (up to floating-point differences of the backends).
+// The genmai beam search. A decoder (`GenmaiCoreMLModel`, Core ML on the Neural Engine) implements `genBatch` (one
+// beam search per left context, with drafts and prompt KV reuse) and `logProbs`; the chunked conversion on top of
+// it (`gen`, `extend`, `convert`), scoring a given text, the drafts and how a search ends are shared (a port of the
+// Python reference decoder of the training code).
 
 import Foundation
 
@@ -54,6 +54,10 @@ public protocol GenmaiDecoder: AnyObject {
     draftMargin: Float, bound: GenmaiSearchBound?
   ) throws -> [[GenmaiCandidate]]
 
+  /// The log-prob of each token of `continuation` after `prompt` (prompt ids from `GenmaiPrompt.ids`); nil if they do
+  /// not fit into the decoder's prompt (a long prompt keeps BOS + its tail first).
+  func logProbs(of continuation: [Int32], after prompt: [Int32]) throws -> [Float]?
+
   /// Drops the prompt KV cache and the drafts (tests, memory pressure).
   func clearPromptCache()
 }
@@ -83,13 +87,23 @@ extension GenmaiDecoder {
     return GenmaiSearch.best(next, options.beams)
   }
 
+  /// The model's score of `text` as the output for `reading` after `context`, as a candidate's score (sum of the
+  /// log-probs of its tokens and EOS); nil if it does not fit. For a reading of one chunk (`split`).
+  public func score(_ text: String, reading: String, context: String = "") throws -> Double? {
+    let prompt = GenmaiPrompt.ids(tokenizer, reading: reading, context: context)
+    guard let lps = try logProbs(of: tokenizer.encode(text) + [tokenizer.eosTokenID], after: prompt) else {
+      return nil
+    }
+    return lps.reduce(0) { $0 + Double($1) }
+  }
+
   /// Converts `reading` (hiragana) after the left `context`; long readings are split at punctuation and the
   /// beam continues across chunks. Best first.
   public func convert(_ reading: String, context: String = "", options: GenmaiOptions = .init()) throws
     -> [GenmaiCandidate]
   {
     var hyps = [GenmaiCandidate(text: "", score: 0)]
-    for c in GenmaiModel.split(reading, chunk: options.chunk) {
+    for c in GenmaiSearch.split(reading, chunk: options.chunk) {
       hyps = try extend(hyps, part: c, context: context, options: options)
     }
     return hyps
@@ -98,11 +112,47 @@ extension GenmaiDecoder {
 
 /// Helpers of the shared beam search.
 public enum GenmaiSearch {
+  /// Python `list.sort` is stable; Swift's `sort` is not guaranteed to be.
+  static func stableSorted<T>(_ a: [T], by less: (T, T) -> Bool) -> [T] {
+    a.enumerated().sorted { x, y in
+      if less(x.element, y.element) { return true }
+      if less(y.element, x.element) { return false }
+      return x.offset < y.offset
+    }.map(\.element)
+  }
+
+  /// gen_eval --chunk splitting: punctuation-ended parts merged greedily up to `chunk` characters. When the
+  /// reading only grows, every group but the last is final (see `GenmaiIncrementalConverter`).
+  public static func split(_ reading: String, chunk: Int = 40) -> [String] {
+    let u = Array(reading.unicodeScalars)
+    if chunk <= 0 || u.count <= chunk { return [reading] }
+    let punct: Set<Unicode.Scalar> = ["、", "。", "，", "．", "！", "？", "!", "?"]
+    var raw: [[Unicode.Scalar]] = []
+    var cur: [Unicode.Scalar] = []
+    for c in u {
+      cur.append(c)
+      if punct.contains(c) {
+        raw.append(cur)
+        cur = []
+      }
+    }
+    if !cur.isEmpty { raw.append(cur) }
+    var parts: [[Unicode.Scalar]] = []
+    for p in raw {
+      if let last = parts.last, last.count + p.count <= chunk {
+        parts[parts.count - 1] += p
+      } else {
+        parts.append(p)
+      }
+    }
+    return parts.map { String(String.UnicodeScalarView($0)) }
+  }
+
   /// The best `count` candidates with distinct texts (stable for equal scores).
   public static func best(_ candidates: [GenmaiCandidate], _ count: Int) -> [GenmaiCandidate] {
     var seen = Set<String>()
     return Array(
-      GenmaiModel.stableSorted(candidates) { $0.score > $1.score }.filter { seen.insert($0.text).inserted }
+      stableSorted(candidates) { $0.score > $1.score }.filter { seen.insert($0.text).inserted }
         .prefix(count))
   }
 
@@ -125,7 +175,7 @@ public enum GenmaiSearch {
     }
     var res: [GenmaiCandidate] = []
     var seen = Set<String>()
-    for (sq, sc) in GenmaiModel.stableSorted(all, by: { $0.score > $1.score }).prefix(b) {
+    for (sq, sc) in stableSorted(all, by: { $0.score > $1.score }).prefix(b) {
       var t = tokenizer.decode(sq.filter { $0 != eos })
       if let nl = t.firstIndex(of: "\n") { t = String(t[..<nl]) }
       if seen.insert(t).inserted {
@@ -137,7 +187,7 @@ public enum GenmaiSearch {
 
   /// The best output of a search: its best ended hypothesis, else its first row.
   static func bestSequence(done: [(seq: [Int32], score: Float)], seqs: [[Int32]], eos: Int32) -> [Int32] {
-    (GenmaiModel.stableSorted(done) { $0.score > $1.score }.first?.seq ?? seqs.first ?? []).filter { $0 != eos }
+    (stableSorted(done) { $0.score > $1.score }.first?.seq ?? seqs.first ?? []).filter { $0 != eos }
   }
 }
 

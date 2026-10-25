@@ -4,8 +4,8 @@
 # model skip (it is not downloaded here); the data sets are built with genmai-datagen and cached.
 # The tests run in a release build with testing enabled: debug code is ~20x slower and the tests took 45 minutes on
 # the runner. The caches are saved even when a step fails (a failing run must not make the next one start over);
-# the build cache keeps the dependencies' objects (mostly MLX's C++), the package's own modules are rebuilt because
-# the checkout gives every source a new mtime.
+# the build cache keeps the dependencies' objects, the package's own modules are rebuilt because the checkout gives
+# every source a new mtime.
 name: CI
 
 on:

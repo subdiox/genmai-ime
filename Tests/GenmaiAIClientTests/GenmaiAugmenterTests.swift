@@ -53,7 +53,7 @@ struct GenmaiAugmenterTests {
     await a.waitUntilLoaded()
     let reading = "だんせいせいねんしにおけるだんせいゆういのせいいしき、そしてじょせいのしてんからみたひょうげん"
     let context = "青年誌で描くことが多いが、"
-    let converter = try GenmaiConverter(directory: try #require(ModelPaths.modelDirectory))
+    let converter = try await GenmaiConverter(directory: try #require(ModelPaths.modelDirectory))
     let direct = try await converter.convert(reading, context: context).map(\.text)
     // Typing: every prefix is prepared; the last one is converted speculatively after the pause.
     for n in stride(from: 4, through: reading.count, by: 4) {
@@ -81,7 +81,7 @@ struct GenmaiAugmenterTests {
     #expect(a.readyResult(reading: reading, context: context, maxResults: 1) != nil)
     #expect(a.resultInfo(reading: reading, context: context)?.exact == false)
     #expect(a.resultUpdate(reading: "べつのよみ", context: context) == nil)
-    // the refinement after the pause; awaited before the test ends (MLX work at exit crashes Metal)
+    // the refinement after the pause
     await a.waitForPreparation(speculation: true)
     #expect(a.resultInfo(reading: reading, context: context)?.exact == true)
     #expect(a.resultUpdate(reading: reading, context: context) == nil)
@@ -95,7 +95,7 @@ struct GenmaiAugmenterTests {
     await a.waitUntilLoaded()
     let reading = "あしたのかいぎはごごさんじからにへんこうになりました"
     let context = "連絡です。"
-    let converter = try GenmaiConverter(directory: try #require(ModelPaths.modelDirectory))
+    let converter = try await GenmaiConverter(directory: try #require(ModelPaths.modelDirectory))
     let t0 = ContinuousClock.now
     let direct = try await converter.convert(reading, context: context).map(\.text)
     let single = ContinuousClock.now - t0
@@ -128,7 +128,7 @@ struct GenmaiAugmenterTests {
     // now cached
     #expect(try await a.convert(reading: reading, context: "", maxResults: 5) == texts)
     #expect(a.lastConvertSource == .ready)
-    // let the delayed refine finish: MLX work still running at process exit crashes Metal
+    // let the delayed refine finish before the test ends
     await a.waitForPreparation(speculation: true)
   }
 

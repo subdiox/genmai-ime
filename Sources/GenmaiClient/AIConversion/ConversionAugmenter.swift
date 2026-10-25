@@ -47,13 +47,28 @@ public protocol ConversionAugmenter: AnyObject, Sendable {
   /// Diagnostics of the ready result for `reading` / `context` (debug log), if any.
   func resultInfo(reading: String, context: String) -> AIResultInfo?
 
-  /// Reorders each result (texts best first with the model's scores, for the reading) before it is stored or
-  /// returned; nil: the model's order (`AIConversionHook` sets `AIDictionaryScorer.rerank`).
-  func setReranker(_ reranker: AIReranker?)
+  /// The dictionary's say in each result before it is stored or returned; nil: the model's candidates in its order
+  /// (`AIConversionHook` sets one built on `AIDictionaryScorer`).
+  func setDictionaryAdvice(_ advice: AIDictionaryAdvice?)
 }
 
-/// Reorders AI candidates: (texts best first, the model's log-probs, reading) → texts.
-public typealias AIReranker = @Sendable (_ texts: [String], _ scores: [Double], _ reading: String) -> [String]
+/// What the dictionary adds to an AI result.
+public struct AIDictionaryAdvice: Sendable {
+  /// Texts the model is to score and add to its candidates: (reading, the model's texts best first) → texts.
+  public var propose: @Sendable (_ reading: String, _ texts: [String]) -> [String]
+  /// Reorders the candidates: (texts, the model's log-probs, reading, the proposed texts) → texts.
+  public var rerank:
+    @Sendable (_ texts: [String], _ scores: [Double], _ reading: String, _ proposals: [String]) -> [String]
+
+  public init(
+    propose: @escaping @Sendable (_ reading: String, _ texts: [String]) -> [String],
+    rerank:
+      @escaping @Sendable (_ texts: [String], _ scores: [Double], _ reading: String, _ proposals: [String]) -> [String]
+  ) {
+    self.propose = propose
+    self.rerank = rerank
+  }
+}
 
 /// Diagnostics of a finished AI result.
 public struct AIResultInfo: Equatable, Sendable {

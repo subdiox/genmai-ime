@@ -31,8 +31,6 @@ public final class GenmaiAugmenter: ConversionAugmenter {
     /// Finished speculative conversions, most recent last.
     var cache: [Cached] = []
     var lastSource: ConvertSource?
-    /// Returns MLX's buffer cache to the system once typing has paused for `idleReleaseDelay`.
-    var idleRelease: Task<Void, Never>?
 
     mutating func cancelAll() {
       prepare?.task.cancel()
@@ -40,8 +38,6 @@ public final class GenmaiAugmenter: ConversionAugmenter {
       speculation?.cancel()
       speculation = nil
       cache = []
-      idleRelease?.cancel()
-      idleRelease = nil
     }
 
     func cached(_ reading: String, _ context: String) -> [String]? {
@@ -101,9 +97,6 @@ public final class GenmaiAugmenter: ConversionAugmenter {
 
   /// Typing pause after which the fast speculative result is replaced by an exact conversion.
   static let refineDelay: Duration = .milliseconds(400)
-  /// Typing pause after which MLX's buffer cache is returned to the system (the next conversion allocates again,
-  /// a few ms).
-  static let idleReleaseDelay: Duration = .seconds(30)
   /// Candidates kept by a speculative conversion.
   static let speculationResults = 10
 
@@ -186,21 +179,6 @@ public final class GenmaiAugmenter: ConversionAugmenter {
     state.withLock { s in
       guard s.status == .ready else { return }
       startSpeculation(&s, reading: reading, context: context)
-      scheduleIdleRelease(&s)
-    }
-  }
-
-  private func scheduleIdleRelease(_ s: inout State) {
-    s.idleRelease?.cancel()
-    let core = self.core
-    let work = [s.prepare?.task, s.speculation?.refine].compactMap { $0 }
-    s.idleRelease = Task.detached {
-      do { try await Task.sleep(for: GenmaiAugmenter.idleReleaseDelay) } catch { return }
-      for task in work {
-        await task.value
-      }
-      guard !Task.isCancelled else { return }
-      await core.releaseCachedMemory()
     }
   }
 
@@ -210,7 +188,7 @@ public final class GenmaiAugmenter: ConversionAugmenter {
   private func startSpeculation(_ s: inout State, reading: String, context: String) -> Task<[String]?, Never>? {
     let core = self.core
     // chunk pre-conversion
-    let groups = Array(GenmaiModel.split(reading, chunk: s.options.chunk).dropLast())
+    let groups = Array(GenmaiSearch.split(reading, chunk: s.options.chunk).dropLast())
     if let p = s.prepare, p.context == context, groups.starts(with: p.groups) {
       if p.groups != groups {
         let previous = p.task
@@ -335,9 +313,9 @@ public final class GenmaiAugmenter: ConversionAugmenter {
     state.withLock { s in s.entry(reading, context).map { AIResultInfo(latency: $0.latency, exact: $0.exact) } }
   }
 
-  public func setReranker(_ reranker: AIReranker?) {
+  public func setDictionaryAdvice(_ advice: AIDictionaryAdvice?) {
     let core = self.core
-    Task.detached { await core.setReranker(reranker) }
+    Task.detached { await core.setDictionaryAdvice(advice) }
   }
 
   public func convert(reading: String, context: String, maxResults: Int) async throws -> [String] {
@@ -393,8 +371,7 @@ public final class GenmaiAugmenter: ConversionAugmenter {
     func load(directory: URL, options: GenmaiOptions) async throws {
       converter = nil
       incrementals = []
-      GenmaiConverter.releaseUnusedMemory()  // the previous model's buffers (MLX)
-      let c = try await GenmaiConverter.load(directory: directory)
+      let c = try await GenmaiConverter(directory: directory)
       try Task.checkCancellation()
       await c.warmup()
       try Task.checkCancellation()
@@ -405,15 +382,6 @@ public final class GenmaiAugmenter: ConversionAugmenter {
     func unload() {
       converter = nil
       incrementals = []
-      GenmaiConverter.releaseUnusedMemory()
-    }
-
-    func releaseCachedMemory() async {
-      if let converter {
-        _ = await converter.releaseCachedMemory()
-      } else {
-        GenmaiConverter.releaseUnusedMemory()
-      }
     }
 
     private func incremental(_ context: String) throws -> GenmaiIncrementalConverter {
@@ -444,16 +412,29 @@ public final class GenmaiAugmenter: ConversionAugmenter {
       var seen = Set<String>()
       let unique = candidates.filter { !$0.text.isEmpty && seen.insert($0.text).inserted }
       var texts = unique.map(\.text)
-      if let reranker {
-        texts = reranker(texts, unique.map(\.score), reading)
+      if let advice, let converter {
+        var scores = unique.map(\.score)
+        var proposals: [String] = []
+        // a proposal is scored as one chunk: only for readings the model converts in one
+        if GenmaiSearch.split(reading, chunk: options.chunk).count == 1 {
+          proposals = advice.propose(reading, texts)
+          let unscored = proposals.filter { !texts.contains($0) }
+          for (text, score) in zip(unscored, try await converter.score(unscored, reading: reading, context: context)) {
+            if let score {
+              texts.append(text)
+              scores.append(score)
+            }
+          }
+        }
+        texts = advice.rerank(texts, scores, reading, proposals)
       }
       return Array(texts.prefix(maxResults))
     }
 
-    private var reranker: AIReranker?
+    private var advice: AIDictionaryAdvice?
 
-    func setReranker(_ reranker: AIReranker?) {
-      self.reranker = reranker
+    func setDictionaryAdvice(_ advice: AIDictionaryAdvice?) {
+      self.advice = advice
     }
   }
 }

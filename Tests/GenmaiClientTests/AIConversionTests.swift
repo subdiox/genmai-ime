@@ -61,7 +61,7 @@ final class FakeAugmenter: ConversionAugmenter, Sendable {
     readyResult(reading: reading, context: context, maxResults: 1) == nil
       ? nil : AIResultInfo(latency: .milliseconds(1), exact: false)
   }
-  func setReranker(_ reranker: AIReranker?) {}
+  func setDictionaryAdvice(_ advice: AIDictionaryAdvice?) {}
 
   /// Simulates a speculation in flight: `resultUpdate` returns a task that stores `texts` (as ready) when
   /// `release()` is called.
@@ -366,6 +366,28 @@ func conversionRequest() -> ConversionRequest {
     #expect(tops(segments) == ["日下部町に", "行く"])
   }
 
+  /// The hook's rule: Mozc's proper noun stays where the AI wrote its reading in kana.
+  @Test(.enabled(if: FileManager.default.fileExists(atPath: OssDataManager.defaultDataPath)))
+  func kanaSpelledNamesKeepTheDictionaryWord() async throws {
+    let hook = AIConversionHook(augmenter: FakeAugmenter([:]), settings: AIConversionSettings(enabled: true))
+    hook.attachReadingCheckData(try OssDataManager.create())
+    await hook.waitForReadingCheck()
+    let rule = hook.dictionaryWordRule(hook.settings)
+    let dataManager = try OssDataManager.create()
+    let posMatcher = PosMatcher(dataManager.getPosMatcherData())
+    let noun = Candidate()
+    noun.value = "日下部町に"
+    noun.lid = posMatcher.getUniqueNounId()
+    let piece = AIConversionMerger.Piece(key: "くさかべちょうに", value: "日下部町に")
+    #expect(rule(piece, "クサカベチョウに", [noun]))
+    #expect(rule(piece, "くさかべちょうに", [noun]))
+    // other kana: not this rule
+    #expect(!rule(piece, "クサカベマチに", [noun]))
+    // not a proper noun
+    noun.lid = 0
+    #expect(!rule(piece, "クサカベチョウに", [noun]))
+  }
+
   @Test func userDictionaryWordIsPromotedWhenMozcRanksItLower() {
     let segments = makeSegments([("はるきが", ["春樹が", "陽稀が"]), ("きた", ["来た"])])
     let user = segments.mutableConversionSegment(0).mutableCandidate(1)
@@ -462,8 +484,8 @@ func conversionRequest() -> ConversionRequest {
     defer { try? FileManager.default.removeItem(at: dir) }
     #expect(
       AIModelStatus.check(dir)
-        == .missing(dir, missingFiles: AIModelStatus.requiredFiles + [AIModelInstaller.mlxWeightsFileName]))
-    for f in AIModelStatus.requiredFiles + [AIModelInstaller.mlxWeightsFileName] {
+        == .missing(dir, missingFiles: AIModelStatus.requiredFiles + ["genmai.mlmodelc"]))
+    for f in AIModelStatus.requiredFiles + ["genmai.mlmodelc"] {
       try Data().write(to: dir.appending(path: f))
     }
     let status = AIModelStatus.check(dir)
@@ -481,12 +503,6 @@ func conversionRequest() -> ConversionRequest {
     #expect(AIModelStatus.check(dir).needsInstall(GenmaiModelReleaseTests.release("0.10.0")))
     #expect(!AIModelStatus.check(dir).needsInstall(GenmaiModelReleaseTests.release("0.1.0")))
     #expect(AIModelStatus.check(dir.appending(path: "none")).needsInstall(release))
-    // genmai_model.json of earlier versions: repository subdiox/genmai (= medium), with a variant
-    try Data(
-      #"{"repository": "subdiox/genmai", "revision": "v0.2.0", "variant": "8bit", "version": "0.2.0"}"#.utf8
-    ).write(to: dir.appending(path: GenmaiModelInfo.fileName))
-    #expect(AIModelStatus.check(dir).installedSize == .medium)
-    #expect(!AIModelStatus.check(dir).needsInstall(release))
   }
 }
 
@@ -503,7 +519,6 @@ func conversionRequest() -> ConversionRequest {
     #expect(AIModelSize.medium.repository == "subdiox/genmai-310M")
     #expect(AIModelSize.small.modelName == "genmai-90M")
     #expect(AIModelSize(repository: "subdiox/genmai-90M") == .small)
-    #expect(AIModelSize(repository: "subdiox/genmai") == .medium)
     #expect(AIModelSize(repository: "someone/else") == nil)
   }
 
@@ -520,8 +535,7 @@ func conversionRequest() -> ConversionRequest {
     [{"type":"file","oid":"a6344aa","size":1519,"path":".gitattributes"},
     {"type":"file","oid":"70bb1e6b8b32086b8bccd5dcbb6d84ef3847669e","size":921,"path":"config.json"},
     {"type":"file","oid":"0695e41","size":1238046208,"lfs":{"oid":"e1ac64258359389b0451bdc521593cba825635baa08b2650a1140678a01396f6","size":1238046208,"pointerSize":135},"path":"model.safetensors"},
-    {"type":"file","oid":"7c2e1a0","size":336000000,"lfs":{"oid":"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef","size":336000000,"pointerSize":134},"path":"model-8bit.safetensors"},
-    {"type":"file","oid":"5d1b2c0","size":619034840,"lfs":{"oid":"f3caa5b616114699a79d595ff8a88b4ba33e3fffe77ad0bf5cc13dbfed314411","size":619034840,"pointerSize":134},"path":"model-bf16.safetensors"},
+    {"type":"file","oid":"z1","size":282924021,"lfs":{"oid":"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef","size":282924021,"pointerSize":134},"path":"model-coreml.zip"},
     {"type":"file","oid":"ac7a91b3c4480c983debf6cc9c4d3d482c350fbf","size":394106,"path":"tokenizer.json"}]
     """#.utf8)
 
@@ -535,43 +549,28 @@ func conversionRequest() -> ConversionRequest {
     #expect(GenmaiModelRelease.compareVersions("1.0.0", "1.0.0") == .orderedSame)
   }
 
-  /// Only config.json, tokenizer.json and the 8-bit weights are downloaded (not the bf16 or fp32 weights).
+  /// Only config.json, tokenizer.json and the Core ML model are downloaded (not the fp32 weights).
   @Test func filesWithChecksums() throws {
     let files = try GenmaiModelRelease.files(Self.tree)
-    #expect(files.map(\.name) == ["config.json", "tokenizer.json", "model-8bit.safetensors"])
+    #expect(files.map(\.name) == ["config.json", "tokenizer.json", "model-coreml.zip"])
     #expect(
       files[0] == .init(name: "config.json", size: 921, checksum: .gitBlob("70bb1e6b8b32086b8bccd5dcbb6d84ef3847669e")))
     #expect(
       files[2]
         == .init(
-          name: "model-8bit.safetensors", size: 336_000_000,
+          name: "model-coreml.zip", size: 282_924_021,
           checksum: .sha256("0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef")))
     #expect(throws: AIModelInstallError.self) { try GenmaiModelRelease.files(Data("[]".utf8)) }
     let r = GenmaiModelRelease(
-      info: GenmaiModelInfo(version: "0.1.0", repository: "subdiox/genmai-310M", revision: "v0.1.0"), files: files)
-    #expect(r.downloadSize == 921 + 394_106 + 336_000_000)
+      info: GenmaiModelInfo(version: "1.0.0", repository: "subdiox/genmai-310M", revision: "v1.0.0"), files: files)
+    #expect(r.downloadSize == 921 + 394_106 + 282_924_021)
     #expect(
-      r.url(of: files[2]).absoluteString
-        == "https://huggingface.co/subdiox/genmai-310M/resolve/v0.1.0/model-8bit.safetensors")
-    // a release without 8-bit weights cannot be installed
-    let bf16Only = Data(
-      String(decoding: Self.tree, as: UTF8.self).replacing("model-8bit.safetensors", with: "other.safetensors").utf8)
-    #expect(throws: AIModelInstallError.self) { try GenmaiModelRelease.files(bf16Only) }
-  }
-
-  /// A release tree with a Core ML model.
-  static let coreMLTree = Data(
-    String(decoding: tree.dropLast(), as: UTF8.self).appending(
-      #"""
-      ,{"type":"file","oid":"z1","size":282924021,"lfs":{"oid":"bb","size":282924021,"pointerSize":134},"path":"model-coreml.zip"}]
-      """#
-    ).utf8)
-
-  @Test func coreMLFiles() throws {
-    #expect(try GenmaiModelRelease.coreMLFiles(Self.tree) == nil)
-    let files = try #require(try GenmaiModelRelease.coreMLFiles(Self.coreMLTree))
-    #expect(files.map(\.name) == ["config.json", "tokenizer.json", "model-coreml.zip"])
-    #expect(files[2] == .init(name: "model-coreml.zip", size: 282_924_021, checksum: .sha256("bb")))
+      r.url(of: files[2]).absoluteString == "https://huggingface.co/subdiox/genmai-310M/resolve/v1.0.0/model-coreml.zip"
+    )
+    // a release without the Core ML model cannot be installed
+    let fp32Only = Data(
+      String(decoding: Self.tree, as: UTF8.self).replacing("model-coreml.zip", with: "other.zip").utf8)
+    #expect(throws: AIModelInstallError.self) { try GenmaiModelRelease.files(fp32Only) }
     #expect(GenmaiModelRelease.isSupportedCoreML(config: Data(#"{"format": "genmai-coreml-1", "chunks": 2}"#.utf8)))
     #expect(!GenmaiModelRelease.isSupportedCoreML(config: Data(#"{"format": "genmai-coreml-2"}"#.utf8)))
   }
@@ -632,83 +631,6 @@ func conversionRequest() -> ConversionRequest {
         of: url, .sha256("5891b5b522d5df086d0ff0b110fbd9d21bb4fc7163af34d08286a2e846f6be03")))
     #expect(!(try await AIModelInstaller.checksum(of: url, .gitBlob("0000"))))
   }
-}
-
-@Suite struct GenmaiSafetensorsTests {
-  /// Writes a safetensors file with F32 tensors.
-  static func write(_ tensors: [(String, [Int], [Float])], to url: URL) throws {
-    var header: [String: Any] = ["__metadata__": ["format": "pt"]]
-    var body = Data()
-    for (name, shape, values) in tensors {
-      header[name] = ["dtype": "F32", "shape": shape, "data_offsets": [body.count, body.count + values.count * 4]]
-      for v in values {
-        body.appendLittleEndian(v.bitPattern)
-      }
-    }
-    let json = try JSONSerialization.data(withJSONObject: header)
-    var data = Data()
-    data.appendLittleEndian(UInt64(json.count))
-    data.append(json)
-    data.append(body)
-    try data.write(to: url)
-  }
-
-  static func read(_ url: URL) throws -> (header: [String: Any], body: Data) {
-    let data = try Data(contentsOf: url)
-    let n = Int(data.span.loadLittleEndian(UInt64.self, at: 0))
-    let header = try #require(try JSONSerialization.jsonObject(with: data[8..<(8 + n)]) as? [String: Any])
-    return (header, Data(data[(8 + n)...]))
-  }
-
-  @Test func bfloat16RoundsToNearestEven() {
-    #expect(GenmaiSafetensors.bfloat16(Float(1).bitPattern) == 0x3F80)
-    #expect(GenmaiSafetensors.bfloat16(0x3F80_8000) == 0x3F80)  // tie, even stays
-    #expect(GenmaiSafetensors.bfloat16(0x3F81_8000) == 0x3F82)  // tie, odd rounds up
-    #expect(GenmaiSafetensors.bfloat16(0x3F80_8001) == 0x3F81)
-    #expect(GenmaiSafetensors.bfloat16(Float.infinity.bitPattern) == 0x7F80)
-    #expect(GenmaiSafetensors.bfloat16(Float.nan.bitPattern) & 0x7FC0 == 0x7FC0)
-    #expect(GenmaiSafetensors.bfloat16((-2.5 as Float).bitPattern) == 0xC020)
-  }
-
-  @Test func convertsToTheRuntimeLayout() throws {
-    let dir = FileManager.default.temporaryDirectory.appending(path: "safetensors-\(UUID())")
-    try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-    defer { try? FileManager.default.removeItem(at: dir) }
-    let src = dir.appending(path: "in.safetensors")
-    let dst = dir.appending(path: "out.safetensors")
-    try Self.write(
-      [
-        ("transformer.h.0.attn.c_attn.weight", [2, 3], [1, 2, 3, 4, 5, 6]),  // (in 2, out 3)
-        ("transformer.ln_f.bias", [2], [0.5, -1]),
-        ("lm_head.weight", [1], [9]),
-      ], to: src)
-    try GenmaiSafetensors.prepare(source: src, destination: dst)
-    let (header, body) = try Self.read(dst)
-    #expect((header["__metadata__"] as? [String: String])?["format"] == GenmaiSafetensors.preparedFormat)
-    #expect(try GenmaiSafetensors.format(of: dst) == GenmaiSafetensors.preparedFormat)
-    #expect(try GenmaiSafetensors.format(of: src) == "pt")
-    #expect(Set(header.keys) == ["__metadata__", "h.0.attn.c_attn.weight", "ln_f.bias"])
-    let w = try #require(header["h.0.attn.c_attn.weight"] as? [String: Any])
-    #expect(w["dtype"] as? String == "BF16")
-    #expect(w["shape"] as? [Int] == [3, 2])
-    #expect(w["data_offsets"] as? [Int] == [0, 12])
-    let bytes = [UInt8](body)
-    let values = (0..<(bytes.count / 2)).map {
-      Float(bitPattern: UInt32(bytes.loadLittleEndian(UInt16.self, at: $0 * 2)) << 16)
-    }
-    // transposed: (out, in)
-    #expect(values == [1, 4, 2, 5, 3, 6, 0.5, -1])
-  }
-
-  @Test func rejectsGarbage() throws {
-    let url = FileManager.default.temporaryDirectory.appending(path: "garbage-\(UUID()).safetensors")
-    defer { try? FileManager.default.removeItem(at: url) }
-    try Data("xx".utf8).write(to: url)
-    #expect(throws: AIModelInstallError.self) {
-      try GenmaiSafetensors.prepare(source: url, destination: url.appendingPathExtension("out"))
-    }
-  }
-
 }
 
 // MARK: - Hook in the session layer

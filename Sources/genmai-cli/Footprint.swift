@@ -1,4 +1,4 @@
-// The process's memory footprint (eval prints it: the Core ML decoder's must fit an iOS keyboard extension).
+// The process's memory footprint (eval and session-eval print it).
 
 import Darwin
 import Foundation

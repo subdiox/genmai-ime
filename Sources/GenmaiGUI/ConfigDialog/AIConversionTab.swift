@@ -29,10 +29,10 @@ public enum AIStrings {
     .modelInstalledUnknown: "A model is installed (version unknown).",
     .modelNotInstalled: "No model is installed.",
     .size: "Model",
-    .sizeSmall: "Small (%@)",
-    .sizeMedium: "Medium (%@)",
+    .sizeSmall: "Small (%@, about %d MB of memory)",
+    .sizeMedium: "Medium (%@, about %d MB of memory)",
     .sizeNote:
-      "The medium model converts more accurately. The small model needs about a third of the memory and converts faster.",
+      "The medium model converts more accurately. The small model needs less memory and converts faster. The memory is what AI conversion adds to the input method while converting.",
     .modelUpToDate: "%@ %@ is the latest version.",
     .download: "Download %@ %@",
     .update: "Update to %@ %@",
@@ -69,9 +69,9 @@ public enum AIStrings {
     .modelInstalledUnknown: "モデルがインストールされています（バージョン不明）。",
     .modelNotInstalled: "モデルがインストールされていません。",
     .size: "モデル",
-    .sizeSmall: "Small（%@）",
-    .sizeMedium: "Medium（%@）",
-    .sizeNote: "Medium のほうが正確に変換します。Small はメモリ使用量が約 3 分の 1 で、変換も速くなります。",
+    .sizeSmall: "Small（%@、メモリ約 %d MB）",
+    .sizeMedium: "Medium（%@、メモリ約 %d MB）",
+    .sizeNote: "Medium のほうが正確に変換します。Small はメモリが少なく、変換も速くなります。メモリは、変換中に AI 変換が入力メソッドに加える使用量の目安です。",
     .modelUpToDate: "%1$@ %2$@ は最新版です。",
     .download: "%1$@ %2$@ をダウンロード",
     .update: "%1$@ %2$@ にアップデート",
@@ -116,11 +116,11 @@ public enum AIStrings {
     info.size?.modelName ?? String(info.repository.split(separator: "/").last ?? "")
   }
 
-  /// The model picker's item: "Small (genmai-90M)".
+  /// The model picker's item: "Small (genmai-90M, about 90 MB of memory)".
   public static func sizeName(_ size: AIModelSize, language: GUILanguage = .current) -> String {
     switch size {
-    case .small: String(format: text(.sizeSmall, language: language), size.modelName)
-    case .medium: String(format: text(.sizeMedium, language: language), size.modelName)
+    case .small: String(format: text(.sizeSmall, language: language), size.modelName, size.memoryMegabytes)
+    case .medium: String(format: text(.sizeMedium, language: language), size.modelName, size.memoryMegabytes)
     }
   }
 

@@ -16,7 +16,7 @@
 // --typing-ms 120,200 instead simulates real typing: one kana every N ms of wall-clock time (one AI run per
 // interval; the background work runs while the next key is awaited), SPACE --space-delay-ms (default 0) after the
 // last kana; it also reports where the AI result came from at SPACE (ready / awaited in flight / converted then)
-// and the MLX busy time per keystroke. The plain Mozc run types without delays (its result does not depend on
+// and the model's busy time per keystroke. The plain Mozc run types without delays (its result does not depend on
 // timing). Reports strict / normalized top-1 (normalization of
 // the research scoring script) and the conversion-key latency; --out-dir writes anco-format results
 // (<dir>/session_<mode>_<set>.json, readable by score.py).
@@ -95,7 +95,7 @@ final class SessionEvalRunner {
     var latency: Double
     var record: AIConversionHook.ConversionRecord?
     var source: GenmaiAugmenter.ConvertSource?
-    /// MLX busy time while typing (first key to SPACE) and during SPACE, in ms.
+    /// Model busy time while typing (first key to SPACE) and during SPACE, in ms.
     var busyTyping: Double = 0
     var busyConversion: Double = 0
     var keys = 0
@@ -245,6 +245,8 @@ func runSessionEval(_ arguments: [String]) async {
   let readingCheck = !flag("--no-reading-check")
   let dictionaryWeight =
     option("--dictionary-weight").flatMap(Double.init) ?? AIConversionSettings.defaultDictionaryWeight
+  let proposalWeight =
+    option("--proposal-weight").flatMap(Double.init) ?? AIConversionSettings.defaultDictionaryProposalWeight
   if args.isEmpty {
     fail(
       "usage: genmai-cli session-eval [--timeout-ms N] [--settle none|chunks|idle] [--typing-ms N[,N]] [--space-delay-ms N] [--errors] [--out-dir D] <set.json>..."
@@ -284,7 +286,7 @@ func runSessionEval(_ arguments: [String]) async {
   }
   var settings = AIConversionSettings(
     enabled: true, timeoutMilliseconds: timeout, candidateCount: candidates, readingCheck: readingCheck,
-    dictionaryWeight: dictionaryWeight,
+    dictionaryWeight: dictionaryWeight, dictionaryProposalWeight: proposalWeight,
     debugLog: debugLog)
   if let model {
     settings.modelDirectory = model
@@ -304,7 +306,8 @@ func runSessionEval(_ arguments: [String]) async {
       "settle \(settle.rawValue)"))
   let ai = SessionHandlerBackend(aiHook: hook)
   await hook.waitForReadingCheck()
-  print("reading check \(readingCheck ? "on" : "off"), dictionary weight \(dictionaryWeight)")
+  print(
+    "reading check \(readingCheck ? "on" : "off"), dictionary weight \(dictionaryWeight), proposals \(proposalWeight)")
 
   for path in args {
     var items = (try? loadSet(path)) ?? []
@@ -405,7 +408,7 @@ func runSessionEval(_ arguments: [String]) async {
         print(
           String(
             format:
-              "   result at SPACE: ready %d (%.1f%%), awaited %d, converted %d, not ready %d; MLX busy per key while typing %.1f ms (%.1f s total), per SPACE %.1f ms",
+              "   result at SPACE: ready %d (%.1f%%), awaited %d, converted %d, not ready %d; model busy per key while typing %.1f ms (%.1f s total), per SPACE %.1f ms",
             sources[.ready] ?? 0, Double(sources[.ready] ?? 0) / n * 100, sources[.awaited] ?? 0,
             sources[.converted] ?? 0, sources[.notReady] ?? 0, busyTyping / Double(max(keyCount, 1)), busyTyping / 1000,
             busyConversion / n))
@@ -414,11 +417,8 @@ func runSessionEval(_ arguments: [String]) async {
         print("   warning: \(preeditMismatch) items' preedit differs from the reading")
       }
       if mode.hasPrefix("ai") {
-        let m = GenmaiConverter.memoryStats
-        print(
-          String(
-            format: "   MLX memory: active %.0f MB, cache %.0f MB, peak %.0f MB", Double(m.active) / 1e6,
-            Double(m.cache) / 1e6, Double(m.peak) / 1e6))
+        let f = physicalFootprintMB()
+        print(String(format: "   process footprint %.0f MB (peak %.0f MB)", f.current, f.peak))
       }
       if showErrors {
         for line in errors { print(line) }

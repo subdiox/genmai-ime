@@ -43,16 +43,18 @@ import Testing
 
 /// Core ML decoder tests: they need a Core ML model directory in $GENMAI_COREML_MODEL_DIR (genmai.mlpackage or
 /// genmai.mlmodelc, genmai_coreml.json, tokenizer.json, config.json) and are skipped without it.
-@Suite(.enabled(if: GenmaiCoreMLTestPaths.directory != nil, "set GENMAI_COREML_MODEL_DIR to a Core ML genmai model"))
+@Suite(
+  .enabled(
+    if: GenmaiTestPaths.modelAvailable, "genmai model dir (GENMAI_MODEL_DIR or the IME model directory) is missing"))
 struct GenmaiCoreMLModelTests {
   @Test func convertsAndTheBoundKeepsTheResult() async throws {
-    let dir = try #require(GenmaiCoreMLTestPaths.directory)
+    let dir = GenmaiTestPaths.modelDirectory
     let m = try await GenmaiCoreMLModel.load(directory: dir)
     let r = try m.convert("きょうははやめにかえります")
     #expect(r.first?.text == "今日は早めに帰ります")
     // a two-chunk reading: extend with the bound (the default) = the unbounded batch merged by hand
     let reading = String(repeating: "あしたはあめがふるそうです、", count: 2) + "かさをもっていきます。"
-    let parts = GenmaiModel.split(reading, chunk: 20)
+    let parts = GenmaiSearch.split(reading, chunk: 20)
     #expect(parts.count > 1)
     var hyps = [GenmaiCandidate(text: "", score: 0)]
     for p in parts.dropLast() { hyps = try m.extend(hyps, part: p, options: GenmaiOptions(chunk: 20)) }
@@ -69,8 +71,19 @@ struct GenmaiCoreMLModelTests {
     for (x, y) in zip(bounded, expected) { #expect(abs(x.score - y.score) < 0.05) }
   }
 
+  /// The score of a text equals its score as a candidate of the beam search (up to fp16 rounding).
+  @Test func scoreMatchesTheSearch() async throws {
+    let dir = GenmaiTestPaths.modelDirectory
+    let m = try await GenmaiCoreMLModel.load(directory: dir)
+    let r = try m.convert("きょうははやめにかえります", context: "あ")
+    for x in r {
+      let s = try #require(try m.score(x.text, reading: "きょうははやめにかえります", context: "あ"))
+      #expect(abs(x.score - s) < 0.1, "\(x.text): \(x.score) vs. \(s)")
+    }
+  }
+
   @Test func draftsAreVerified() async throws {
-    let dir = try #require(GenmaiCoreMLTestPaths.directory)
+    let dir = GenmaiTestPaths.modelDirectory
     let m = try await GenmaiCoreMLModel.load(directory: dir)
     let opt = GenmaiOptions(draft: true)
     let plain = try m.convert("きょうはいいてんきですね")
@@ -80,11 +93,5 @@ struct GenmaiCoreMLModelTests {
     #expect(m.draftTokensAccepted > 0)
     #expect(m.decodeSteps - steps < 5)
     #expect(drafted.first?.text == plain.first?.text)
-  }
-}
-
-enum GenmaiCoreMLTestPaths {
-  static let directory: URL? = ProcessInfo.processInfo.environment["GENMAI_COREML_MODEL_DIR"].map {
-    URL(filePath: $0)
   }
 }

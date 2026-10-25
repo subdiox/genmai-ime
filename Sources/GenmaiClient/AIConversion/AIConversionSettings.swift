@@ -24,6 +24,9 @@ public struct AIConversionSettings: Codable, Equatable, Sendable {
   /// Weight of Mozc's dictionary when choosing among AI candidates that differ only in kanji
   /// (`AIDictionaryScorer.rerank`; 0 = the model's order). No UI.
   public var dictionaryWeight: Double
+  /// Weight of Mozc's dictionary when the AI's choice meets the dictionary's proposals (`AIDictionaryScorer.propose`,
+  /// second round of `rerank`). No UI.
+  public var dictionaryProposalWeight: Double
   /// Appends one line per AI conversion event to `<profile>/ai_debug.log` (`AIConversionDebugLog`). Off by
   /// default: the log contains the typed text and its left context.
   public var debugLog: Bool
@@ -34,12 +37,14 @@ public struct AIConversionSettings: Codable, Equatable, Sendable {
   public static let candidateCountRange = 1...10
   public static let defaultDictionaryWeight = 0.2
   public static let dictionaryWeightRange = 0.0...2.0
+  public static let defaultDictionaryProposalWeight = 1.0
 
   public init(
     enabled: Bool = false, timeoutMilliseconds: Int = AIConversionSettings.defaultTimeoutMilliseconds,
     candidateCount: Int = AIConversionSettings.defaultCandidateCount, modelDirectory: String? = nil,
     modelSize: AIModelSize = .default, readingCheck: Bool = true,
-    dictionaryWeight: Double = AIConversionSettings.defaultDictionaryWeight, debugLog: Bool = false
+    dictionaryWeight: Double = AIConversionSettings.defaultDictionaryWeight,
+    dictionaryProposalWeight: Double = AIConversionSettings.defaultDictionaryProposalWeight, debugLog: Bool = false
   ) {
     self.enabled = enabled
     self.timeoutMilliseconds = timeoutMilliseconds
@@ -48,6 +53,7 @@ public struct AIConversionSettings: Codable, Equatable, Sendable {
     self.modelSize = modelSize
     self.readingCheck = readingCheck
     self.dictionaryWeight = dictionaryWeight
+    self.dictionaryProposalWeight = dictionaryProposalWeight
     self.debugLog = debugLog
   }
 
@@ -59,6 +65,7 @@ public struct AIConversionSettings: Codable, Equatable, Sendable {
     case modelSize = "model_size"
     case readingCheck = "reading_check"
     case dictionaryWeight = "dictionary_weight"
+    case dictionaryProposalWeight = "dictionary_proposal_weight"
     case debugLog = "debug_log"
   }
 
@@ -76,6 +83,8 @@ public struct AIConversionSettings: Codable, Equatable, Sendable {
     modelSize = (try? c.decodeIfPresent(AIModelSize.self, forKey: .modelSize)) ?? modelSize
     readingCheck = try c.decodeIfPresent(Bool.self, forKey: .readingCheck) ?? readingCheck
     dictionaryWeight = try c.decodeIfPresent(Double.self, forKey: .dictionaryWeight) ?? dictionaryWeight
+    dictionaryProposalWeight =
+      try c.decodeIfPresent(Double.self, forKey: .dictionaryProposalWeight) ?? dictionaryProposalWeight
     debugLog = try c.decodeIfPresent(Bool.self, forKey: .debugLog) ?? debugLog
   }
 
@@ -87,6 +96,8 @@ public struct AIConversionSettings: Codable, Equatable, Sendable {
       max(s.candidateCount, Self.candidateCountRange.lowerBound), Self.candidateCountRange.upperBound)
     s.dictionaryWeight = min(
       max(s.dictionaryWeight, Self.dictionaryWeightRange.lowerBound), Self.dictionaryWeightRange.upperBound)
+    s.dictionaryProposalWeight = min(
+      max(s.dictionaryProposalWeight, Self.dictionaryWeightRange.lowerBound), Self.dictionaryWeightRange.upperBound)
     return s
   }
 
@@ -137,25 +148,22 @@ public struct AIConversionSettings: Codable, Equatable, Sendable {
   }
 }
 
-/// Whether the model files are present (checked without loading the model, so GenmaiApp does not need MLX), and
+/// Whether the model files are present (checked without loading the model, so GenmaiApp does not need GenmaiAI), and
 /// which release they are.
 public enum AIModelStatus: Equatable, Sendable {
   /// `info`: nil when the model was not installed from a release (`genmai-cli prepare`, older versions).
   case found(URL, info: GenmaiModelInfo?)
   case missing(URL, missingFiles: [String])
 
-  /// The files every model needs; besides them the MLX weights (model.safetensors) or a Core ML model
-  /// (`genmai_coreml.json` + `genmai*.mlmodelc` / `.mlpackage`).
-  public static let requiredFiles = ["config.json", "tokenizer.json"]
+  /// The files every model needs; besides them its Core ML model (`genmai*.mlmodelc` / `.mlpackage`).
+  public static let requiredFiles = ["config.json", "tokenizer.json", AIModelInstaller.coreMLConfigFileName]
 
   public static func check(_ directory: URL) -> AIModelStatus {
-    let exists = { (name: String) in FileManager.default.fileExists(atPath: directory.appending(path: name).path) }
-    var missing = requiredFiles.filter { !exists($0) }
-    let coreML =
-      exists(AIModelInstaller.coreMLConfigFileName)
-      && !AIModelInstaller.coreMLModelFiles(in: directory).isEmpty
-    if !coreML && !exists(AIModelInstaller.mlxWeightsFileName) {
-      missing.append(AIModelInstaller.mlxWeightsFileName)
+    var missing = requiredFiles.filter {
+      !FileManager.default.fileExists(atPath: directory.appending(path: $0).path)
+    }
+    if AIModelInstaller.coreMLModelFiles(in: directory).isEmpty {
+      missing.append("genmai.mlmodelc")
     }
     return missing.isEmpty
       ? .found(directory, info: GenmaiModelInfo.load(from: directory)) : .missing(directory, missingFiles: missing)
@@ -180,12 +188,10 @@ public enum AIModelStatus: Equatable, Sendable {
       || GenmaiModelRelease.compareVersions(info.version, release.info.version) == .orderedAscending
   }
 
-  /// Identifies the installed model (size and modification date of model.safetensors and of the Core ML model's
-  /// files): changes when the model is replaced, so that the IME reloads it.
+  /// Identifies the installed model (size and modification date of the Core ML model's files): changes when the
+  /// model is replaced, so that the IME reloads it.
   public static func identity(_ directory: URL) -> String? {
-    let names =
-      [AIModelInstaller.mlxWeightsFileName, AIModelInstaller.coreMLConfigFileName]
-      + AIModelInstaller.coreMLModelFiles(in: directory)
+    let names = [AIModelInstaller.coreMLConfigFileName] + AIModelInstaller.coreMLModelFiles(in: directory)
     let parts = names.compactMap { name -> String? in
       guard
         let attributes = try? FileManager.default.attributesOfItem(atPath: directory.appending(path: name).path),

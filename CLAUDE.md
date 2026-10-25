@@ -2,7 +2,7 @@
 
 genmai is a Japanese input method for macOS: a conversion engine ported to Swift from Mozc
 (https://github.com/google/mozc, 3.35.6354) plus optional on-device AI conversion with the genmai language model
-(MLX). Runtime, UI and data generation are all Swift; the C++ Mozc in `Vendor/mozc` is only the source of the
+(Core ML). Runtime, UI and data generation are all Swift; the C++ Mozc in `Vendor/mozc` is only the source of the
 dictionary data and the reference ("oracle") for parity tests. User-facing overview: `README.md`. Per-file
 porting state: `PORTING_STATUS.md`.
 
@@ -46,7 +46,7 @@ Layers: GenmaiProtocol / GenmaiBase / GenmaiStorage → GenmaiCore → GenmaiSes
 | GenmaiSession | session/, usage_stats/ | |
 | genmai-engine | converter_main | CLI printing the oracle's format, for parity |
 | GenmaiClient, GenmaiRenderer, GenmaiGUI, GenmaiMac, GenmaiIME, GenmaiApp, GenmaiUninstaller | client/, renderer/, gui/, mac/ | InputMethodKit app; SwiftUI UI |
-| GenmaiAI, genmai-cli | — | the genmai model on MLX; independent of GenmaiCore |
+| GenmaiAI, genmai-cli | — | the genmai model on Core ML; independent of GenmaiCore |
 | GenmaiClient/AIConversion, GenmaiAIClient | — | the IME's AI conversion hook and its genmai augmenter |
 
 Naming: every module, type and user-visible string is "Genmai". Upstream names remain where they identify upstream
@@ -91,85 +91,70 @@ mozc/src/...` provenance comments.
 
 ## AI conversion (GenmaiAI)
 
-The genmai models decode the conversion from the reading by beam search on MLX. Two models, each its own Hugging
-Face repository with its own releases (git tags vX.Y.Z), same tokenizer, prompt format and file layout (CC BY-SA
-4.0): **genmai-310M** ([subdiox/genmai-310M](https://huggingface.co/subdiox/genmai-310M), "medium", the default;
-called subdiox/genmai before the small model existed, which Hugging Face still redirects; GPT-2, character-level,
-24 layers, 1024 dim; releases 0.1.0, 0.1.1) and **genmai-90M** ([subdiox/genmai-90M](https://huggingface.co/subdiox/genmai-90M),
-"small", distilled from genmai-310M 0.1.1 into zenz-v3.2-small; 12 layers, 768 dim; release 0.1.1). Both on MLX (mlx-swift **0.32.3**, pinned `exact`). The Swift code is a port of the Python MLX reference decoder used in
-training and gives bit-identical n-best lists and scores (`Tests/Fixtures/genmai/python_mlx_daily.json`, made with
-`mlx_eval.py --incremental` of the genmai research repo on the 0.1.0 weights; regenerate it when the release
-changes — the reference model directory needs `tokenizer_config.json`, without it the HF tokenizer gets wrong
-BOS / EOS ids and the outputs end in garbage).
+The genmai models decode the conversion from the reading by beam search on Core ML (Neural Engine). Two models, each
+its own Hugging Face repository with its own releases (git tags vX.Y.Z), same tokenizer, prompt format and file
+layout (CC BY-SA 4.0): **genmai-310M** ([subdiox/genmai-310M](https://huggingface.co/subdiox/genmai-310M), "medium",
+the default; GPT-2, character-level, 24 layers, 1024 dim) and **genmai-90M**
+([subdiox/genmai-90M](https://huggingface.co/subdiox/genmai-90M), "small", distilled from genmai-310M into
+zenz-v3.2-small; 12 layers, 768 dim). Release **v1.0.0** of each: `config.json` (`genmai_prompt_format` zenzlc),
+`tokenizer.json` / `tokenizer_config.json`, the fp32 `model.safetensors` (HF layout, for transformers and the Core ML
+conversion) and **`model-coreml.zip`** (what the IME installs). The Swift decoder is a port of the Python reference
+decoder of the training code (genmai research repo); an MLX decoder existed before 1.0.0 and was removed (Core ML
+needs a fraction of the memory: genmai-310M 80–140 MB vs. 1–2.7 GB).
 
 - `GenmaiTokenizer` (byte-level BPE from tokenizer.json, ids identical to the HF GPT2Tokenizer; fixtures in
   `Tests/Fixtures/genmai/`), `GenmaiPrompt` (format `zenzlc`: left context first, up to 500 characters, then the
-  katakana reading; lengths in **Unicode scalars**), `GenmaiModel` (bf16 weights stored (out, in), static KV cache,
-  a compiled decode step per (rows, cache bucket 128/256/512/1024), `genBatch` / `extend` / `convert` / `split` at
-  40-character chunks), `GenmaiConverter` (actor owning the model; `mlxLock` serializes all MLX work — two
-  converters on MLX's default stream at once crash Metal), `GenmaiIncrementalConverter` (converts finished chunks
-  while typing).
-- The model is not bundled. `AIModelSize` (small / medium) names the repositories (`AIModelSize(repository:)` maps
-  the old subdiox/genmai to medium, for `genmai_model.json` written before). `GenmaiModelRelease.latest(repository:)`
-  (GenmaiClient/AIConversion) asks the Hugging Face API for the repository's tags
-  (`/api/models/<repository>/refs`), takes the vX.Y.Z tags newest first and returns
-  the first whose config.json this IME can run (`isCompatible`: gpt2, `genmai_prompt_format` zenzlc or absent),
-  with its files from `/api/models/.../tree/<tag>` (sizes; LFS sha256 for the weights, git blob sha1 for the
+  katakana reading; lengths in **Unicode scalars**), `GenmaiCoreMLModel` (the decoder, below), the shared beam
+  search (`GenmaiDecoder` / `GenmaiSearch`: `genBatch` / `extend` / `convert` / `split` at 40-character chunks,
+  `score`), `GenmaiConverter` (actor owning the model; `workLock` serializes and measures the work of all
+  converters), `GenmaiIncrementalConverter` (converts finished chunks while typing).
+- The model is not bundled. `AIModelSize` (small / medium) names the repositories and the memory AI conversion adds
+  with each (`memoryMegabytes`: 90 / 150, shown in the AI tab's model picker). `GenmaiModelRelease.latest(repository:)`
+  (GenmaiClient/AIConversion) asks the Hugging Face API for the repository's tags (`/api/models/<repository>/refs`),
+  takes the vX.Y.Z tags newest first and returns the first whose config.json this IME can run (`isCompatible`: gpt2,
+  `genmai_prompt_format` zenzlc or absent) and that has config.json, tokenizer.json and `model-coreml.zip`, with
+  their sizes and checksums from `/api/models/.../tree/<tag>` (LFS sha256 for the archive, git blob sha1 for the
   small files). **Nothing about a release is hard-coded**: publishing a new tag is enough, unless it needs decoder
-  changes (then give it another prompt format / model type so older IMEs skip it). A release has the fp32
-  `model.safetensors` (HF layout, for transformers), **`model-8bit.safetensors`** (what the IME installs: linear
-  layers MLX-affine-quantized to 8 bits, groups of 64, stored as `<name>` (packed U32) + `<name>.scales` /
-  `.biases`; embeddings, norms, biases bf16; metadata `format=genmai-quantized-out-in`, `bits`, `group_size`;
-  0.34 GB (310M) / 0.10 GB (90M); written by `genmai-cli quantize <bf16 dir> <file>` = `GenmaiModel.writeQuantized`)
-  and `model-bf16.safetensors` (not downloaded by the IME (0.1.0 offered it as "high precision"); GenmaiModel still
-  loads it: bf16 round-to-nearest-even, bit-identical to MLX `astype`; Conv1D weights (out, in); no lm_head / no
-  `transformer.` prefix; metadata `format=genmai-bf16-out-in`; written by `GenmaiSafetensors.prepare` =
-  `genmai-cli prepare <HF dir> <out>`). 8-bit vs. bf16 (310M, session-eval, settle idle): AJIMEE 186 vs. 187 / 200,
-  daily 92 / 92, hard 20 / 20, conversion key slightly faster; 4-bit lost 6 AJIMEE items and was not released.
-  310M vs. 90M (8-bit, `genmai-cli eval`, top-1 / median latency, M4 Pro): daily 94.1 % / 97 ms vs. 93.1 % / 55 ms,
-  AJIMEE 93.0 % / 139 ms vs. 87.0 % / 70 ms, hard 78.6 % vs. 78.6 %. `AIModelInstaller.install(release)` downloads
-  config.json, tokenizer.json and the Core ML model if the release has one (see "Core ML decoder"), else the 8-bit
-  weights (kept in `~/Library/Caches/Genmai/download/<repo>@<tag>` until
-  the install succeeds), verifies the checksums, the config and the weights' format, and replaces config.json /
-  tokenizer.json / model.safetensors / `genmai_model.json` (installed repository and release) one file at a time
-  (other files are left alone); no conversion on the user's Mac. The setting `model_size` (AI tab "Model": Small /
-  Medium) picks the model; choosing the other one looks up its latest release and offers its download
-  (`AIModelStatus.needsInstall`: another model or a newer release).
-  `AIModelInstaller.uninstall` removes only those files (and the directory if nothing else is left). Front ends:
-  the settings tab "AI" (looks up the latest release when shown; Download / Update when it is newer than the
-  installed one, with progress and cancel; "Remove Model…" after a confirmation; both send RELOAD and
-  `GenmaiAugmenter` reloads because `AIModelStatus.identity` — size and mtime of the weights — changed),
-  `genmai-cli install [--size small|medium] [--tag vX.Y.Z]` and `Tools/prepare_genmai_model.sh [--size small]`. The prompt format is
-  `genmai_prompt_format` in config.json. For a new release upload `model-bf16.safetensors` (the model.safetensors
-  that `genmai-cli prepare` writes) and `model-8bit.safetensors` (`genmai-cli quantize`) next to the fp32 weights,
-  and
-  also regenerate the Python fixture and the score in `convertDaily` (they test the installed model; the comparisons
-  with the bf16 Python reference run only when the installed weights are bf16; the fixtures are genmai-310M's: with
-  genmai-90M installed, point `$GENMAI_MODEL_DIR` at a 310M model). Tests use
-  `$GENMAI_MODEL_DIR`, else `~/Library/Application Support/Genmai/model`, and skip without it.
-- `genmai-cli`: `install`, `prepare` (local HF directory), `convert`, `eval [--incremental] [--every-key] [--draft]
-  [--no-kv-reuse]` (per-item latency in the JSON), `compare`, `logprobs`, `session-eval` (below). `convert` / `eval`
-  take `--coreml DIR [--units ane|cpu|gpu|all]` for the Core ML decoder; `eval` prints the process footprint.
-  `rescore`, `dict-hints`: see "Dictionary in the AI conversion".
+  changes (then give it another prompt format / model type, or another archive name for a Core ML format older IMEs
+  cannot run, so they skip it). `AIModelInstaller.install(release)` downloads the files (kept in
+  `~/Library/Caches/Genmai/download/<repo>@<tag>` until the install succeeds), verifies the checksums and the config,
+  extracts the archive with `/usr/bin/ditto -x -k` (Foundation has no zip API; awaited through the process's
+  termination handler), checks the format in `genmai_coreml.json`, compiles each package (`MLModel.compileModel`) and
+  replaces config.json / tokenizer.json / `genmai*.mlmodelc` / `genmai_coreml.json` / `genmai_model.json` (installed
+  repository and release) one at a time (other files are left alone). The setting `model_size` (AI tab "Model":
+  Small / Medium) picks the model; choosing the other one looks up its latest release and offers its download
+  (`AIModelStatus.needsInstall`: another model or a newer release). `AIModelInstaller.uninstall` removes only those
+  files (and the directory if nothing else is left). Front ends: the settings tab "AI" (looks up the latest release
+  when shown; Download / Update when it is newer than the installed one, with progress and cancel; "Remove Model…"
+  after a confirmation; both send RELOAD and `GenmaiAugmenter` reloads because `AIModelStatus.identity` — size and
+  mtime of the model files — changed), `genmai-cli install [--size small|medium] [--tag vX.Y.Z]` and
+  `Tools/prepare_genmai_model.sh [--size small]`. Tests use `$GENMAI_MODEL_DIR`, else
+  `~/Library/Application Support/Genmai/model`, and skip without a Core ML model there.
+- **New model release:** convert the fp32 checkpoint with `Tools/coreml/genmai_coreml.py` (below; it writes
+  `model-coreml.zip`), check it (`genmai-cli eval --model <out dir>`, `GENMAI_MODEL_DIR=<out dir> swift test --filter
+  GenmaiAITests`), upload `model-coreml.zip` next to config.json, tokenizer.json and model.safetensors, and tag.
+- `genmai-cli`: `install`, `convert`, `eval [--incremental] [--every-key] [--draft] [--no-kv-reuse]` (per-item latency
+  and the process footprint), `compare`, `session-eval` (below); `--model DIR` and `--units ane|cpu|gpu|all` pick the
+  model and Core ML's compute units. `propose`, `rescore`, `dict-hints`: see "Dictionary in the AI conversion".
 
 ### Core ML decoder (Neural Engine)
 
-Two decoders behind `GenmaiConverter`, protocol `GenmaiDecoder` (GenmaiDecoder.swift): `GenmaiModel` (MLX, GPU) and
-`GenmaiCoreMLModel` (Core ML, Neural Engine; `GenmaiConverter(coreMLDirectory:)`). A decoder implements only
-`genBatch`; `gen` / `extend` / `convert`, the drafts (`GenmaiDraftStore`: verification `accept`, only single-context
-searches store a draft), max_new, truncation and the result lists (`GenmaiSearch`) are shared, so both return the
-same candidates up to backend rounding (genmai-90M 8-bit, M4 Pro: top-1 identical 101/101 daily, 199/200 AJIMEE,
-27/28 hard, plain and `--draft`; n-best lists 64–82 % identical, fp16).
+`GenmaiCoreMLModel` implements `genBatch` and `logProbs` of the protocol `GenmaiDecoder` (GenmaiDecoder.swift); `gen` /
+`extend` / `convert` / `score`, the drafts (`GenmaiDraftStore`: verification `accept`, only single-context searches
+store a draft), max_new, truncation and the result lists (`GenmaiSearch`) are shared code. Compared with the MLX
+decoder it replaced (genmai-90M, M4 Pro): top-1 identical 101/101 daily, 199/200 AJIMEE, 27/28 hard (n-best lists
+64–82 % identical: fp16).
 
-- Model directory: `genmai.mlpackage` (or compiled `genmai.mlmodelc`), `genmai_coreml.json` (format
-  `genmai-coreml-1`; static shapes: prompt slots P, output steps S, rows B, prefill chunk C; optional `chunks`),
-  tokenizer.json, config.json. One multifunction package, functions `prefill` (C prompt tokens at a slot offset; log-probs after each)
-  and `decode` (B rows, one token each), sharing one `MLState`: prompt KV (P slots, the last prompt; a new prompt
-  prefills from its first differing token) and output KV (S × B slots, row r's step-t token at t·B + r; rows attend to
-  their ancestors through a mask, so beam reordering copies nothing). The decode step writes its output slots by a
-  blend (`state * keep + onehot @ k`): a dynamic slice update of a state runs on the CPU and splits the ANE graph
-  (6.8 vs 3.3 ms per step). Every function must use every state (prefill reads the output states × 0), or conversion
-  fails. Drafts are prefilled after the prompt; the accepted tokens' KV stays in the prompt slots.
+- Model directory: `genmai.mlpackage` (or compiled `genmai.mlmodelc`; `genmai_0` / `genmai_1` with chunks),
+  `genmai_coreml.json` (format `genmai-coreml-1`; static shapes: prompt slots P, output steps S, rows B, prefill chunk
+  C; optional `chunks`), tokenizer.json, config.json. A multifunction package, functions `prefill` (C prompt tokens at
+  a slot offset; log-probs after each) and `decode` (B rows, one token each), sharing one `MLState`: prompt KV (P
+  slots, the last prompt; a new prompt prefills from its first differing token) and output KV (S × B slots, row r's
+  step-t token at t·B + r; rows attend to their ancestors through a mask, so beam reordering copies nothing). The
+  decode step writes its output slots by a blend (`state * keep + onehot @ k`): a dynamic slice update of a state runs
+  on the CPU and splits the ANE graph (6.8 vs 3.3 ms per step). Every function must use every state (prefill reads
+  the output states × 0), or conversion fails. Drafts are prefilled after the prompt; the accepted tokens' KV stays in
+  the prompt slots. `logProbs` (scoring a given output) prefills the prompt + the text and reads the rows.
 - **Chunks:** a package with the weights of more than ~12 layers of genmai-310M (≥ ~200 MB) fails to load on the
   Neural Engine, with a misleading error ("`functionName` must be nil unless the model type is ML Program"; the same
   package loads on the CPU). Not the number or size of states (merged K/V states, smaller P / S: same failure), and
@@ -177,11 +162,11 @@ same candidates up to backend rounding (genmai-90M 8-bit, M4 Pro: top-1 identica
   packages `genmai_0` / `genmai_1` (layers 0–11 / 12–23), each with `prefill` / `decode` for its layers and its own
   state; chunk 0 takes the tokens, chunk 1 the `hidden` output (fp16), the last returns the log-probs.
 - **fp16 range:** genmai-310M's residual stream reaches ~81k and one head of layer 1 has attention logits up to
-  ~500k (an attention sink), beyond fp16 (65504): NaN on the CPU (same as MLX / CUDA in fp16). The converter
-  reparametrizes exactly: `--residual-scale 0.25` (embeddings and attention / MLP output projections × 0.25, layer norm
-  eps × 1/16; layer norms are scale-invariant, the head keeps the unscaled embeddings) and `--score-scale 256` (logits
-  computed / 256 via the query weights, row max subtracted, × 256 before the softmax).
-- The B rows hold one search, so `genBatch` searches its contexts one after another (MLX: one batch). `extend` passes a
+  ~500k (an attention sink), beyond fp16 (65504): NaN. The converter reparametrizes exactly: `--residual-scale 0.25`
+  (embeddings and attention / MLP output projections × 0.25, layer norm eps × 1/16; layer norms are scale-invariant,
+  the head keeps the unscaled embeddings) and `--score-scale 256` (logits computed / 256 via the query weights, row
+  max subtracted, × 256 before the softmax).
+- The B rows hold one search, so `genBatch` searches its contexts one after another. `extend` passes a
   `GenmaiSearchBound` (hypothesis texts / scores, beams): a search stops once all its rows are below the `beams`-th best
   distinct text found so far, which does not change the result (log-probs only decrease). Drafts with several contexts
   are verified for all first (the accepted prefix is the minimum), then the searches run.
@@ -189,37 +174,14 @@ same candidates up to backend rounding (genmai-90M 8-bit, M4 Pro: top-1 identica
   [--score-scale C]` (coremltools 9, torch GPT-2 with per-layer `(H, slots, D)` fp16 states, int8 per-channel linear
   weights, iOS 18 target; pinned versions in `Tools/coreml/requirements.txt`); genmai-90M without options,
   genmai-310M with `--chunks 2 --residual-scale 0.25 --score-scale 256`; it also writes `model-coreml.zip`
-  (`genmai_coreml.json` + the packages). On Hugging Face, release **v0.1.2** of each model = the v0.1.1 weights +
-  `model-coreml.zip` at the top level (made from the release's fp32 `model.safetensors`; a Core ML model in a format
-  older IMEs cannot run must get another file name). P = 256, S = 64, B = 5, C = 32. genmai-90M: 87 MB, decode 4 ms per step on the ANE, footprint
-  ~46 MB (MLX: ~1.3 GB peak), first load compiles for the ANE (~18 s, cached by the system). genmai-310M: 297 MB,
-  footprint 80–140 MB (MLX 8-bit: 1.0–1.2 GB, 2.7 GB peak), first load ~22 s; slower than MLX: plain conversion
-  daily median 113 vs. 63 ms, conversion key with every-key speculation + drafts (`eval --incremental --every-key
-  --draft`) median 30 / 39 ms, p90 102 / 156 ms (daily / AJIMEE; MLX 19 / 21, 51 / 90 ms); `eval` top-1 daily 94.1 / AJIMEE 93.0 / hard 78.6 % (MLX 8-bit 93.1 / 92.5 / 78.6 %),
-  top-1 identical 96–98.5 % (Core ML int8 per channel vs. MLX 8-bit groups of 64). The same package gave garbage on
-  `.cpuAndGPU` (unexplained); ANE and CPU are correct.
-- **Installation:** `GenmaiModelRelease.latest` / `fetch` prefer a release's `model-coreml.zip` (`preferCoreML:
-  false` / `genmai-cli install --mlx` take the 8-bit weights). `AIModelInstaller.install` extracts it with
-  `/usr/bin/ditto -x -k` (Foundation has no zip API; awaited through the process's termination handler), checks the
-  format in `genmai_coreml.json`, compiles each package (`MLModel.compileModel`) into `genmai*.mlmodelc`, installs
-  `genmai_coreml.json` after them, and removes the other kind's files (model.safetensors,
-  or the Core ML files); `AIModelStatus` accepts either kind and its identity covers both. MLX is not touched unless an
-  MLX model is loaded (`GenmaiConverter.releaseUnusedMemory` is a no-op until then).
-- Tests: `GenmaiSearchTests` (shared helpers), `GenmaiCoreMLModelTests` (need `$GENMAI_COREML_MODEL_DIR`).
-
-### MLX Metal kernels
-
-- `swift build` (Swift Build engine) compiles mlx-swift's `.metal` files into `mlx-swift_Cmlx.bundle`, but with
-  `-fmetal-math-mode=fast`: fast-math `layer_norm` differs by 1 bf16 ulp and flips beam-search near-ties.
-  `Tools/build_mlx_metallib.sh <build path> [release|debug]` recompiles the kernels with MLX's own flags
-  (`-fno-fast-math`) into `<build path>/<config>/mlx.metallib`; MLX loads a colocated `mlx.metallib` first.
-- Lookup order (mlx `device.cpp`): `GPU.metallib` override, `mlx.metallib` / `Resources/mlx.metallib` next to the
-  binary, `mlx-swift_Cmlx.bundle` in the main bundle's resources, `Resources/default.metallib`. Under `swift test`
-  `GenmaiModel.configureMetallib()` points MLX at the metallib next to the .xctest bundle (or
-  `$GENMAI_MLX_METALLIB`). Without a metallib MLX aborts.
-- MLX work still running when a process exits crashes Metal: tests wait for background work
-  (`waitForPreparation`) before they end.
-- `Tools/make_ime_bundle.sh` puts `mlx.metallib` into `Genmai.app/Contents/MacOS/` (signed before the app).
+  (`genmai_coreml.json` + the packages). P = 256, S = 64, B = 5, C = 32. genmai-90M: 82 MB archive, decode 4 ms per
+  step on the ANE, footprint 46–90 MB, first load compiles for the ANE (~18 s, cached by the system). genmai-310M:
+  283 MB archive, footprint 80–140 MB, first load ~22 s; plain conversion daily median 113 ms; conversion key with
+  every-key speculation + drafts (`eval --incremental --every-key --draft`) median 30 / 39 ms, p90 102 / 156 ms
+  (daily / AJIMEE; the MLX decoder: 19 / 21, 51 / 90 ms); `eval` top-1 daily 94.1 / AJIMEE 93.0 / hard 78.6 %. The same
+  package gave garbage on `.cpuAndGPU` (unexplained); ANE and CPU are correct.
+- Tests: `GenmaiSearchTests` (shared helpers), `GenmaiConverterTests` / `GenmaiCoreMLModelTests` (need a Core ML
+  model in `$GENMAI_MODEL_DIR` or the IME's model directory).
 
 ### AI conversion in the IME
 
@@ -243,22 +205,14 @@ unchanged; the hook only forwards). GenmaiCore and GenmaiSession contain no AI c
   one running and one waiting), (3) after a 400 ms pause an exact conversion that restores the full n-best list.
   Results are cached (8). The reading is the preedit without pending romaji letters (full-width in the default
   preedit form: かいｓ → かい); a pending ｎ counts as ん, like the engine's conversion query.
-- **Decoding speed-ups (`GenmaiModel`):** *prompt KV reuse* — the KV of recent prompts (4,096 tokens) is kept and
-  a new prompt reuses the longest common token prefix, so only the new kana are prefilled (not bit-identical:
-  top-1 identical on 197/200 AJIMEE prefixes). *Draft-and-verify* (speculation only) — the previous best output is
-  appended to the prompt and verified in the prefill; the longest prefix whose tokens are each the argmax by ≥ 2
-  log-prob is accepted and the beam search continues after it, continuing only the best hypothesis of earlier
-  chunks. Every-prefix replay: final conversion median 69 → 19 ms (daily), 107 → 36 ms (AJIMEE), same top-1.
-  The decode steps of all cache buckets are compiled at load time (`warmup`).
-- **Memory:** MLX's buffer cache (freed GPU buffers kept for reuse) is capped at 256 MB
-  (`GenmaiModel.cacheLimitBytes`; MLX's default is most of the system memory and the IME reached 12 GB within
-  minutes) and returned to the system after 30 s without typing (`GenmaiAugmenter.idleReleaseDelay`,
-  `GenmaiConverter.releaseCachedMemory`). With bf16 weights, session-eval shows ~1.1 GB of arrays in use (weights
-  0.62 GB, prompt KV cache, incremental states), a 268 MB cache and a 2.9 GB peak during long batched decodes;
-  `session-eval` prints these (`MLX memory`). The cap did not change the conversion-key latency. Turning AI
-  conversion off releases the model: the compiled decode steps hold it weakly and take the weights as inputs
-  (MLX keeps compiled traces per thread and erases them only on the releasing thread, so weights captured as
-  constants stayed alive), and the buffer cache is cleared.
+- **Decoding speed-ups (`GenmaiCoreMLModel`):** *prompt KV reuse* — the KV of the last prompt stays in the prompt
+  slots and a new prompt prefills from its first differing token, so only the new kana are prefilled.
+  *Draft-and-verify* (speculation only) — the previous best output is appended to the prompt and verified in the
+  prefill; the longest prefix whose tokens are each the argmax by ≥ 2 log-prob is accepted and the beam search
+  continues after it, continuing only the best hypothesis of earlier chunks (same top-1 as without it on the eval
+  sets). `warmup` runs one conversion at load time.
+- **Memory:** the model's packages are memory-mapped by Core ML; the IME's footprint grows by about 90 MB (small) /
+  150 MB (medium) at most while converting. Turning AI conversion off releases the converter.
 - **Readings and forms:** the model gets the conversion key in the *preedit* character form ("？", "（", as in its
   training data); its output gets the *conversion* character form (`CharacterFormManager`).
 - **Merging (`AIConversionMerger`, `AIConversionAligner`):** if the AI top-1 differs from the engine's top, the AI
@@ -294,9 +248,9 @@ unchanged; the hook only forwards). GenmaiCore and GenmaiSession contain no AI c
   activation, RESET_CONTEXT or an empty preceding text. The model tends to copy the context: a wrong conversion
   committed earlier in the same field can be repeated.
 - **Settings:** `<profile>/ai_conversion.json` (`AIConversionSettings`: `enabled`, `timeout_ms`, `candidates`,
-  `model_directory`, `model_size`, `reading_check`, `dictionary_weight`, `debug_log`), edited in the settings tab "AI"
-  and re-read on the reload notification. `model_directory`, `reading_check`, `dictionary_weight` and `debug_log` have
-  no UI (development / diagnosis);
+  `model_directory`, `model_size`, `reading_check`, `dictionary_weight`, `dictionary_proposal_weight`, `debug_log`),
+  edited in the settings tab "AI" and re-read on the reload notification. `model_directory`, `reading_check`, the
+  dictionary weights and `debug_log` have no UI (development / diagnosis);
   the model folder is managed by the installer, so the AI tab shows only which model and release is installed.
 - **Debug log (opt-in):** `"debug_log": true` appends one line per AI event to `<profile>/ai_debug.log` (rotated at
   8 MB): source (`ready` / `awaited` / `timeout` / `error` / `suggestion` / `refine`), reading, last 40 characters of
@@ -304,10 +258,10 @@ unchanged; the hook only forwards). GenmaiCore and GenmaiSession contain no AI c
 - **Evaluation:** `genmai-cli session-eval [--timeout-ms N] [--settle none|chunks|idle] [--typing-ms N[,N]]
   [--space-delay-ms N] [--trace] [--errors] [--profile-copy DIR] [--debug-log] [--no-reading-check] [--out-dir D]
   <set.json>...` types each reading through `SessionHandlerBackend` with and without the hook (real-time typing with `--typing-ms`),
-  presses the conversion key and reports accuracy, latency, where the result came from and the GPU time per
-  keystroke. `--trace` prints the suggestions per key including refreshes; `--profile-copy` runs on a copy of a
-  user profile (never written). Results (genmai 0.1.0 with the reading check, M4 Pro, 120 ms per kana; "now" = key
-  right after the last kana, "+1" = one interval later):
+  presses the conversion key and reports accuracy, latency, where the result came from and the model's busy time
+  per keystroke. `--trace` prints the suggestions per key including refreshes; `--profile-copy` runs on a copy of a
+  user profile (never written). Results (genmai-310M 0.1.0 on the former MLX decoder, with the reading check, M4 Pro,
+  120 ms per kana; "now" = key right after the last kana, "+1" = one interval later):
 
   | daily (101) / AJIMEE (200) | strict top-1 | key median / p90 | ready at key | timeouts |
   |---|---|---|---|---|
@@ -326,11 +280,26 @@ unchanged; the hook only forwards). GenmaiCore and GenmaiSession contain no AI c
   connection costs; uncovered kana / symbols 3000 each; nil if a kanji has no token). (1) `rerank` (in
   `GenmaiAugmenter.Core.convert`, before results are cached): among the AI candidates that differ from the top only
   in kanji (same `kanaSkeleton`: 晩ご飯 / 晩ごはん is style, left to the model), the best of model log-prob −
-  weight × cost / 500 becomes the top. (2) the merger keeps Mozc's text for a group of segments whose top is a proper
-  noun (`PosMatcher.isUniqueNoun`) when the AI's differs only in kanji and costs ≥ 2000 more (or is unreachable)
-  (`keptDictionaryWords` in the debug log). A better dictionary thus improves the AI conversion. `genmai-cli rescore
-  [--data FILE] [--weights ...] [--verbose] gen_*.json` replays (1) on `eval` n-best lists; `session-eval
-  --dictionary-weight W`. Proper-noun eval sets (template sentences) live outside the repo.
+  weight × cost / 500 becomes the top. (2) **Proposals** (`dictionary_proposal_weight`, default 1.0): the model writes
+  names it does not know in kana or with other kanji, and then the right spelling is not among its candidates at all.
+  `AIDictionaryScorer.propose` takes the cheapest path through the lattice of the reading (`bestPath`: Mozc's
+  conversion without rewriters; uncovered characters cost 10000 there, with 3000 a run of kana beat 西神吉) and, if
+  it has a proper noun with kanji the AI's top lacks, proposes its text and the top with the noun written for its kana
+  (アザミヒラ → 莇平). The augmenter scores the proposals with the model (`GenmaiDecoder.score`: log-probs of the text
+  + EOS after the prompt, = the beam search's score; readings of one chunk only) and `rerank` holds a second round:
+  its first-round winner against the proposals (AI candidates equal to one count as proposals), whatever their kana,
+  with the proposal weight. (3) the merger keeps Mozc's text for a group of segments whose top is a proper noun
+  (`PosMatcher.isUniqueNoun`) when the AI wrote its reading in kana where Mozc has kanji, or differs only in kanji and
+  costs ≥ 2000 more (or is unreachable) (`keptDictionaryWords` in the debug log). A better dictionary thus improves
+  the AI conversion. `genmai-cli rescore [--data FILE] [--weights ...] [--verbose] gen_*.json` replays (1) on `eval`
+  n-best lists; `genmai-cli propose [--data FILE] [--weight W] [--proposal-weights W,...] <reading | set.json>...`
+  shows the candidates, proposals, costs and scores of a reading, or the accuracy per proposal weight on a set
+  (one-shot conversions, genmai-90M Core ML, extended data: proper nouns 220 / 110 sets 72 / 64 without proposals,
+  110 / 81 at 1.0, 120 / 83 at 2.0; daily 94, AJIMEE 177, hard 22 up to 1.0, AJIMEE 176 from 1.5); `session-eval
+  --dictionary-weight W --proposal-weight W` (defaults 0.2 / 1.0, settle chunks, genmai-90M Core ML, extended data:
+  proper nouns 126 / 220 and 89 / 110 (without proposals 92 / 76, Mozc alone 134 / 96), daily 94, AJIMEE 176, hard 20,
+  the same as without them; conversion key unchanged). Proper-noun eval sets (template sentences) live outside the
+  repo.
 - **Dictionary hints (for training; not used by the IME yet):** the next model is to get Mozc's view of the reading
   in its prompt and learn to take the dictionary's spelling of words it does not know. `AIDictionaryHinter` computes
   the hints: `segments` (Mozc's conversion, no user dictionary / learning) and `properNouns` (system dictionary proper
@@ -396,11 +365,11 @@ table; use "…" and "ユーザー".
   requests (release build with `-enable-testing`: debug tests took 45 minutes on the runner; code that must hold in
   debug builds only is not checked there) (macos-26 runner, the same Xcode as releases; the data sets are built and cached, model tests skip).
   The local Xcode can be newer than the runner's: code that compiles here can still fail there.
-- Releases: GitHub releases of subdiox/genmai-ime, tag vX.Y.Z (= `kProductVersion`), asset `Genmai.pkg`
-  (0.1.0 / 0.1.1: `Genmai-X.Y.Z.pkg`; the update check takes any `.pkg`), so
+- Releases: GitHub releases of subdiox/genmai-ime, tag vX.Y.Z (= `kProductVersion`; the first public release is
+  1.0.0, earlier releases were removed), asset `Genmai.pkg` (the update check takes any `.pkg`), so
   `releases/latest/download/Genmai.pkg` is always the newest package.
   Normally made by the GitHub Actions workflow `.github/workflows/release.yml`: bump `kProductVersion`, commit, push
-  the tag `vX.Y.Z`; the workflow (macos-26 runner, newest Xcode ≥ 26 + Metal toolchain) builds the data set and the
+  the tag `vX.Y.Z`; the workflow (macos-26 runner, newest Xcode ≥ 26) builds the data set and the
   package and creates the release (a manual run only builds and keeps the package as an artifact).
   `Tools/make_release.sh [--publish]` does the same locally. The package installs where the user chose (see
   "Install location") and opens the

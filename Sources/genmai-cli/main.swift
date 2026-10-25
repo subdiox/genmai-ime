@@ -1,22 +1,15 @@
-// genmai-cli: model preparation, conversion, evaluation and parity checks for GenmaiAI.
+// genmai-cli: model installation, conversion, evaluation and diagnostics for GenmaiAI.
 //
-//   genmai-cli install [--size small|medium] [--tag vX.Y.Z] [--mlx] [destination dir]
+//   genmai-cli install [--size small|medium] [--tag vX.Y.Z] [destination dir]
 //       downloads the newest model release this IME can run (or the given tag) from Hugging Face and installs it
-//       like the config dialog does (its Core ML model if it has one, else (or with --mlx) the 8-bit MLX weights;
-//       default: medium, into the IME's model directory)
-//   genmai-cli prepare <source model dir> <destination dir>
-//       writes the compact runtime model (bf16, Conv1D weights as (out, in)) + tokenizer.json, config.json for a
-//       local HF model directory (e.g. a checkpoint that is not a release)
-//   genmai-cli quantize [--bits 8] <model dir> <output file>
-//       writes the weights of <model dir> with the linear layers quantized (MLX affine, groups of 64): the
-//       model-8bit.safetensors of a release
+//       like the config dialog does (default: medium, into the IME's model directory)
 //   genmai-cli convert [--model DIR] [--context TEXT] [--beams N] <reading>...
 //   genmai-cli eval [--model DIR] --tag TAG [--beams 5] [--incremental] [--out-dir DIR] <eval set>...
 //       eval sets: anco-format .json (query / answer / left_context) or ime_v1 .jsonl (reading / positives /
 //       left_context / id), like the Python evaluator; writes <out-dir>/gen_<TAG>_c40_<name>.json
 //       in gen_eval format and prints top-1 accuracy (exact match) and latency (median / p90 / max).
 //       --incremental replays the reading one character at a time through GenmaiIncrementalConverter, like
-//       mlx_eval.py --incremental: latency is the conversion key only. --every-key also converts the whole
+//       the Python evaluator's --incremental: latency is the conversion key only. --every-key also converts the whole
 //       prefix after every character (the IME's speculation; "background" = those conversions).
 //       --no-kv-reuse disables the prompt KV cache (GenmaiOptions.reusePromptKV); --draft [--draft-margin M] enables
 //       draft-and-verify decoding (GenmaiOptions.draft).
@@ -27,9 +20,9 @@
 //   genmai-cli session-eval [--timeout-ms N] [--settle none|chunks|idle] [--errors] [--out-dir DIR] <anco set.json>...
 //       types the readings through the IME session layer (SessionHandlerBackend) with AI conversion off and on
 //       and reports top-1 accuracy and conversion-key latency (see SessionEval.swift).
-//   GENMAI_MODEL_DIR overrides the default model directory (~/Library/Application Support/Genmai/model).
-//   convert / eval / logprobs take --coreml DIR [--units ane|cpu|gpu|all] to use the Core ML model in DIR
-//   (GenmaiCoreMLModel) instead of the MLX model.
+//   --model DIR (or GENMAI_MODEL_DIR) overrides the default model directory (~/Library/Application Support/Genmai/
+//   model, a Core ML model as installed or written by Tools/coreml/genmai_coreml.py); --units ane|cpu|gpu|all picks
+//   Core ML's compute units (default ane: CPU and Neural Engine).
 
 import CoreML
 import Foundation
@@ -72,37 +65,23 @@ args.removeFirst()
 }
 
 @MainActor func loadConverter() async -> GenmaiConverter {
-  if let dir = option("--coreml") {
-    let units: MLComputeUnits =
-      switch option("--units") ?? "ane" {
-      case "cpu": .cpuOnly
-      case "gpu": .cpuAndGPU
-      case "ane": .cpuAndNeuralEngine
-      case "all": .all
-      default: fail("--units: cpu, gpu, ane or all")
-      }
-    do {
-      let c = try await GenmaiConverter(coreMLDirectory: URL(filePath: dir), computeUnits: units)
-      let t = Date()
-      await c.warmup()
-      print(
-        String(
-          format: "Core ML model %@: load %.2f s, warmup %.2f s, footprint %.1f MB", dir, c.loadSeconds,
-          Date().timeIntervalSince(t), physicalFootprintMB().current))
-      return c
-    } catch {
-      fail("cannot load \(dir): \(error)")
+  let units: MLComputeUnits =
+    switch option("--units") ?? "ane" {
+    case "cpu": .cpuOnly
+    case "gpu": .cpuAndGPU
+    case "ane": .cpuAndNeuralEngine
+    case "all": .all
+    default: fail("--units: cpu, gpu, ane or all")
     }
-  }
   let dir = modelDirectory()
   do {
-    let c = try GenmaiConverter(directory: dir)
+    let c = try await GenmaiConverter(directory: dir, computeUnits: units)
     let t = Date()
     await c.warmup()
     print(
       String(
-        format: "model %@: load %.2f s, warmup %.2f s, weights %.0f MB", dir.path, c.loadSeconds,
-        Date().timeIntervalSince(t), Double(c.weightBytes) / 1e6))
+        format: "model %@: load %.2f s, warmup %.2f s, footprint %.1f MB", dir.path, c.loadSeconds,
+        Date().timeIntervalSince(t), physicalFootprintMB().current))
     return c
   } catch {
     fail("cannot load \(dir.path): \(error)")
@@ -206,24 +185,23 @@ func prefix(_ s: String, _ n: Int) -> String {
 switch command {
 case "install":
   let tag = option("--tag")
-  let preferCoreML = !flag("--mlx")
   guard let size = AIModelSize(rawValue: option("--size") ?? AIModelSize.default.rawValue) else {
     fail("--size must be one of \(AIModelSize.allCases.map(\.rawValue).joined(separator: ", "))")
   }
   let release: GenmaiModelRelease
   do {
     if let tag {
-      release = try await GenmaiModelRelease.fetch(repository: size.repository, tag: tag, preferCoreML: preferCoreML)
+      release = try await GenmaiModelRelease.fetch(repository: size.repository, tag: tag)
     } else {
-      release = try await GenmaiModelRelease.latest(repository: size.repository, preferCoreML: preferCoreML)
+      release = try await GenmaiModelRelease.latest(repository: size.repository)
     }
   } catch {
     fail("cannot look up the model release: \(error)")
   }
   let dst = args.first.map { URL(filePath: $0) } ?? GenmaiConverter.defaultModelDirectory
   print(
-    "installing \(size.modelName) \(release.info.version) (\(release.info.repository)@\(release.info.revision),"
-      + " \(release.backend == .coreML ? "Core ML" : "MLX")) into \(dst.path)")
+    "installing \(size.modelName) \(release.info.version) (\(release.info.repository)@\(release.info.revision))"
+      + " into \(dst.path)")
   let last = Mutex<String>("")
   do {
     let t = Date()
@@ -244,41 +222,10 @@ case "install":
       if changed { print(line) }
     }
     print(String(format: "installed in %.1f s", Date().timeIntervalSince(t)))
-    let c = try await GenmaiConverter.load(directory: dst)
+    let c = try await GenmaiConverter(directory: dst)
     print("check:", try await c.convert("きょうはいいてんきですね").first?.text ?? "-")
   } catch {
     fail("install failed: \(error)")
-  }
-
-case "quantize":
-  let bits = option("--bits").flatMap(Int.init) ?? 8
-  guard args.count == 2 else { fail("usage: genmai-cli quantize [--bits 8] <model dir> <output file>") }
-  let src = URL(filePath: args[0])
-  let out = URL(filePath: args[1])
-  do {
-    let t = Date()
-    try GenmaiModel.writeQuantized(from: src.appending(path: "model.safetensors"), to: out, bits: bits)
-    let size = (try FileManager.default.attributesOfItem(atPath: out.path)[.size] as? Int) ?? 0
-    print(String(format: "wrote %@ (%.0f MB) in %.1f s", out.path, Double(size) / 1e6, Date().timeIntervalSince(t)))
-  } catch {
-    fail("quantize failed: \(error)")
-  }
-
-case "prepare":
-  guard args.count == 2 else { fail("usage: genmai-cli prepare <source dir> <destination dir>") }
-  let src = URL(filePath: args[0])
-  let dst = URL(filePath: args[1])
-  do {
-    let t = Date()
-    try await AIModelInstaller.prepare(source: src, destination: dst)
-    let out = dst.appending(path: "model.safetensors")
-    let size = (try FileManager.default.attributesOfItem(atPath: out.path)[.size] as? Int) ?? 0
-    print(String(format: "wrote %@ (%.0f MB) in %.1f s", out.path, Double(size) / 1e6, Date().timeIntervalSince(t)))
-    // sanity check: load the result
-    let c = try GenmaiConverter(directory: dst)
-    print("check:", try await c.convert("きょうはいいてんきですね").first?.text ?? "-")
-  } catch {
-    fail("prepare failed: \(error)")
   }
 
 case "convert":
@@ -413,19 +360,77 @@ case "compare":
     print("  \(q)\n    swift:  \(fa)\n    python: \(fb)")
   }
 
-case "logprobs":
-  // logprobs <reading> [ids...]: prints the 8 best next tokens after the prompt and after each given id
-  let c = await loadConverter()
-  let reading = args.removeFirst()
-  var continuation: [Int32] = []
-  for arg in args {
-    guard let id = Int32(arg) else { fail("not a token id: \(arg)") }
-    continuation.append(id)
+case "propose":
+  // propose [--model DIR] [--data FILE] [--weight W] [--proposal-weights W,...] <reading or set.json>...
+  // The dictionary's proposals in the AI conversion (AIDictionaryScorer.propose / rerank). For a reading: the
+  // model's candidates and the proposals (P) with model score, dictionary cost and score + W × (-cost / 500), the
+  // dictionary's best path and the result. For an evaluation set: top-1 accuracy (exact) without proposals and with
+  // them for each proposal weight (one-shot conversions, readings of one chunk get proposals as in the IME).
+  let dataPath = option("--data") ?? OssDataManager.defaultDataPath
+  let weight = option("--weight").flatMap(Double.init) ?? AIConversionSettings.defaultDictionaryWeight
+  let proposalWeights = (option("--proposal-weights") ?? "0.2,0.5,1,1.5,2,3").split(separator: ",").compactMap {
+    Double($0)
   }
-  let rows = await c.debugLogProbs(reading, continuation: continuation)
-  for r in rows {
-    let top = r.enumerated().sorted { $0.element > $1.element }.prefix(8)
-    print(top.map { String(format: "%d:%.5f", $0.offset, $0.element) }.joined(separator: " "))
+  let scorer: AIDictionaryScorer
+  do { scorer = try AIDictionaryScorer(dataManager: try OssDataManager.create(path: dataPath)) } catch {
+    fail("cannot load \(dataPath): \(error)")
+  }
+  let c = await loadConverter()
+  // the model's candidates + the unscored proposals, their scores, the proposals
+  func candidates(_ reading: String, _ context: String) async throws -> ([String], [Double], [String]) {
+    let r = try await c.convert(reading, context: context)
+    var texts = r.map(\.text)
+    var scores = r.map(\.score)
+    guard GenmaiSearch.split(reading, chunk: GenmaiOptions().chunk).count == 1 else { return (texts, scores, []) }
+    let proposals = scorer.propose(reading: reading, texts: texts)
+    let unscored = proposals.filter { !texts.contains($0) }
+    for (t, sc) in zip(unscored, try await c.score(unscored, reading: reading, context: context)) {
+      if let sc {
+        texts.append(t)
+        scores.append(sc)
+      }
+    }
+    return (texts, scores, proposals)
+  }
+  for arg in args {
+    if arg.hasSuffix(".json") || arg.hasSuffix(".jsonl") {
+      var hits = [Int](repeating: 0, count: proposalWeights.count + 1)
+      var inPool = 0  // the answer among the candidates and proposals (the best any reranking can do)
+      let items = try loadSet(arg)
+      for x in items {
+        let (texts, scores, proposals) = try await candidates(x.query, x.context)
+        if texts.contains(where: x.answers.contains) { inPool += 1 }
+        for (k, pw) in ([nil] + proposalWeights.map { Optional($0) }).enumerated() {
+          let top = scorer.rerank(
+            texts, scores: scores, reading: x.query, weight: weight, proposals: pw == nil ? [] : proposals,
+            proposalWeight: pw
+          ).first
+          if let top, x.answers.contains(top) { hits[k] += 1 }
+        }
+      }
+      var line = "\(URL(filePath: arg).lastPathComponent) (\(items.count)): in pool \(inPool), no proposals \(hits[0])"
+      for (pw, h) in zip(proposalWeights, hits.dropFirst()) { line += "  p=\(pw) \(h)" }
+      print(line)
+      continue
+    }
+    let (texts, scores, proposals) = try await candidates(arg, "")
+    let top =
+      scorer.rerank(
+        texts, scores: scores, reading: arg, weight: weight, proposals: proposals,
+        proposalWeight: proposalWeights.first
+      ).first ?? ""
+    print("\(arg) → \(top)")
+    if let path = scorer.bestPath(arg) {
+      print("  path: \(path.text), proper nouns: \(path.properNouns.map(\.surface))")
+    }
+    for (t, sc) in zip(texts, scores) {
+      let cost = scorer.cost(t, reading: arg)
+      let combined = cost.map { sc - weight * Double($0) / AIDictionaryScorer.costPerNat }
+      print(
+        String(
+          format: "  %@ %8.3f %7@ %8@  %@", proposals.contains(t) ? "P" : " ", sc, cost.map(String.init) ?? "-",
+          combined.map { String(format: "%.3f", $0) } ?? "-", t))
+    }
   }
 
 case "rescore":

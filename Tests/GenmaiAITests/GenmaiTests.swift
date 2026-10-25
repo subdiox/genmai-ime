@@ -1,6 +1,4 @@
 import Foundation
-import MLX
-import Synchronization
 import Testing
 
 @testable import GenmaiAI
@@ -19,20 +17,13 @@ enum GenmaiTestPaths {
     FileManager.default.fileExists(atPath: modelDirectory.appending(path: "tokenizer.json").path)
   }
   static var modelAvailable: Bool {
-    FileManager.default.fileExists(atPath: modelDirectory.appending(path: "model.safetensors").path)
-  }
-  /// The Python reference fixtures were made with the bf16 weights; with 8-bit weights (the default install) only
-  /// the results, not the exact scores, are compared.
-  static var modelIsBF16: Bool { SharedConverter.converter?.quantizationBits == nil }
-  /// Results of the Python MLX reference decoder (incremental, beams 5, bf16) on the daily set.
-  static func pythonResults(_ name: String) -> URL {
-    repoRoot.appending(path: "Tests/Fixtures/genmai/python_mlx_\(name).json")
+    FileManager.default.fileExists(atPath: modelDirectory.appending(path: GenmaiCoreMLModel.configFileName).path)
   }
 }
 
-/// One model shared by all tests (loading takes ~0.5 s and 0.6-1.2 GB).
+/// One model shared by all tests (loading takes about a second).
 enum SharedConverter {
-  static let converter: GenmaiConverter? = try? GenmaiConverter(directory: GenmaiTestPaths.modelDirectory)
+  static let converter = Task { try await GenmaiConverter(directory: GenmaiTestPaths.modelDirectory) }
 }
 
 struct TokenizerFixtures: Decodable {
@@ -79,15 +70,15 @@ struct TokenizerFixtures: Decodable {
   }
 
   @Test func split() {
-    #expect(GenmaiModel.split("みじかい、ぶん。", chunk: 40) == ["みじかい、ぶん。"])
+    #expect(GenmaiSearch.split("みじかい、ぶん。", chunk: 40) == ["みじかい、ぶん。"])
     let a = String(repeating: "あ", count: 30) + "、"
     let b = String(repeating: "い", count: 20) + "。"
     let c = String(repeating: "う", count: 5) + "！"
     let d = String(repeating: "え", count: 3)
-    #expect(GenmaiModel.split(a + b + c + d, chunk: 40) == [a, b + c + d])
-    #expect(GenmaiModel.split(a + a, chunk: 40) == [a, a])
-    #expect(GenmaiModel.split(String(repeating: "お", count: 50), chunk: 40) == [String(repeating: "お", count: 50)])
-    #expect(GenmaiModel.split(a + "?" + b, chunk: 0) == [a + "?" + b])
+    #expect(GenmaiSearch.split(a + b + c + d, chunk: 40) == [a, b + c + d])
+    #expect(GenmaiSearch.split(a + a, chunk: 40) == [a, a])
+    #expect(GenmaiSearch.split(String(repeating: "お", count: 50), chunk: 40) == [String(repeating: "お", count: 50)])
+    #expect(GenmaiSearch.split(a + "?" + b, chunk: 0) == [a + "?" + b])
   }
 }
 
@@ -148,108 +139,41 @@ struct GenmaiTokenizerTests {
   .enabled(
     if: GenmaiTestPaths.modelAvailable, "genmai model dir (GENMAI_MODEL_DIR or the IME model directory) is missing"))
 struct GenmaiConverterTests {
-  func converter() throws -> GenmaiConverter {
-    try #require(SharedConverter.converter, "cannot load \(GenmaiTestPaths.modelDirectory.path)")
+  func converter() async throws -> GenmaiConverter {
+    try await SharedConverter.converter.value
   }
 
   @Test func convertDaily() async throws {
-    let c = try converter()
+    let c = try await converter()
     let r = try await c.convert("きょうははやめにかえります")
     #expect(r.count == 5)
     #expect(r.first?.text == "今日は早めに帰ります")
-    guard GenmaiTestPaths.modelIsBF16 else { return }
-    // Python MLX (genmai 0.1.0, bf16): -0.02613067626953125, second 今日は早目に帰ります -4.152080535888672
-    #expect(abs((r.first?.score ?? 0) - -0.02613) < 0.01)
-    #expect(r.count > 1 && r[1].text == "今日は早目に帰ります")
   }
 
-  /// MLX keeps at most `cacheLimitBytes` of freed buffers (trimmed at its next allocation), and
-  /// `releaseCachedMemory` returns them.
-  @Test func bufferCacheIsBounded() async throws {
-    let c = try converter()
-    _ = try await c.convert("きょうはいいてんきなので、こうえんまでさんぽにいってきました")
-    #expect(GenmaiConverter.memoryStats.cacheLimit == GenmaiModel.cacheLimitBytes)
-    #expect(await c.releaseCachedMemory() == 0)
-  }
-
-  /// A model released on another thread than the one that ran its compiled decode steps frees its weights. MLX
-  /// keeps compiled traces per thread and erases them only on the releasing thread, so weights captured as
-  /// constants of a trace stayed in memory (0.3 GB after AI conversion was turned off in the IME).
-  @Test func modelReleasedOnAnotherThreadFreesItsWeights() async throws {
-    var model: GenmaiModel? = try GenmaiModel(directory: GenmaiTestPaths.modelDirectory)
-    _ = try model?.convert("きょうはいいてんきですね")
-    let weightBytes = model?.weightBytes ?? 0
-    let box = Mutex(model.take())
-    let loaded = Memory.activeMemory
-    await withCheckedContinuation { (done: CheckedContinuation<Void, Never>) in
-      Thread {
-        box.withLock { $0 = nil }
-        done.resume()
-      }.start()
+  /// The score of a text equals its score as a candidate of the beam search (same log-probs, up to fp16 rounding).
+  @Test func scoreMatchesTheSearch() async throws {
+    let c = try await converter()
+    let r = try await c.convert("きょうははやめにかえります", context: "あ")
+    let scores = try await c.score(r.map(\.text) + ["京は早目に変えります"], reading: "きょうははやめにかえります", context: "あ")
+    for (x, s) in zip(r, scores) {
+      #expect(abs(x.score - (s ?? 0)) < 0.1, "\(x.text): \(x.score) vs. \(String(describing: s))")
     }
-    let freed = loaded - Memory.activeMemory
-    // other tests may allocate meanwhile; a leak keeps (almost) all the weights
-    #expect(freed > weightBytes / 2, "freed \(freed >> 20) MB of \(weightBytes >> 20) MB")
-  }
-
-  /// `writeQuantized` writes 8-bit weights that load and convert like the bf16 ones (needs the bf16 install).
-  @Test(.enabled(if: GenmaiTestPaths.modelIsBF16, "needs bf16 weights to quantize"))
-  func quantizedWeightsRoundTrip() async throws {
-    let dir = FileManager.default.temporaryDirectory.appending(path: "genmai-q8-\(UUID())")
-    try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-    defer { try? FileManager.default.removeItem(at: dir) }
-    for name in ["config.json", "tokenizer.json"] {
-      try FileManager.default.copyItem(
-        at: GenmaiTestPaths.modelDirectory.appending(path: name), to: dir.appending(path: name))
-    }
-    try GenmaiModel.writeQuantized(
-      from: GenmaiTestPaths.modelDirectory.appending(path: "model.safetensors"),
-      to: dir.appending(path: "model.safetensors"), bits: 8)
-    let q = try GenmaiConverter(directory: dir)
-    #expect(q.quantizationBits == 8)
-    #expect(q.weightBytes < 400_000_000)
-    let r = try await q.convert("きょうははやめにかえります")
-    #expect(r.first?.text == "今日は早めに帰ります")
+    #expect((scores.last ?? 0) ?? 0 < r[0].score)
   }
 
   @Test func contextChangesTheResult() async throws {
-    let c = try converter()
+    let c = try await converter()
     let r = try await c.convert("きしゃ", context: "新聞社の")
     #expect(r.first?.text == "記者")
   }
 
-  /// Top-1 agrees with the Python MLX reference on the daily set (bf16 near-ties may flip a few items).
-  @Test(
-    .enabled(if: FileManager.default.fileExists(atPath: GenmaiTestPaths.pythonResults("daily").path)),
-    .enabled(if: GenmaiTestPaths.modelIsBF16, "the Python reference is bf16"))
-  func dailyParityWithPython() async throws {
-    let c = try converter()
-    struct Reference: Decodable {
-      struct Item: Decodable {
-        struct Output: Decodable { var text: String }
-        var query: String
-        var outputs: [Output]
-      }
-      var items: [Item]
-    }
-    let j = try JSONDecoder().decode(
-      Reference.self, from: Data(contentsOf: GenmaiTestPaths.pythonResults("daily")))
-    let items = j.items.prefix(30)
-    var same = 0
-    for x in items {
-      let r = try await c.convert(x.query)
-      if r.first?.text == x.outputs.first?.text { same += 1 }
-    }
-    #expect(same >= items.count - 1, "top-1 identical \(same)/\(items.count)")
-  }
-
   /// Incremental conversion while typing gives exactly the result of a one-shot conversion.
   @Test func incrementalEqualsConvert() async throws {
-    let c = try converter()
+    let c = try await converter()
     let reading = "きのうはあめがふっていたので、いえでほんをよんですごしましたが、ゆうがたにはれたのでさんぽにでかけて、こうえんでともだちにあいました。"
-    #expect(GenmaiModel.split(reading).count > 1)
+    #expect(GenmaiSearch.split(reading).count > 1)
     let ctx = "日記："
-    // exact equality: without the prompt KV cache / drafts (they change results by bf16 noise)
+    // exact equality: without the prompt KV cache / drafts (they change results by fp16 noise)
     let exact = GenmaiOptions(reusePromptKV: false)
     let full = try await c.convert(reading, context: ctx, options: exact)
     let inc = GenmaiIncrementalConverter(converter: c, context: ctx, options: exact)
@@ -258,7 +182,7 @@ struct GenmaiConverterTests {
     for i in 1..<u.count {
       done += try await inc.update(String(String.UnicodeScalarView(u[..<i])))
     }
-    #expect(done == GenmaiModel.split(reading).count - 1)
+    #expect(done == GenmaiSearch.split(reading).count - 1)
     let r = try await inc.convert(reading)
     #expect(r == full)
     // editing an already converted group invalidates it
@@ -268,9 +192,9 @@ struct GenmaiConverterTests {
   }
 
   /// The IME's speculation: every prefix of the reading is converted in turn. With the prompt KV cache
-  /// (context + the reading so far, prefilled once) the results equal those of a full prefill up to bf16 noise
-  /// (the cached rows were computed in a prefill of another shape): same top-1 for the whole reading and all but at
-  /// most one prefix (a near-tie on a trailing kana: 家でほ / 家でホ with genmai 0.1.0), scores within 0.5.
+  /// (context + the reading so far, prefilled once) the results equal those of a full prefill up to fp16 noise
+  /// (the cached rows were computed in another prefill): same top-1 for the whole reading and all but at most one
+  /// prefix (a near-tie on a trailing kana: 家でほ / 家でホ), scores within 0.5.
   @Test(arguments: [
     ("きょうはともだちとえいがをみにいくよていです", ""),
     ("しんかんせんのきっぷをよやくしておきました", "来週の出張ですが、"),
@@ -280,7 +204,7 @@ struct GenmaiConverterTests {
     ),
   ])
   func promptKVReuseMatchesFullPrefill(_ reading: String, _ context: String) async throws {
-    let c = try GenmaiConverter(directory: GenmaiTestPaths.modelDirectory)
+    let c = try await GenmaiConverter(directory: GenmaiTestPaths.modelDirectory)
     let fast = GenmaiOptions(reusePromptKV: true)
     let plain = GenmaiOptions(reusePromptKV: false)
     let u = Array(reading.unicodeScalars)
@@ -310,7 +234,7 @@ struct GenmaiConverterTests {
     ("きのうはあめがふっていたので、いえでほんをよんですごしましたが、ゆうがたにはれたのでさんぽにでかけました", ""),
   ])
   func draftAndVerifyKeepsTheTopCandidate(_ reading: String, _ context: String) async throws {
-    let c = try GenmaiConverter(directory: GenmaiTestPaths.modelDirectory)
+    let c = try await GenmaiConverter(directory: GenmaiTestPaths.modelDirectory)
     let fast = GenmaiOptions(draft: true)
     let plain = GenmaiOptions(reusePromptKV: false)
     let inc = GenmaiIncrementalConverter(converter: c, context: context)
@@ -335,7 +259,7 @@ struct GenmaiConverterTests {
   }
 
   @Test func cancellation() async throws {
-    let c = try converter()
+    let c = try await converter()
     let reading = String(repeating: "とうきょうとっきょきょかきょく", count: 3)
     let task = Task { try await c.convert(reading) }
     task.cancel()

@@ -30,15 +30,14 @@ let package = Package(
     .executable(name: "GenmaiIME", targets: ["GenmaiIME"]),
     .executable(name: "GenmaiApp", targets: ["GenmaiApp"]),
     .executable(name: "GenmaiUninstaller", targets: ["GenmaiUninstaller"]),
-    // genmai: LLM-based kana-kanji conversion (GPT-2 char-level model on MLX).
+    // genmai: LLM-based kana-kanji conversion (GPT-2 char-level model on Core ML).
     .library(name: "GenmaiAI", targets: ["GenmaiAI"]),
     .executable(name: "genmai-cli", targets: ["genmai-cli"]),
     // The genmai model as the IME's AI conversion augmenter (GenmaiClient's AIConversionHook).
     .library(name: "GenmaiAIClient", targets: ["GenmaiAIClient"]),
   ],
   dependencies: [
-    .package(url: "https://github.com/apple/swift-protobuf.git", from: "1.28.0"),
-    .package(url: "https://github.com/ml-explore/mlx-swift.git", exact: "0.32.3"),
+    .package(url: "https://github.com/apple/swift-protobuf.git", from: "1.28.0")
   ],
   targets: [
     .target(
@@ -108,12 +107,8 @@ let package = Package(
       dependencies: ["GenmaiBase"],
       swiftSettings: swiftSettings
     ),
-    // genmai AI converter (GPT-2 on MLX). Independent of the conversion engine.
-    .target(
-      name: "GenmaiAI",
-      dependencies: [.product(name: "MLX", package: "mlx-swift"), .product(name: "MLXNN", package: "mlx-swift")],
-      swiftSettings: swiftSettings
-    ),
+    // genmai AI converter (GPT-2 on Core ML). Independent of the conversion engine.
+    .target(name: "GenmaiAI", swiftSettings: swiftSettings),
     // AI conversion in the IME: GenmaiAugmenter (ConversionAugmenter of GenmaiClient's AIConversionHook).
     .target(name: "GenmaiAIClient", dependencies: ["GenmaiAI", "GenmaiClient"], swiftSettings: swiftSettings),
     .executableTarget(

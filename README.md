@@ -2,8 +2,7 @@
 
 **genmai** (玄米, brown rice) is a Japanese input method for macOS that combines a classic dictionary-based
 conversion engine with an on-device language model. While you type, a small kana-kanji conversion model
-(genmai, 310M parameters, running on the GPU with [MLX](https://github.com/ml-explore/mlx-swift)) converts the
-whole sentence in the background; its result is shown first in the suggestion window and on the conversion key.
+(genmai, 310M parameters, running on the Neural Engine with Core ML) converts the whole sentence in the background; its result is shown first in the suggestion window and on the conversion key.
 Nothing you type leaves your Mac.
 
 > Status: experimental. It is usable day to day, but expect rough edges.
@@ -34,9 +33,9 @@ interval, 45–64 ms when it is pressed right after it.
 
 ## Requirements
 
-- macOS 15 or later, Apple silicon (AI conversion uses Metal through MLX)
-- ~1 GB of disk for the AI model
-- To build: Xcode 26 or later (Swift 6.2 toolchain with the Metal toolchain installed)
+- macOS 15 or later, Apple silicon (AI conversion runs on the Neural Engine)
+- 0.1–0.3 GB of disk for the AI model
+- To build: Xcode 26 or later (Swift 6.2 toolchain)
 
 ## Install
 
@@ -86,19 +85,17 @@ Settings and learning data live in `~/Library/Application Support/Genmai`.
 
 The model is not part of the app. There are two, picked under **Model** in the settings (tab "AI"):
 
-| model | download | accuracy (daily / AJIMEE, top-1) | conversion time (median) |
-|---|---|---|---|
-| Medium: [genmai-310M](https://huggingface.co/subdiox/genmai-310M) (default) | 0.34 GB | 94 % / 93 % | 97 / 139 ms |
-| Small: [genmai-90M](https://huggingface.co/subdiox/genmai-90M) | 0.10 GB | 93 % / 87 % | 55 / 70 ms |
+| model | download | memory | accuracy (daily / AJIMEE, top-1) | conversion key while typing (median) |
+|---|---|---|---|---|
+| Medium: [genmai-310M](https://huggingface.co/subdiox/genmai-310M) (default) | 283 MB | about 150 MB | 94 % / 93 % | 30 / 39 ms |
+| Small: [genmai-90M](https://huggingface.co/subdiox/genmai-90M) | 82 MB | about 90 MB | 93 % / 87 % | 16 / 22 ms |
 
-(8-bit weights on MLX, one conversion of the whole reading without the IME's background conversion, M4 Pro.) The tab
-looks up the latest release of the chosen model on Hugging Face and offers **Download**: it downloads the model
-(checked against the checksums Hugging Face lists) and installs it into
+(Core ML on the Neural Engine, M4 Pro; memory = what AI conversion adds to the input method at most while
+converting.) The tab looks up the latest release of the chosen model on Hugging Face and offers **Download**: it
+downloads the model (checked against the checksums Hugging Face lists), compiles it and installs it into
 `~/Library/Application Support/Genmai/model`. When a newer model is released, the same place offers **Update**;
-**Remove Model…** deletes it. Releases that include a Core ML version of the model (v0.1.2 of both models) run on
-the Neural Engine: about 50–140 MB of memory instead of 1–2.7 GB with MLX on the GPU, at a somewhat slower conversion
-(genmai-310M, conversion key while typing: median 30 / 39 ms vs. 19 / 21 ms, daily / AJIMEE). The first use after
-the download compiles the model for the Neural Engine (about 20 s). From the command line:
+**Remove Model…** deletes it. The first use after the download compiles the model for the Neural Engine (about
+20 s). From the command line:
 
 ```sh
 Tools/prepare_genmai_model.sh [--size small]     # = genmai-cli install [--size small]
@@ -116,7 +113,8 @@ Then turn on **Use AI conversion** in the same tab. The settings are stored in
 | `Sources/GenmaiCore` | conversion engine: dictionary, converter, rewriters, prediction, composer, engine |
 | `Sources/GenmaiSession` | key handling and sessions |
 | `Sources/GenmaiDataGen`, `genmai-datagen` | builds the data set (`Data/genmai.data`) from the dictionary sources |
-| `Sources/GenmaiAI`, `genmai-cli` | the genmai model on MLX (tokenizer, prompt, decoder) and its CLI |
+| `Sources/GenmaiAI`, `genmai-cli` | the genmai model on Core ML (tokenizer, prompt, decoder) and its CLI |
+| `Tools/coreml` | converts a model checkpoint into the Core ML packages the IME runs |
 | `Sources/GenmaiClient`, `GenmaiAIClient` | client layer and the AI conversion hook |
 | `Sources/GenmaiMac`, `GenmaiRenderer`, `GenmaiGUI`, `GenmaiIME`, `GenmaiApp`, `GenmaiUninstaller` | the macOS app |
 | `Vendor/mozc` | upstream Mozc (git submodule): dictionary sources and the reference implementation for parity tests |
@@ -158,6 +156,5 @@ without AI conversion and reports accuracy and latency (see `CLAUDE.md`).
   [zenz-v2.5-medium](https://huggingface.co/Miwa-Keita/zenz-v2.5-medium) by Miwa-Keita (CC BY-SA 4.0),
   [genmai-90M](https://huggingface.co/subdiox/genmai-90M) is distilled from genmai-310M into
   [zenz-v3.2-small](https://huggingface.co/Miwa-Keita/zenz-v3.2-small-gguf) by Miwa-Keita (Apache 2.0).
-- Uses [mlx-swift](https://github.com/ml-explore/mlx-swift) (MIT) and
-  [swift-protobuf](https://github.com/apple/swift-protobuf) (Apache 2.0).
+- Uses [swift-protobuf](https://github.com/apple/swift-protobuf) (Apache 2.0).
 - genmai is not affiliated with or endorsed by Google.
