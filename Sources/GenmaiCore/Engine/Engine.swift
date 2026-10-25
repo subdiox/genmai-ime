@@ -111,6 +111,18 @@ public final class Engine: EngineInterface, Sendable {
     initializedModules?.getDataManager()
   }
 
+  /// The user dictionary (nil until initialized). Not in Mozc: GenmaiClient's AI conversion hook proposes the
+  /// user's words to the AI conversion.
+  public func getUserDictionary() -> (any UserDictionaryInterface)? {
+    initializedModules?.getUserDictionary()
+  }
+
+  /// The prediction history (nil until initialized). Not in Mozc: GenmaiClient's AI conversion hook proposes the
+  /// words the user committed to the AI conversion.
+  public func getUserHistoryStorage() -> UserHistoryStorage? {
+    initializedModules?.getUserHistoryStorage()
+  }
+
   /// For testing only.
   public func getModulesForTesting() -> Modules {
     guard let modules = initializedModules else {

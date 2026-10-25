@@ -23,6 +23,10 @@ import Synchronization
 
 public final class AIDictionaryScorer: Sendable {
   private let systemDictionary: SystemDictionary
+  /// The user's words (the user dictionary, the words learned from commits): looked up with the system dictionary,
+  /// and proposed like proper nouns.
+  private let userDictionary: (any DictionaryInterface)?
+  private let learnedWords: AILearnedWords?
   private let connector: Connector
   private let posMatcher: PosMatcher
   private let results = Mutex<[String: Int?]>([:])
@@ -35,19 +39,24 @@ public final class AIDictionaryScorer: Sendable {
   /// Mozc costs are -500 × ln(probability).
   public static let costPerNat = 500.0
 
-  public init(dataManager: DataManager) throws {
+  public init(
+    dataManager: DataManager, userDictionary: (any DictionaryInterface)? = nil, learnedWords: AILearnedWords? = nil
+  ) throws {
     systemDictionary = try SystemDictionary.Builder(image: dataManager.getSystemDictionaryData()).build()
+    self.userDictionary = userDictionary
+    self.learnedWords = learnedWords
     connector = try Connector.create(dataManager.getConnectorData())
     posMatcher = PosMatcher(dataManager.getPosMatcherData())
   }
 
   /// The cost of producing `text` from `reading` (hiragana), nil if Mozc's dictionary cannot produce it.
   public func cost(_ text: String, reading: String) -> Int? {
-    let cacheKey = reading + "\0" + text
+    // the learned words change as the user commits: their generation is part of the key
+    let cacheKey = "\(learnedWords?.generation ?? 0)\0" + reading + "\0" + text
     if let cached = results.withLock({ $0[cacheKey] }) {
       return cached
     }
-    let c = compute(Array(text), reading: Array(reading))
+    let c = compute(Array(text), reading: Array(reading))?.cost
     results.withLock { r in
       if r.count >= Self.maxCachedResults {
         r.removeAll(keepingCapacity: true)
@@ -101,19 +110,33 @@ public final class AIDictionaryScorer: Sendable {
   }
 
   /// Texts for the model to score besides its own candidates `texts` (best first) for `reading` (hiragana): when the
-  /// cheapest path through the dictionary has a proper noun with kanji the AI's top lacks, that path's text and the
-  /// top with the proper nouns written for their kana (アザミヒラ → 莇平). They may be among `texts` (the model may
+  /// cheapest path through the dictionary has a proper noun with kanji or a user dictionary word the AI's top lacks,
+  /// that path's text and the top with those words put in for the part of it that reads as theirs (アザミヒラ → 莇平,
+  /// 西換気 → 西神吉; found by the cheapest reading of the top through the dictionary, or by the kana of the word if
+  /// the dictionary cannot read the top). They may be among `texts` (the model may
   /// have the dictionary's text further down its list).
   public func propose(reading: String, texts: [String]) -> [String] {
     guard let top = texts.first, let path = bestPath(reading) else { return [] }
     let nouns = path.properNouns.filter {
-      $0.surface.contains(where: AIReadingChecker.isKanji) && !top.contains($0.surface)
+      ($0.user || $0.surface.contains(where: AIReadingChecker.isKanji)) && !top.contains($0.surface)
     }
     guard !nouns.isEmpty else { return [] }
     var substituted = top
-    for n in nouns {
-      for kana in [Japanese.hiraganaToKatakana(n.key), n.key] where substituted.contains(kana) {
-        substituted = substituted.replacing(kana, with: n.surface)
+    if let boundaries = compute(Array(top), reading: Array(reading))?.boundaries {
+      // text position at each reading position where a token of the top's cheapest reading starts or ends
+      var textAt: [Int: Int] = [:]
+      for b in boundaries { textAt[b.reading] = b.text }
+      var chars = Array(top)
+      for n in nouns.sorted(by: { $0.start > $1.start }) {
+        guard let from = textAt[n.start], let to = textAt[n.start + n.key.count], from <= to else { continue }
+        chars.replaceSubrange(from..<to, with: Array(n.surface))
+      }
+      substituted = String(chars)
+    } else {
+      for n in nouns {
+        for kana in [Japanese.hiraganaToKatakana(n.key), n.key] where substituted.contains(kana) {
+          substituted = substituted.replacing(kana, with: n.surface)
+        }
       }
     }
     var out: [String] = []
@@ -124,8 +147,11 @@ public final class AIDictionaryScorer: Sendable {
   }
 
   /// The cheapest path through the lattice of `reading` (system dictionary tokens + connection costs, uncovered
-  /// characters as themselves at `pathGapCost`): its text and the proper nouns on it (surface, reading).
-  public func bestPath(_ reading: String) -> (text: String, properNouns: [(surface: String, key: String)])? {
+  /// characters as themselves at `pathGapCost`): its text and the proper nouns and user dictionary words on it
+  /// (surface, reading, position of the reading, from the user dictionary).
+  public func bestPath(_ reading: String) -> (
+    text: String, properNouns: [(surface: String, key: String, start: Int, user: Bool)]
+  )? {
     let r = Array(reading)
     let m = r.count
     guard m > 0 else { return nil }
@@ -135,6 +161,7 @@ public final class AIDictionaryScorer: Sendable {
       var value: String
       var key: String
       var properNoun: Bool
+      var user: Bool
     }
     // best[j]: right id of the last token → (cost, back pointer), for reading[..<j]
     var best = [[UInt16: (cost: Int, back: Back?)]](repeating: [:], count: m + 1)
@@ -142,25 +169,26 @@ public final class AIDictionaryScorer: Sendable {
     for j in 0..<m {
       let states = best[j]
       guard !states.isEmpty else { continue }
-      let collector = Collector()
-      systemDictionary.lookupPrefix(String(r[j...]), callback: collector)
+      let words = lookupPrefix(String(r[j...]))
       func relax(_ to: Int, _ rid: UInt16, _ cost: Int, _ back: Back) {
         if let old = best[to][rid], old.cost <= cost { return }
         best[to][rid] = (cost, back)
       }
-      for w in collector.words where w.keyLength > 0 && j + w.keyLength <= m {
+      for w in words where w.keyLength > 0 && j + w.keyLength <= m {
         let key = String(r[j..<(j + w.keyLength)])
         for (rid, c) in states {
           relax(
             j + w.keyLength, w.rid, c.cost + connector.getTransitionCost(rid, w.lid) + w.cost,
-            Back(from: j, rid: rid, value: String(w.value), key: key, properNoun: posMatcher.isUniqueNoun(w.lid)))
+            Back(
+              from: j, rid: rid, value: String(w.value), key: key,
+              properNoun: w.user || posMatcher.isUniqueNoun(w.lid), user: w.user))
         }
       }
       // a character no token covers, as itself (keeps the right id: a gap, not a word)
       for (rid, c) in states {
         relax(
           j + 1, rid, c.cost + Self.pathGapCost,
-          Back(from: j, rid: rid, value: String(r[j]), key: String(r[j]), properNoun: false))
+          Back(from: j, rid: rid, value: String(r[j]), key: String(r[j]), properNoun: false, user: false))
       }
     }
     guard
@@ -181,7 +209,7 @@ public final class AIDictionaryScorer: Sendable {
     pieces.reverse()
     return (
       pieces.map(\.value).joined(),
-      pieces.filter(\.properNoun).map { (surface: $0.value, key: $0.key) }
+      pieces.filter(\.properNoun).map { (surface: $0.value, key: $0.key, start: $0.from, user: $0.user) }
     )
   }
 
@@ -190,73 +218,118 @@ public final class AIDictionaryScorer: Sendable {
     String(text.filter { !AIReadingChecker.isKanji($0) })
   }
 
-  struct Word {
+  /// Drops the cached costs (the user dictionary changed).
+  public func clearCache() {
+    results.withLock { $0.removeAll() }
+  }
+
+  private struct Word {
     let keyLength: Int
     let value: [Character]
     let lid: UInt16
     let rid: UInt16
     let cost: Int
+    let user: Bool
   }
 
-  final class Collector: DictionaryCallback {
+  /// The words of the system dictionary and the user's words whose reading is a prefix of `key`.
+  private func lookupPrefix(_ key: String) -> [Word] {
+    let collector = Collector(user: false)
+    systemDictionary.lookupPrefix(key, callback: collector)
+    var words = collector.words
+    for dictionary in [userDictionary, learnedWords].compactMap({ $0 }) {
+      let user = Collector(user: true)
+      dictionary.lookupPrefix(key, callback: user)
+      words += user.words.filter { w in !words.contains { $0.value == w.value && $0.keyLength == w.keyLength } }
+    }
+    return words
+  }
+
+  private final class Collector: DictionaryCallback {
+    let user: Bool
     var words: [Word] = []
+    init(user: Bool) { self.user = user }
     func onKey(_ key: String) -> DictionaryCallbackResult { .traverseContinue }
     func onActualKey(_ key: String, _ actualKey: String, _ numExpanded: Int) -> DictionaryCallbackResult {
       .traverseContinue
     }
     func onToken(_ key: String, _ expandedKey: String, _ token: Token) -> DictionaryCallbackResult {
       words.append(
-        Word(keyLength: token.key.count, value: Array(token.value), lid: token.lid, rid: token.rid, cost: token.cost))
+        Word(
+          keyLength: token.key.count, value: Array(token.value), lid: token.lid, rid: token.rid, cost: token.cost,
+          user: user))
       return .traverseContinue
     }
     func isKanaModifierInsensitiveConversion() -> Bool { false }
   }
 
-  private func compute(_ t: [Character], reading r: [Character]) -> Int? {
+  /// The cheapest reading of the text `t` as the reading `r`: its cost and the (text, reading) positions where its
+  /// tokens start and end; nil if the dictionary cannot produce the text.
+  private func compute(_ t: [Character], reading r: [Character]) -> (
+    cost: Int, boundaries: [(text: Int, reading: Int)]
+  )? {
     let n = t.count
     let m = r.count
     guard n > 0, m > 0 else { return nil }
-    // best[i][j]: right id of the last token → cost, for text[..<i] read as reading[..<j]
-    var best = [[UInt16: Int]](repeating: [:], count: (n + 1) * (m + 1))
-    best[0] = [0: 0]
+    struct State {
+      var cost: Int
+      /// the previous (index into `best`, right id)
+      var back: (k: Int, rid: UInt16)?
+    }
+    // best[i * (m + 1) + j]: right id of the last token → state, for text[..<i] read as reading[..<j]
+    var best = [[UInt16: State]](repeating: [:], count: (n + 1) * (m + 1))
+    best[0] = [0: State(cost: 0, back: nil)]
     var words: [Int: [Word]] = [:]
     func wordsAt(_ j: Int) -> [Word] {
       if let w = words[j] { return w }
-      let collector = Collector()
-      systemDictionary.lookupPrefix(String(r[j...]), callback: collector)
-      words[j] = collector.words
-      return collector.words
+      let found = lookupPrefix(String(r[j...]))
+      words[j] = found
+      return found
     }
-    func relax(_ i: Int, _ j: Int, _ rid: UInt16, _ cost: Int) {
+    func relax(_ i: Int, _ j: Int, _ rid: UInt16, _ cost: Int, _ back: (k: Int, rid: UInt16)) {
       let k = i * (m + 1) + j
-      if let old = best[k][rid], old <= cost { return }
-      best[k][rid] = cost
+      if let old = best[k][rid], old.cost <= cost { return }
+      best[k][rid] = State(cost: cost, back: back)
     }
     for i in 0..<n {
       for j in 0..<m {
-        let states = best[i * (m + 1) + j]
+        let k = i * (m + 1) + j
+        let states = best[k]
         guard !states.isEmpty else { continue }
         for w in wordsAt(j)
         where !w.value.isEmpty && i + w.value.count <= n
           && t[i..<(i + w.value.count)].elementsEqual(w.value)
         {
           for (rid, c) in states {
-            relax(i + w.value.count, j + w.keyLength, w.rid, c + connector.getTransitionCost(rid, w.lid) + w.cost)
+            relax(
+              i + w.value.count, j + w.keyLength, w.rid, c.cost + connector.getTransitionCost(rid, w.lid) + w.cost,
+              (k, rid))
           }
         }
         // a character read as itself (katakana as hiragana); digits / Latin runs as 1...8 reading characters
         let ch = t[i]
         if Self.hiragana(ch) == r[j] {
-          for (rid, c) in states { relax(i + 1, j + 1, rid, c + Self.unknownCost) }
+          for (rid, c) in states { relax(i + 1, j + 1, rid, c.cost + Self.unknownCost, (k, rid)) }
         } else if ch.isNumber || (ch.isLetter && ch.isASCII) {
-          for k in 1...8 where j + k <= m {
-            for (rid, c) in states { relax(i + 1, j + k, rid, c + Self.unknownCost) }
+          for l in 1...8 where j + l <= m {
+            for (rid, c) in states { relax(i + 1, j + l, rid, c.cost + Self.unknownCost, (k, rid)) }
           }
         }
       }
     }
-    let end = best[n * (m + 1) + m]
-    return end.map { $0.value + connector.getTransitionCost($0.key, 0) }.min()
+    let endK = n * (m + 1) + m
+    guard
+      let end = best[endK].min(by: {
+        $0.value.cost + connector.getTransitionCost($0.key, 0) < $1.value.cost + connector.getTransitionCost($1.key, 0)
+      })
+    else { return nil }
+    var boundaries: [(text: Int, reading: Int)] = [(n, m)]
+    var at: (k: Int, rid: UInt16)? = (endK, end.key)
+    while let (k, rid) = at, let state = best[k][rid], let back = state.back {
+      boundaries.append((back.k / (m + 1), back.k % (m + 1)))
+      at = back
+    }
+    return (end.value.cost + connector.getTransitionCost(end.key, 0), boundaries.reversed())
   }
 
   /// Katakana → hiragana (other characters unchanged).

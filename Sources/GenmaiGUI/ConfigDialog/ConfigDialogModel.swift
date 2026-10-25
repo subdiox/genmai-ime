@@ -232,7 +232,7 @@ public enum ConfigDialogEditor: Identifiable, Equatable, Sendable {
   }
 }
 
-/// Not in Mozc: the newest release of the selected model, as far as the AI tab knows.
+/// Not in Mozc: the newest release of a model, as far as the AI tab knows.
 public enum AIModelLatestState: Equatable, Sendable {
   case unknown
   case checking(AIModelSize)
@@ -240,7 +240,7 @@ public enum AIModelLatestState: Equatable, Sendable {
   case failed(String)
 }
 
-/// Not in Mozc: the model download of the AI tab.
+/// Not in Mozc: a model download of the AI tab.
 public enum AIModelInstallState: Equatable, Sendable {
   case idle
   case running(AIModelInstaller.Phase)
@@ -268,25 +268,26 @@ public final class ConfigDialogModel {
   /// Not in Mozc: the AI tab (ai_conversion.json, saved together with the config).
   public var aiValues = AIConversionSettings() {
     didSet {
-      if aiValues.modelDirectory != oldValue.modelDirectory {
-        aiModelStatus = AIModelStatus.check(aiValues.resolvedModelDirectory)
-      }
-      if aiValues.modelSize != oldValue.modelSize {
-        aiModelLatest = .unknown
+      if aiValues.modelDirectory != oldValue.modelDirectory || aiValues.modelSize != oldValue.modelSize {
+        refreshAIModelStatus()
       }
       if !isLoading && aiValues != oldValue {
         noteChange()
       }
     }
   }
-  /// Whether the model files exist in the selected model directory.
-  public private(set) var aiModelStatus = AIModelStatus.check(AIConversionSettings.defaultModelDirectory)
-  /// Not in Mozc: the model download / installation started from the AI tab.
+  /// Which model files exist in each model's directory (both models can be installed; `modelSize` picks the one the
+  /// IME uses).
+  public private(set) var aiModelStatuses: [AIModelSize: AIModelStatus] = [:]
+  /// Bytes of each installed model on disk.
+  public private(set) var aiModelDiskSizes: [AIModelSize: Int64] = [:]
+  /// Not in Mozc: the model download / installation started from the AI tab (one at a time).
   public private(set) var aiModelInstall = AIModelInstallState.idle
+  /// The model `aiModelInstall` is about.
+  public private(set) var aiModelInstallSize: AIModelSize?
   private var aiModelInstallTask: Task<Void, Never>?
-  /// Not in Mozc: the newest release of the selected model on Hugging Face, looked up when the AI tab is shown or
-  /// another model is selected.
-  public private(set) var aiModelLatest = AIModelLatestState.unknown
+  /// Not in Mozc: the newest release of each model on Hugging Face, looked up when the AI tab is shown.
+  public private(set) var aiModelLatest: [AIModelSize: AIModelLatestState] = [:]
   /// Looks up the newest release of a model (replaced by tests).
   var aiModelReleaseFetcher: @Sendable (AIModelSize) async throws -> GenmaiModelRelease = {
     try await GenmaiModelRelease.latest(repository: $0.repository)
@@ -367,42 +368,72 @@ public final class ConfigDialogModel {
     defer { isLoading = false }
     aiValues = AIConversionSettings.load(from: aiSettingsURL ?? AIConversionSettings.fileURL)
     savedAIValues = aiValues
-    aiModelStatus = AIModelStatus.check(aiValues.resolvedModelDirectory)
+    refreshAIModelStatus()
   }
 
-  /// Re-checks the model directory (the "Check again" button).
+  /// The model files of `size` (the selected model by default).
+  public func aiModelStatus(_ size: AIModelSize? = nil) -> AIModelStatus {
+    let size = size ?? aiValues.modelSize
+    return aiModelStatuses[size] ?? AIModelStatus.check(aiValues.modelDirectory(for: size))
+  }
+
+  /// Re-checks the model directories (the "Check again" button).
   public func refreshAIModelStatus() {
-    aiModelStatus = AIModelStatus.check(aiValues.resolvedModelDirectory)
+    for size in AIModelSize.allCases {
+      let directory = aiValues.modelDirectory(for: size)
+      let status = AIModelStatus.check(directory)
+      aiModelStatuses[size] = status
+      aiModelDiskSizes[size] = status.isFound ? Self.diskSize(of: directory) : nil
+    }
   }
 
-  /// Looks up the newest release of the selected model on Hugging Face (when the AI tab is shown or another model
-  /// is selected; again after a failure or with `force`, the "Check again" button).
-  public func checkLatestAIModel(force: Bool = false) async {
-    let size = aiValues.modelSize
-    switch aiModelLatest {
-    case .checking(size): return
-    case .available(let release) where !force && release.info.size == size: return
+  /// Bytes of the files in `directory` (recursively).
+  static func diskSize(of directory: URL) -> Int64 {
+    guard
+      let files = FileManager.default.enumerator(
+        at: directory, includingPropertiesForKeys: [.totalFileAllocatedSizeKey, .isRegularFileKey])
+    else { return 0 }
+    var total: Int64 = 0
+    for case let url as URL in files {
+      let values = try? url.resourceValues(forKeys: [.totalFileAllocatedSizeKey, .isRegularFileKey])
+      if values?.isRegularFile == true { total += Int64(values?.totalFileAllocatedSize ?? 0) }
+    }
+    return total
+  }
+
+  /// Looks up the newest release of each model on Hugging Face (when the AI tab is shown; again after a failure or
+  /// with `force`, the "Check again" button).
+  public func checkLatestAIModels(force: Bool = false) async {
+    for size in AIModelSize.allCases {
+      await checkLatestAIModel(size, force: force)
+    }
+  }
+
+  /// Looks up the newest release of `size`.
+  public func checkLatestAIModel(_ size: AIModelSize, force: Bool = false) async {
+    switch aiModelLatest[size] ?? .unknown {
+    case .checking: return
+    case .available where !force: return
     default: break
     }
-    aiModelLatest = .checking(size)
+    aiModelLatest[size] = .checking(size)
     let result: AIModelLatestState
     do {
       result = .available(try await aiModelReleaseFetcher(size))
     } catch {
       result = .failed("\(error)")
     }
-    // another model was selected meanwhile: its own lookup sets the state
-    guard aiModelLatest == .checking(size) else { return }
-    aiModelLatest = result
+    aiModelLatest[size] = result
   }
 
-  /// Downloads the newest release of the selected model from Hugging Face and installs it into the model directory (the
-  /// "Download" / "Update" button). The IME is told to reload, so a running IME switches to the new model.
-  public func installAIModel() {
-    guard aiModelInstallTask == nil, case .available(let release) = aiModelLatest,
-      release.info.size == aiValues.modelSize
+  /// Downloads the newest release of `size` from Hugging Face and installs it into its directory (the "Download" /
+  /// "Update" button of its row). The IME is told to reload, so a running IME picks up the new model.
+  public func installAIModel(_ size: AIModelSize) {
+    guard aiModelInstallTask == nil, case .available(let release) = aiModelLatest[size] ?? .unknown,
+      release.info.size == size
     else { return }
-    let directory = aiValues.resolvedModelDirectory
+    let directory = aiValues.modelDirectory(for: size)
+    aiModelInstallSize = size
     aiModelInstall = .running(.downloading(received: 0, total: release.downloadSize))
     let installer = aiModelInstaller
     // Progress arrives for every network chunk: forward it only when the shown permille changes.
@@ -413,6 +444,7 @@ public final class ConfigDialogModel {
       case .downloading(let received, let total): key = Int(received * 1000 / max(total, 1))
       case .verifying: key = 1001
       case .installing: key = 1002
+      case .preparing: key = 1003
       }
       guard
         lastShown.withLock({ last in
@@ -438,30 +470,33 @@ public final class ConfigDialogModel {
       self.aiModelInstallTask = nil
       self.aiModelInstall = result
       self.refreshAIModelStatus()
-      if result == .idle, self.aiModelStatus.isFound {
+      if result == .idle, self.aiModelStatus(size).isFound {
         _ = self.client.reload()
       }
     }
   }
 
-  /// The "Remove model" button: asks first, then deletes the model files (`performRemoveAIModel`).
-  public func removeAIModel() {
-    guard aiModelStatus.isFound, !aiModelInstall.isRunning else { return }
-    showQuestion(String(format: AIStrings.text(.removeConfirm), aiValues.resolvedModelDirectory.path)) {
-      [weak self] in
-      self?.performRemoveAIModel()
+  /// The "Remove…" button of a model's row: asks first, then deletes its files (`performRemoveAIModel`).
+  public func removeAIModel(_ size: AIModelSize) {
+    guard aiModelStatus(size).isFound, !aiModelInstall.isRunning else { return }
+    let question = String(
+      format: AIStrings.text(.removeConfirm), size.modelName, AIStrings.bytes(aiModelDiskSizes[size] ?? 0))
+    showQuestion(question) { [weak self] in
+      self?.performRemoveAIModel(size)
     }
   }
 
-  /// Deletes the model files from the model directory and tells the IME to reload (it then converts without AI
-  /// until a model is installed again).
-  func performRemoveAIModel() {
+  /// Deletes the files of `size` and tells the IME to reload (without the selected model it converts without AI
+  /// until one is installed again).
+  func performRemoveAIModel(_ size: AIModelSize) {
     do {
-      try AIModelInstaller.uninstall(from: aiValues.resolvedModelDirectory)
+      try AIModelInstaller.uninstall(from: aiValues.modelDirectory(for: size))
     } catch {
       showMessage(.critical, String(format: AIStrings.text(.removeFailed), "\(error)"))
     }
-    aiModelInstall = .idle
+    if aiModelInstallSize == size {
+      aiModelInstall = .idle
+    }
     refreshAIModelStatus()
     _ = client.reload()
   }

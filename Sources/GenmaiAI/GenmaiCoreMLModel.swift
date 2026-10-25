@@ -1,4 +1,4 @@
-// genmai model on Core ML (Neural Engine): the shared beam search (`GenmaiDecoder`) over a stateful Core ML model.
+// genmai model on Core ML (Neural Engine): the beam search (GenmaiSearch.swift) over a stateful Core ML model.
 //
 // The model directory holds `genmai.mlpackage` (or a compiled `genmai.mlmodelc`), `genmai_coreml.json`,
 // `tokenizer.json` and `config.json`. The package has two functions sharing one `MLState`:
@@ -53,7 +53,8 @@ public struct GenmaiCoreMLConfig: Sendable, Codable {
   }
 }
 
-public final class GenmaiCoreMLModel: GenmaiDecoder {
+/// Not Sendable; used from one actor at a time (`GenmaiConverter`).
+public final class GenmaiCoreMLModel {
   public static let configFileName = "genmai_coreml.json"
 
   public let config: GenmaiCoreMLConfig
@@ -251,6 +252,8 @@ public final class GenmaiCoreMLModel: GenmaiDecoder {
     return rows
   }
 
+  /// The log-prob of each token of `continuation` after `prompt` (prompt ids from `GenmaiPrompt.ids`); nil if they do
+  /// not fit into the decoder's prompt (a long prompt keeps BOS + its tail first).
   public func logProbs(of continuation: [Int32], after prompt: [Int32]) throws -> [Float]? {
     let room = config.promptSlots - continuation.count
     guard !prompt.isEmpty, !continuation.isEmpty, room >= 2 else { return nil }
@@ -297,6 +300,16 @@ public final class GenmaiCoreMLModel: GenmaiDecoder {
 
   // MARK: - Beam search
 
+  /// Independent beam searches for one reading under several left contexts. Returns, per context, the candidates
+  /// (text, sum log-prob) best first; with `bound`, a context's list may miss candidates that cannot be among the
+  /// best `bound.keep` of the batch. Throws `CancellationError` (checked between decode steps).
+  ///
+  /// Shared semantics (`GenmaiSearch`): max_new = 1.3 * reading + 8; prompts longer than the decoder's limit keep
+  /// BOS + their tail; with `minRatio`, EOS is forbidden until the output has `minRatio * reading` tokens; with
+  /// `draft`, the draft of each context (`GenmaiDraftStore`) is verified after its prompt and the longest prefix
+  /// accepted by every context (`GenmaiDraftStore.accept`) starts all searches; a search stops once `beams`
+  /// hypotheses ended; a single-context search stores its best output as the draft of its context (also when
+  /// cancelled).
   public func genBatch(
     _ reading: String, contexts: [String], beams b: Int = 5, minRatio: Double = 0, reusePromptKV: Bool = true,
     draft: Bool = false, draftMargin: Float = 2, bound: GenmaiSearchBound? = nil

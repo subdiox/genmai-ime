@@ -7,8 +7,8 @@
 #                                                              (C++: /Library/Input Methods/Mozc.app)
 # The uninstaller is inside Genmai.app (Contents/Resources/UninstallGenmai.app, opened from the settings); unlike
 # the C++ (/Applications/Mozc/UninstallMozc.app) nothing is installed into /Applications.
-# Scripts (Tools/installer/*_template.sh with @@@...@@@ substituted, like build_tools/tweak_macinstaller_script.py):
-#   preinstall   removes /Applications/Genmai, where 0.1.0 put the uninstaller
+# Scripts (Tools/installer/*_template.sh with @@@...@@@ substituted, like build_tools/tweak_macinstaller_script.py;
+# the C++ preinstall removes /Applications/Mozc: n/a):
 #   postinstall  removes a development copy in the console user's ~/Library/Input Methods (same bundle id), kills
 #                the running input method (GenmaiIME, which hosts the converter in-process; the C++ kills
 #                GenmaiConverter) and runs `GenmaiIME --register_input_source` as the console user. No logout is
@@ -49,7 +49,6 @@ OUT=$BUILD_DIR/Genmai.pkg
 PRODUCT_NAME=Genmai
 IDENTIFIER=io.github.subdiox.genmai.pkg
 PKG_NAME=$PRODUCT_NAME.pkg  # configured in distribution.xml
-APPLICATIONS_DIR=/Applications/$PRODUCT_NAME  # the uninstaller's folder of 0.1.0, removed by preinstall
 APP_PATH="/Library/Input Methods/$PRODUCT_NAME.app"
 VERSION=$(sed -n 's/.*kProductVersion = "\(.*\)"/\1/p' "$ROOT/Sources/GenmaiBase/VersionDef.swift")
 
@@ -76,8 +75,7 @@ ditto "$IME_BUNDLE" "$WORK/root$APP_PATH"
 codesign --verify --strict --deep "$WORK/root$APP_PATH"
 
 substitute() {
-  sed -e "s|@@@GENMAI_APPLICATIONS_DIR@@@|$APPLICATIONS_DIR|g" \
-      -e "s|@@@GENMAI_APP_NAME@@@|${APP_PATH:t}|g" \
+  sed -e "s|@@@GENMAI_APP_NAME@@@|${APP_PATH:t}|g" \
       -e "s|@@@GENMAI_PACKAGE_NAME@@@|$PKG_NAME|g" \
       -e "s|@@@GENMAI_VERSION@@@|$VERSION|g" \
       -e "s|@@@HOST_ARCHITECTURES@@@|$HOST_ARCHITECTURES|g" \
@@ -85,15 +83,13 @@ substitute() {
 }
 # hostArchitectures: the architectures the input method binary was built for (lipo: "arm64 x86_64").
 HOST_ARCHITECTURES=$(lipo -archs "$IME_BUNDLE/Contents/MacOS/GenmaiIME" | tr ' ' ',')
-substitute "$INSTALLER_SRC/preflight_template.sh" >| "$WORK/scripts/preinstall"
 substitute "$INSTALLER_SRC/postflight_template.sh" >| "$WORK/scripts/postinstall"
-chmod 755 "$WORK/scripts/preinstall" "$WORK/scripts/postinstall"
+chmod 755 "$WORK/scripts/postinstall"
 substitute "$INSTALLER_SRC/distribution.xml" >| "$WORK/distribution.xml"
-if grep -q '@@@' "$WORK/scripts/preinstall" "$WORK/scripts/postinstall" "$WORK/distribution.xml"; then
+if grep -q '@@@' "$WORK/scripts/postinstall" "$WORK/distribution.xml"; then
   echo "error: a @@@...@@@ placeholder was not replaced" >&2
   exit 1
 fi
-sh -n "$WORK/scripts/preinstall"
 sh -n "$WORK/scripts/postinstall"
 xmllint --noout "$WORK/distribution.xml"
 

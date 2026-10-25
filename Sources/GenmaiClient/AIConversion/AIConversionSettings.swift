@@ -14,7 +14,7 @@ public struct AIConversionSettings: Codable, Equatable, Sendable {
   public var timeoutMilliseconds: Int
   /// Maximum number of AI candidates (the AI top-1 plus alternatives) added to a segment's candidate list.
   public var candidateCount: Int
-  /// The model directory; nil = `defaultModelDirectory`.
+  /// The directory of the selected model; nil = `defaultModelDirectory(for: modelSize)`.
   public var modelDirectory: String?
   /// Which model to install (medium by default).
   public var modelSize: AIModelSize
@@ -105,18 +105,27 @@ public struct AIConversionSettings: Codable, Equatable, Sendable {
 
   // MARK: - Model location
 
-  /// `~/Library/Application Support/Genmai/model`, written by the model installer (`AIModelInstaller`)
-  /// (the same path as GenmaiAI's `GenmaiConverter.defaultModelDirectory`).
-  public static var defaultModelDirectory: URL {
-    URL.applicationSupportDirectory.appending(path: "Genmai/model", directoryHint: .isDirectory)
+  /// `~/Library/Application Support/Genmai/models`: one directory per model, written by the model installer
+  /// (`AIModelInstaller`), so that both models can be installed and the unused one removed.
+  public static var modelsDirectory: URL {
+    URL.applicationSupportDirectory.appending(path: "Genmai/models", directoryHint: .isDirectory)
   }
 
-  public var resolvedModelDirectory: URL {
-    if let modelDirectory {
+  /// `models/genmai-90M` / `models/genmai-310M`.
+  public static func defaultModelDirectory(for size: AIModelSize) -> URL {
+    modelsDirectory.appending(path: size.modelName, directoryHint: .isDirectory)
+  }
+
+  /// Where `size` is installed (`model_directory` overrides the selected model's).
+  public func modelDirectory(for size: AIModelSize) -> URL {
+    if size == modelSize, let modelDirectory {
       return URL(filePath: (modelDirectory as NSString).expandingTildeInPath, directoryHint: .isDirectory)
     }
-    return Self.defaultModelDirectory
+    return Self.defaultModelDirectory(for: size)
   }
+
+  /// The selected model's directory: the one the IME loads.
+  public var resolvedModelDirectory: URL { modelDirectory(for: modelSize) }
 
   // MARK: - Persistence
 

@@ -15,8 +15,6 @@
 //       draft-and-verify decoding (GenmaiOptions.draft).
 //   genmai-cli compare <ours.json> <reference.json>
 //       per-item parity: identical top-1 / identical n-best (texts) / max score difference.
-//   genmai-cli dict-hints [--data FILE] [--jobs N] <in.jsonl> <out.jsonl>
-//       Mozc's conversion and dictionary proper nouns for each reading (AIDictionaryHinter), for training data.
 //   genmai-cli session-eval [--timeout-ms N] [--settle none|chunks|idle] [--errors] [--out-dir DIR] <anco set.json>...
 //       types the readings through the IME session layer (SessionHandlerBackend) with AI conversion off and on
 //       and reports top-1 accuracy and conversion-key latency (see SessionEval.swift).
@@ -27,6 +25,7 @@
 import CoreML
 import Foundation
 import GenmaiAI
+import GenmaiAIClient
 import GenmaiBase
 import GenmaiClient
 import GenmaiCore
@@ -61,7 +60,7 @@ args.removeFirst()
 @MainActor func modelDirectory() -> URL {
   if let m = option("--model") { return URL(filePath: m) }
   if let e = ProcessInfo.processInfo.environment["GENMAI_MODEL_DIR"] { return URL(filePath: e) }
-  return GenmaiConverter.defaultModelDirectory
+  return AIConversionSettings.load().resolvedModelDirectory
 }
 
 @MainActor func loadConverter() async -> GenmaiConverter {
@@ -161,7 +160,6 @@ struct EvalResultFile: Decodable {
     var id: JSONScalarText
     var query: String
     var outputs: [Output]?
-    var answers: [String]?
   }
 
   var items: [Item]
@@ -198,7 +196,7 @@ case "install":
   } catch {
     fail("cannot look up the model release: \(error)")
   }
-  let dst = args.first.map { URL(filePath: $0) } ?? GenmaiConverter.defaultModelDirectory
+  let dst = args.first.map { URL(filePath: $0) } ?? AIConversionSettings.defaultModelDirectory(for: size)
   print(
     "installing \(size.modelName) \(release.info.version) (\(release.info.repository)@\(release.info.revision))"
       + " into \(dst.path)")
@@ -214,6 +212,8 @@ case "install":
         line = "verifying"
       case .installing:
         line = "installing"
+      case .preparing:
+        line = "preparing for the Neural Engine"
       }
       let changed = last.withLock { l in
         defer { l = line }
@@ -362,35 +362,27 @@ case "compare":
 
 case "propose":
   // propose [--model DIR] [--data FILE] [--weight W] [--proposal-weights W,...] <reading or set.json>...
-  // The dictionary's proposals in the AI conversion (AIDictionaryScorer.propose / rerank). For a reading: the
-  // model's candidates and the proposals (P) with model score, dictionary cost and score + W × (-cost / 500), the
-  // dictionary's best path and the result. For an evaluation set: top-1 accuracy (exact) without proposals and with
-  // them for each proposal weight (one-shot conversions, readings of one chunk get proposals as in the IME).
+  // The dictionary in the AI conversion, as the IME applies it (GenmaiAugmenter.advise: AIDictionaryScorer.propose /
+  // rerank). For a reading: the model's candidates and the proposals (P) with model score, dictionary cost and score
+  // + W × (-cost / 500), the dictionary's best path and the result with the first proposal weight. For an evaluation
+  // set: top-1 accuracy (exact) of one-shot conversions without proposals and with them for each proposal weight,
+  // and how many answers are among the candidates and proposals at all.
   let dataPath = option("--data") ?? OssDataManager.defaultDataPath
   let weight = option("--weight").flatMap(Double.init) ?? AIConversionSettings.defaultDictionaryWeight
-  let proposalWeights = (option("--proposal-weights") ?? "0.2,0.5,1,1.5,2,3").split(separator: ",").compactMap {
-    Double($0)
-  }
+  let proposalWeights = (option("--proposal-weights") ?? "1").split(separator: ",").compactMap { Double($0) }
   let scorer: AIDictionaryScorer
   do { scorer = try AIDictionaryScorer(dataManager: try OssDataManager.create(path: dataPath)) } catch {
     fail("cannot load \(dataPath): \(error)")
   }
   let c = await loadConverter()
-  // the model's candidates + the unscored proposals, their scores, the proposals
-  func candidates(_ reading: String, _ context: String) async throws -> ([String], [Double], [String]) {
-    let r = try await c.convert(reading, context: context)
-    var texts = r.map(\.text)
-    var scores = r.map(\.score)
-    guard GenmaiSearch.split(reading, chunk: GenmaiOptions().chunk).count == 1 else { return (texts, scores, []) }
-    let proposals = scorer.propose(reading: reading, texts: texts)
-    let unscored = proposals.filter { !texts.contains($0) }
-    for (t, sc) in zip(unscored, try await c.score(unscored, reading: reading, context: context)) {
-      if let sc {
-        texts.append(t)
-        scores.append(sc)
-      }
-    }
-    return (texts, scores, proposals)
+  let chunk = GenmaiOptions().chunk
+  func advice(_ proposalWeight: Double?) -> AIDictionaryAdvice {
+    AIDictionaryAdvice(
+      propose: { reading, texts in proposalWeight == nil ? [] : scorer.propose(reading: reading, texts: texts) },
+      rerank: { texts, scores, reading, proposals in
+        scorer.rerank(
+          texts, scores: scores, reading: reading, weight: weight, proposals: proposals, proposalWeight: proposalWeight)
+      })
   }
   for arg in args {
     if arg.hasSuffix(".json") || arg.hasSuffix(".jsonl") {
@@ -398,12 +390,15 @@ case "propose":
       var inPool = 0  // the answer among the candidates and proposals (the best any reranking can do)
       let items = try loadSet(arg)
       for x in items {
-        let (texts, scores, proposals) = try await candidates(x.query, x.context)
-        if texts.contains(where: x.answers.contains) { inPool += 1 }
+        let candidates = try await c.convert(x.query, context: x.context)
+        if (candidates.map(\.text) + scorer.propose(reading: x.query, texts: candidates.map(\.text))).contains(
+          where: x.answers.contains)
+        {
+          inPool += 1
+        }
         for (k, pw) in ([nil] + proposalWeights.map { Optional($0) }).enumerated() {
-          let top = scorer.rerank(
-            texts, scores: scores, reading: x.query, weight: weight, proposals: pw == nil ? [] : proposals,
-            proposalWeight: pw
+          let top = try await GenmaiAugmenter.advise(
+            candidates, reading: x.query, context: x.context, chunk: chunk, advice: advice(pw), converter: c
           ).first
           if let top, x.answers.contains(top) { hits[k] += 1 }
         }
@@ -413,128 +408,29 @@ case "propose":
       print(line)
       continue
     }
-    let (texts, scores, proposals) = try await candidates(arg, "")
-    let top =
-      scorer.rerank(
-        texts, scores: scores, reading: arg, weight: weight, proposals: proposals,
-        proposalWeight: proposalWeights.first
-      ).first ?? ""
-    print("\(arg) → \(top)")
+    let candidates = try await c.convert(arg)
+    let proposals = scorer.propose(reading: arg, texts: candidates.map(\.text))
+    let top = try await GenmaiAugmenter.advise(
+      candidates, reading: arg, context: "", chunk: chunk, advice: advice(proposalWeights.first), converter: c
+    ).first
+    print("\(arg) → \(top ?? "")")
     if let path = scorer.bestPath(arg) {
       print("  path: \(path.text), proper nouns: \(path.properNouns.map(\.surface))")
     }
-    for (t, sc) in zip(texts, scores) {
+    // scores as one sequence, as the proposals are compared
+    let texts = candidates.map(\.text) + proposals.filter { t in !candidates.contains { $0.text == t } }
+    for (t, sc) in zip(texts, try await c.score(texts, reading: arg)) {
       let cost = scorer.cost(t, reading: arg)
-      let combined = cost.map { sc - weight * Double($0) / AIDictionaryScorer.costPerNat }
+      let combined: Double? = cost.flatMap { cost in
+        sc.map { $0 - weight * Double(cost) / AIDictionaryScorer.costPerNat }
+      }
       print(
         String(
-          format: "  %@ %8.3f %7@ %8@  %@", proposals.contains(t) ? "P" : " ", sc, cost.map(String.init) ?? "-",
-          combined.map { String(format: "%.3f", $0) } ?? "-", t))
+          format: "  %@ %8@ %7@ %8@  %@", proposals.contains(t) ? "P" : " ",
+          sc.map { String(format: "%.3f", $0) } ?? "-",
+          cost.map(String.init) ?? "-", combined.map { String(format: "%.3f", $0) } ?? "-", t))
     }
   }
-
-case "rescore":
-  // rescore [--data FILE] [--weights 0,0.25,...] <gen_*.json>...: top-1 accuracy of the n-best lists of `eval`
-  // reordered by AIDictionaryScorer (model score + weight × Mozc's dictionary score) for each weight.
-  let dataPath = option("--data") ?? OssDataManager.defaultDataPath
-  let weights = (option("--weights") ?? "0,0.1,0.2,0.3,0.5,0.75,1,1.5,2").split(separator: ",").compactMap {
-    Double($0)
-  }
-  let scorer: AIDictionaryScorer
-  do { scorer = try AIDictionaryScorer(dataManager: try OssDataManager.create(path: dataPath)) } catch {
-    fail("cannot load \(dataPath): \(error)")
-  }
-  let verbose = flag("--verbose")
-  for path in args {
-    let file = try JSONDecoder().decode(EvalResultFile.self, from: Data(contentsOf: URL(filePath: path)))
-    if verbose, let w = weights.last {
-      // the items whose top-1 the reordering changes, with each text's score and dictionary cost
-      for x in file.items {
-        let outputs = x.outputs ?? []
-        let reranked = scorer.rerank(outputs.map(\.text), scores: outputs.map(\.score), reading: x.query, weight: w)
-        guard let top = reranked.first, top != outputs.first?.text else { continue }
-        let mark = { (t: String) in (x.answers ?? []).contains(t) ? "✓" : "✗" }
-        print("\(x.query)  \(mark(outputs.first?.text ?? ""))→\(mark(top))")
-        for o in outputs {
-          let c = scorer.cost(o.text, reading: x.query).map(String.init) ?? "-"
-          print(String(format: "    %7.3f  %6@  %@", o.score, c, o.text))
-        }
-      }
-    }
-    var line = URL(filePath: path).lastPathComponent + ":"
-    for w in weights {
-      var hits = 0
-      var changed = 0
-      for x in file.items {
-        let outputs = x.outputs ?? []
-        let texts = outputs.map(\.text)
-        let reranked = scorer.rerank(texts, scores: outputs.map(\.score), reading: x.query, weight: w)
-        if let top = reranked.first, (x.answers ?? []).contains(top) { hits += 1 }
-        if reranked.first != texts.first { changed += 1 }
-      }
-      line += String(format: "  w=%g %d/%d (%d changed)", w, hits, file.items.count, changed)
-    }
-    print(line)
-  }
-
-case "dict-hints":
-  // dict-hints [--data FILE] [--jobs N] <in.jsonl> <out.jsonl>: the dictionary hints (AIDictionaryHinter) of each
-  // line's "reading", for training data: {"id", "reading", "h1" (Mozc's conversion), "segments", "proper_nouns"}
-  // per line, in input order. Default data set: Data/genmai_extended.data (what the IME bundles).
-  let dataPath =
-    option("--data")
-    ?? URL(filePath: OssDataManager.defaultDataPath).deletingLastPathComponent().appending(path: "genmai_extended.data")
-    .path
-  let jobs = option("--jobs").flatMap(Int.init) ?? ProcessInfo.processInfo.activeProcessorCount
-  guard args.count == 2 else { fail("usage: genmai-cli dict-hints [--data FILE] [--jobs N] <in.jsonl> <out.jsonl>") }
-  var rows: [[String: Any]] = []
-  for line in try String(contentsOf: URL(filePath: args[0]), encoding: .utf8).split(whereSeparator: \.isNewline) {
-    guard let row = try JSONSerialization.jsonObject(with: Data(line.utf8)) as? [String: Any], row["reading"] is String
-    else { fail("no \"reading\" in: \(line)") }
-    rows.append(row)
-  }
-  let readings = rows.compactMap { $0["reading"] as? String }
-  // a fresh profile: no user dictionary, no learning
-  let profile = FileManager.default.temporaryDirectory.appending(path: "genmai-dict-hints-\(UUID().uuidString)")
-  try FileManager.default.createDirectory(at: profile, withIntermediateDirectories: true)
-  defer { try? FileManager.default.removeItem(at: profile) }
-  SystemUtil.setUserProfileDirectory(profile.path)
-  let start = Date()
-  let sliceSize = (readings.count + jobs - 1) / max(jobs, 1)
-  let slices = stride(from: 0, to: readings.count, by: max(sliceSize, 1)).map {
-    Array(readings[$0..<min($0 + sliceSize, readings.count)])
-  }
-  var hints = [[AIDictionaryHints]](repeating: [], count: slices.count)
-  do {
-    try await withThrowingTaskGroup(of: (Int, [AIDictionaryHints]).self) { group in
-      for (i, slice) in slices.enumerated() {
-        group.addTask {
-          let dataManager = try OssDataManager.create(path: dataPath)
-          let hinter = try AIDictionaryHinter(engine: try Engine.createEngine(dataManager), dataManager: dataManager)
-          return (i, slice.map { hinter.hints(reading: $0) })
-        }
-      }
-      for try await (i, h) in group { hints[i] = h }
-    }
-  } catch {
-    fail("cannot load \(dataPath): \(error)")
-  }
-  var out = Data()
-  for (row, h) in zip(rows, hints.joined()) {
-    var o: [String: Any] = [
-      "reading": row["reading"] ?? "", "h1": h.segments.joined(), "segments": h.segments,
-      "proper_nouns": h.properNouns,
-    ]
-    o["id"] = row["id"]
-    out += try JSONSerialization.data(withJSONObject: o, options: [.sortedKeys, .withoutEscapingSlashes])
-    out += Data("\n".utf8)
-  }
-  try out.write(to: URL(filePath: args[1]))
-  let seconds = Date().timeIntervalSince(start)
-  print(
-    String(
-      format: "%d readings in %.1f s (%.0f / s, %d jobs) with %@", rows.count, seconds,
-      Double(rows.count) / seconds, slices.count, dataPath))
 
 case "session-eval":
   await runSessionEval(args)

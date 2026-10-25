@@ -14,7 +14,7 @@ import Synchronization
 public enum WelcomeStrings {
   public enum Key: CaseIterable, Sendable {
     case windowTitle, title, subtitle, switchTitle, switchDetail, aiTitle, aiDetail, enableAI, later, done,
-      checking, downloading, installing, enabled, failed, settingsHint, openSettings
+      checking, downloading, installing, preparing, enabled, failed, settingsHint, openSettings
   }
 
   static let english: [Key: String] = [
@@ -33,6 +33,7 @@ public enum WelcomeStrings {
     .checking: "Looking up the model…",
     .downloading: "Downloading… %@ of %@",
     .installing: "Installing…",
+    .preparing: "Preparing the model for the Neural Engine… (first time only, about 20 seconds)",
     .enabled: "AI conversion is on.",
     .failed: "Could not install the model: %@",
     .settingsHint: "You can change this at any time in the [ProductName] settings.",
@@ -54,6 +55,7 @@ public enum WelcomeStrings {
     .checking: "モデルを確認中…",
     .downloading: "ダウンロード中… %1$@ / %2$@",
     .installing: "インストール中…",
+    .preparing: "Neural Engine 用にモデルを準備中…（初回のみ、20 秒ほどかかります）",
     .enabled: "AI 変換をオンにしました。",
     .failed: "モデルをインストールできませんでした: %@",
     .settingsHint: "この設定は [ProductName] の設定からいつでも変更できます。",
@@ -92,12 +94,13 @@ public final class WelcomeModel {
     case checking
     case downloading(received: Int64, total: Int64)
     case installing
+    case preparing
     case enabled
     case failed(String)
 
     var isBusy: Bool {
       switch self {
-      case .checking, .downloading, .installing: true
+      case .checking, .downloading, .installing, .preparing: true
       case .off, .enabled, .failed: false
       }
     }
@@ -131,7 +134,7 @@ public final class WelcomeModel {
   }
 
   /// The download size of the default model, shown before it is known.
-  static let approximateDownload: Int64 = 340_000_000
+  static let approximateDownload: Int64 = 283_000_000
 
   /// Installs the newest model (unless the installed one is current) and turns AI conversion on.
   public func enableAI() {
@@ -155,6 +158,9 @@ public final class WelcomeModel {
       case .verifying, .installing:
         next = .installing
         key = 1001
+      case .preparing:
+        next = .preparing
+        key = 1002
       }
       guard
         lastShown.withLock({ last in
@@ -320,6 +326,8 @@ private struct WelcomeAISection: View {
           fraction: Double(received) / Double(max(total, 1)))
       case .installing:
         WelcomeProgressRow(text: WelcomeStrings.text(.installing), fraction: nil)
+      case .preparing:
+        WelcomeProgressRow(text: WelcomeStrings.text(.preparing), fraction: nil)
       case .enabled:
         Label {
           Text(verbatim: WelcomeStrings.text(.enabled))

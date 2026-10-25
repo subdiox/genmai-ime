@@ -10,7 +10,11 @@ enum GenmaiTestPaths {
     .deletingLastPathComponent()
   static let modelDirectory: URL = {
     if let e = ProcessInfo.processInfo.environment["GENMAI_MODEL_DIR"] { return URL(filePath: e) }
-    return GenmaiConverter.defaultModelDirectory
+    // the IME's model directories (AIConversionSettings.defaultModelDirectory(for:)), medium first
+    let models = URL.applicationSupportDirectory.appending(path: "Genmai/models", directoryHint: .isDirectory)
+    let installed = ["genmai-310M", "genmai-90M"].map { models.appending(path: $0, directoryHint: .isDirectory) }
+    return installed.first { FileManager.default.fileExists(atPath: $0.appending(path: "genmai_coreml.json").path) }
+      ?? installed[0]
   }()
   static let fixtures = repoRoot.appending(path: "Tests/Fixtures/genmai/tokenizer_fixtures.json")
   static var tokenizerAvailable: Bool {

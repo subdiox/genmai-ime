@@ -19,7 +19,7 @@
 //   io.github.subdiox.genmai.inputmethod.Japanese, which was chosen so that the Swift port and the C++ Mozc
 //   (/Library/Input Methods/Mozc.app, /Applications/Mozc) can be installed side by side:
 //     /Library/Input Methods/Genmai.app   (C++: /Library/Input Methods/Mozc.app; all users)
-//     /Applications/Genmai                (C++: /Applications/Mozc; only 0.1.0 installed it)
+//     (C++: /Applications/Mozc with the uninstaller: n/a, the uninstaller lives inside the input method bundle)
 //     ~/Library/Input Methods/Genmai.app  (this user only, or a development copy from Tools/make_ime_bundle.sh)
 //   each only if it is there, and the bundles only if their CFBundleIdentifier is this port's, so the C++ Mozc
 //   is never removed. The LaunchAgents plists of the converter / renderer are n/a: the Swift IME runs both
@@ -42,8 +42,7 @@ import Security
 struct UninstallerLayout: Sendable, Equatable {
   /// CFBundleIdentifier of the Swift IME bundle (Tools/make_ime_bundle.sh).
   static let kBundleIdentifier = "io.github.subdiox.genmai.inputmethod.Japanese"
-  /// PRODUCT_NAME of the Swift bundle: the IME is installed as <product>.app and the uninstaller in
-  /// /Applications/<product> (the C++ uses "Mozc" for both).
+  /// PRODUCT_NAME of the Swift bundle: the IME is installed as <product>.app (the C++ uses "Mozc").
   static let kProductName = "Genmai"
 
   var systemRoot: URL
@@ -60,27 +59,18 @@ struct UninstallerLayout: Sendable, Equatable {
     systemRoot.appending(path: "Library/Input Methods/\(Self.kProductName).app", directoryHint: .isDirectory)
   }
 
-  /// /Applications/Genmai, where the 0.1.0 package put the uninstaller (later versions keep it inside the input
-  /// method bundle).
-  var applicationsFolder: URL {
-    systemRoot.appending(path: "Applications/\(Self.kProductName)", directoryHint: .isDirectory)
-  }
-
   /// The per-user installation (Installer's "Install for me only", or a copy of Tools/make_ime_bundle.sh's
   /// bundle); the system-wide location is `inputMethodBundle`.
   var manualInstallCandidates: [URL] {
     [homeDirectory.appending(path: "Library/Input Methods/\(Self.kProductName).app", directoryHint: .isDirectory)]
   }
 
-  /// kRemovePaths: the input method installed for all users and the applications folder of an old version (both
-  /// need administrator rights), then the input method installed for this user; each only if it is there.
+  /// kRemovePaths: the input method installed for all users (needs administrator rights), then the input method
+  /// installed for this user; each only if it is there.
   func removeItems() -> [RemoveItem] {
     var items: [RemoveItem] = []
     if Self.bundleIdentifier(at: inputMethodBundle) == Self.kBundleIdentifier {
       items.append(RemoveItem(kind: .inputMethod, path: inputMethodBundle.path(percentEncoded: false)))
-    }
-    if FileManager.default.fileExists(atPath: applicationsFolder.path(percentEncoded: false)) {
-      items.append(RemoveItem(kind: .applicationsFolder, path: applicationsFolder.path(percentEncoded: false)))
     }
     for candidate in manualInstallCandidates
     where Self.bundleIdentifier(at: candidate) == Self.kBundleIdentifier {
@@ -91,7 +81,7 @@ struct UninstallerLayout: Sendable, Equatable {
 
   func removePaths() -> [String] { removeItems().map(\.path) }
 
-  /// The user profile (settings, learning data, user dictionary; the AI model in `model/`).
+  /// The user profile (settings, learning data, user dictionary; the AI models in `models/`).
   var profileDirectory: URL {
     homeDirectory.appending(path: "Library/Application Support/\(Self.kProductName)", directoryHint: .isDirectory)
   }
@@ -108,7 +98,7 @@ struct UninstallerLayout: Sendable, Equatable {
     let profileFiles = (try? fm.contentsOfDirectory(atPath: profileDirectory.path(percentEncoded: false))) ?? []
     func inProfile(_ names: [String]) -> [URL] { names.map { profileDirectory.appending(path: $0) } }
     var paths: [UserDataKind: [URL]] = [:]
-    paths[.aiModel] = inProfile(profileFiles.filter { $0 == "model" }) + [cachesDirectory]
+    paths[.aiModel] = inProfile(profileFiles.filter { $0 == "models" }) + [cachesDirectory]
     paths[.userDictionary] = inProfile(profileFiles.filter { $0.hasPrefix("user_dictionary") })
     paths[.learning] = inProfile(
       profileFiles.filter { UserDataKind.learningFiles.contains($0) || $0.hasPrefix("ai_debug.log") })
@@ -171,7 +161,7 @@ struct UninstallerLayout: Sendable, Equatable {
 
 /// The kinds of user data the uninstaller can remove as well (each one optional).
 enum UserDataKind: CaseIterable, Sendable, Hashable {
-  /// `model/` in the profile and the download caches.
+  /// `models/` in the profile and the download caches.
   case aiModel
   case userDictionary
   /// Conversion learning (user history, segment and boundary learning) and the AI debug log.
@@ -197,8 +187,6 @@ struct RemoveItem: Sendable, Equatable, Hashable {
   enum Kind: Sendable, Equatable, Hashable {
     /// /Library/Input Methods/Genmai.app.
     case inputMethod
-    /// /Applications/Genmai of an old version.
-    case applicationsFolder
     /// ~/Library/Input Methods/Genmai.app.
     case userInputMethod
   }

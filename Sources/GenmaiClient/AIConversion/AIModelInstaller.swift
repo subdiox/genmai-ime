@@ -280,6 +280,8 @@ public enum AIModelInstaller {
     case downloading(received: Int64, total: Int64)
     case verifying
     case installing
+    /// Loading the installed model once for the Neural Engine (its first load compiles it).
+    case preparing
   }
 
   /// Downloaded files are kept here until the installation succeeded (an interrupted installation reuses the
@@ -364,6 +366,18 @@ public enum AIModelInstaller {
     }
     for name in coreMLModelFiles(in: directory) where !compiledNames.contains(name) {
       try? fm.removeItem(at: directory.appending(path: name))
+    }
+    // The first load compiles the model for the Neural Engine (~20 s for genmai-310M). The system caches that per
+    // path, so it is done here, at the model's final path: the input method then loads it at once. Not fatal: the
+    // input method would compile it itself.
+    progress(.preparing)
+    for name in compiledNames {
+      for function in ["prefill", "decode"] {
+        let configuration = MLModelConfiguration()
+        configuration.computeUnits = .cpuAndNeuralEngine
+        configuration.functionName = function
+        _ = try? await MLModel.load(contentsOf: directory.appending(path: name), configuration: configuration)
+      }
     }
     try? fm.removeItem(at: downloads)
   }

@@ -413,20 +413,8 @@ public final class GenmaiAugmenter: ConversionAugmenter {
       let unique = candidates.filter { !$0.text.isEmpty && seen.insert($0.text).inserted }
       var texts = unique.map(\.text)
       if let advice, let converter {
-        var scores = unique.map(\.score)
-        var proposals: [String] = []
-        // a proposal is scored as one chunk: only for readings the model converts in one
-        if GenmaiSearch.split(reading, chunk: options.chunk).count == 1 {
-          proposals = advice.propose(reading, texts)
-          let unscored = proposals.filter { !texts.contains($0) }
-          for (text, score) in zip(unscored, try await converter.score(unscored, reading: reading, context: context)) {
-            if let score {
-              texts.append(text)
-              scores.append(score)
-            }
-          }
-        }
-        texts = advice.rerank(texts, scores, reading, proposals)
+        texts = try await GenmaiAugmenter.advise(
+          unique, reading: reading, context: context, chunk: options.chunk, advice: advice, converter: converter)
       }
       return Array(texts.prefix(maxResults))
     }
@@ -436,6 +424,40 @@ public final class GenmaiAugmenter: ConversionAugmenter {
     func setDictionaryAdvice(_ advice: AIDictionaryAdvice?) {
       self.advice = advice
     }
+  }
+}
+
+extension GenmaiAugmenter {
+  /// The model's candidates (best first) with the dictionary's say (`AIDictionaryAdvice`): the dictionary's
+  /// proposals are scored with the model and `rerank` chooses the top. For a reading of one chunk the proposals'
+  /// scores compare with the candidates' directly. For a longer one the candidates' scores are sums over chunks, so
+  /// the first round of `rerank` (among the candidates) runs alone and its winner is scored again as one sequence
+  /// with the proposals for the second round (skipped if they do not fit into the prompt).
+  public static func advise(
+    _ candidates: [GenmaiCandidate], reading: String, context: String, chunk: Int, advice: AIDictionaryAdvice,
+    converter: GenmaiConverter
+  ) async throws -> [String] {
+    var texts = candidates.map(\.text)
+    var scores = candidates.map(\.score)
+    let proposals = advice.propose(reading, texts)
+    if GenmaiSearch.split(reading, chunk: chunk).count == 1 {
+      let unscored = proposals.filter { !texts.contains($0) }
+      for (text, score) in zip(unscored, try await converter.score(unscored, reading: reading, context: context)) {
+        if let score {
+          texts.append(text)
+          scores.append(score)
+        }
+      }
+      return advice.rerank(texts, scores, reading, proposals)
+    }
+    let first = advice.rerank(texts, scores, reading, [])
+    guard let winner = first.first, !proposals.isEmpty else { return first }
+    let pool = [winner] + proposals.filter { $0 != winner }
+    let poolScores = try await converter.score(pool, reading: reading, context: context).compactMap { $0 }
+    guard poolScores.count == pool.count, let top = advice.rerank(pool, poolScores, reading, proposals).first,
+      top != winner
+    else { return first }
+    return [top] + first.filter { $0 != top }
   }
 }
 

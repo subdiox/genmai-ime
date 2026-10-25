@@ -188,7 +188,7 @@ private struct RemoveItemRow: View {
 
   var body: some View {
     HStack(spacing: 12) {
-      Image(systemName: item.kind == .applicationsFolder ? "folder" : "keyboard")
+      Image(systemName: "keyboard")
         .font(.title3)
         .foregroundStyle(.secondary)
         .frame(width: 20)

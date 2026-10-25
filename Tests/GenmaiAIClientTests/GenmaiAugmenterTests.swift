@@ -18,7 +18,7 @@ enum ModelPaths {
   static let modelDirectory: URL? = {
     var dirs: [URL] = []
     if let e = ProcessInfo.processInfo.environment["GENMAI_MODEL_DIR"] { dirs.append(URL(filePath: e)) }
-    dirs.append(AIConversionSettings.defaultModelDirectory)
+    dirs += AIModelSize.allCases.map(AIConversionSettings.defaultModelDirectory(for:))
     return dirs.first { AIModelStatus.check($0).isFound }
   }()
   static var modelAvailable: Bool { modelDirectory != nil }

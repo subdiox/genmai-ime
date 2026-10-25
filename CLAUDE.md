@@ -105,7 +105,7 @@ needs a fraction of the memory: genmai-310M 80–140 MB vs. 1–2.7 GB).
 - `GenmaiTokenizer` (byte-level BPE from tokenizer.json, ids identical to the HF GPT2Tokenizer; fixtures in
   `Tests/Fixtures/genmai/`), `GenmaiPrompt` (format `zenzlc`: left context first, up to 500 characters, then the
   katakana reading; lengths in **Unicode scalars**), `GenmaiCoreMLModel` (the decoder, below), the shared beam
-  search (`GenmaiDecoder` / `GenmaiSearch`: `genBatch` / `extend` / `convert` / `split` at 40-character chunks,
+  search (GenmaiSearch.swift: `genBatch` / `extend` / `convert` / `split` at 40-character chunks,
   `score`), `GenmaiConverter` (actor owning the model; `workLock` serializes and measures the work of all
   converters), `GenmaiIncrementalConverter` (converts finished chunks while typing).
 - The model is not bundled. `AIModelSize` (small / medium) names the repositories and the memory AI conversion adds
@@ -119,27 +119,32 @@ needs a fraction of the memory: genmai-310M 80–140 MB vs. 1–2.7 GB).
   cannot run, so they skip it). `AIModelInstaller.install(release)` downloads the files (kept in
   `~/Library/Caches/Genmai/download/<repo>@<tag>` until the install succeeds), verifies the checksums and the config,
   extracts the archive with `/usr/bin/ditto -x -k` (Foundation has no zip API; awaited through the process's
-  termination handler), checks the format in `genmai_coreml.json`, compiles each package (`MLModel.compileModel`) and
+  termination handler), checks the format in `genmai_coreml.json`, compiles each package (`MLModel.compileModel`),
   replaces config.json / tokenizer.json / `genmai*.mlmodelc` / `genmai_coreml.json` / `genmai_model.json` (installed
-  repository and release) one at a time (other files are left alone). The setting `model_size` (AI tab "Model":
-  Small / Medium) picks the model; choosing the other one looks up its latest release and offers its download
-  (`AIModelStatus.needsInstall`: another model or a newer release). `AIModelInstaller.uninstall` removes only those
-  files (and the directory if nothing else is left). Front ends: the settings tab "AI" (looks up the latest release
-  when shown; Download / Update when it is newer than the installed one, with progress and cancel; "Remove Model…"
-  after a confirmation; both send RELOAD and `GenmaiAugmenter` reloads because `AIModelStatus.identity` — size and
-  mtime of the model files — changed), `genmai-cli install [--size small|medium] [--tag vX.Y.Z]` and
-  `Tools/prepare_genmai_model.sh [--size small]`. Tests use `$GENMAI_MODEL_DIR`, else
-  `~/Library/Application Support/Genmai/model`, and skip without a Core ML model there.
+  repository and release) one at a time (other files are left alone) and then loads the installed functions once on
+  the Neural Engine (phase `preparing`): the first ANE load compiles the model (~20 s for genmai-310M) and the system
+  caches that **per path** (another process loads it in 0.3 s; a copied or moved model compiles again), so it must
+  happen at the final path. **Each model has its own directory** (`AIConversionSettings.defaultModelDirectory(for:)`:
+  `~/Library/Application Support/Genmai/models/genmai-90M` / `genmai-310M`; `model_directory` overrides the selected
+  one's), so both can be installed; the setting `model_size` (AI tab "Model to use") picks the one the IME loads
+  (`resolvedModelDirectory`). `AIModelInstaller.uninstall` removes only a model's files (and its directory if nothing
+  else is left). Front ends: the settings tab "AI" (one row per model: installed version and size on disk, "In use",
+  Download / Update when the latest release is newer, progress incl. "preparing" and cancel, "Remove…" after a
+  confirmation; the latest releases are looked up when the tab is shown; installs and removals send RELOAD and
+  `GenmaiAugmenter` reloads because `AIModelStatus.identity` — size and mtime of the model files — changed), the
+  welcome window ("Turn On AI Conversion"), `genmai-cli install [--size small|medium] [--tag vX.Y.Z]` and
+  `Tools/prepare_genmai_model.sh [--size small]`. Tests use `$GENMAI_MODEL_DIR`, else the models' directories
+  (medium first), and skip without a Core ML model there.
 - **New model release:** convert the fp32 checkpoint with `Tools/coreml/genmai_coreml.py` (below; it writes
   `model-coreml.zip`), check it (`genmai-cli eval --model <out dir>`, `GENMAI_MODEL_DIR=<out dir> swift test --filter
   GenmaiAITests`), upload `model-coreml.zip` next to config.json, tokenizer.json and model.safetensors, and tag.
 - `genmai-cli`: `install`, `convert`, `eval [--incremental] [--every-key] [--draft] [--no-kv-reuse]` (per-item latency
   and the process footprint), `compare`, `session-eval` (below); `--model DIR` and `--units ane|cpu|gpu|all` pick the
-  model and Core ML's compute units. `propose`, `rescore`, `dict-hints`: see "Dictionary in the AI conversion".
+  model and Core ML's compute units. `propose`: see "Dictionary in the AI conversion".
 
 ### Core ML decoder (Neural Engine)
 
-`GenmaiCoreMLModel` implements `genBatch` and `logProbs` of the protocol `GenmaiDecoder` (GenmaiDecoder.swift); `gen` /
+`GenmaiCoreMLModel` does the model calls in `genBatch` and `logProbs`; `gen` /
 `extend` / `convert` / `score`, the drafts (`GenmaiDraftStore`: verification `accept`, only single-context searches
 store a draft), max_new, truncation and the result lists (`GenmaiSearch`) are shared code. Compared with the MLX
 decoder it replaced (genmai-90M, M4 Pro): top-1 identical 101/101 daily, 199/200 AJIMEE, 27/28 hard (n-best lists
@@ -283,35 +288,39 @@ unchanged; the hook only forwards). GenmaiCore and GenmaiSession contain no AI c
   weight × cost / 500 becomes the top. (2) **Proposals** (`dictionary_proposal_weight`, default 1.0): the model writes
   names it does not know in kana or with other kanji, and then the right spelling is not among its candidates at all.
   `AIDictionaryScorer.propose` takes the cheapest path through the lattice of the reading (`bestPath`: Mozc's
-  conversion without rewriters; uncovered characters cost 10000 there, with 3000 a run of kana beat 西神吉) and, if
-  it has a proper noun with kanji the AI's top lacks, proposes its text and the top with the noun written for its kana
-  (アザミヒラ → 莇平). The augmenter scores the proposals with the model (`GenmaiDecoder.score`: log-probs of the text
-  + EOS after the prompt, = the beam search's score; readings of one chunk only) and `rerank` holds a second round:
-  its first-round winner against the proposals (AI candidates equal to one count as proposals), whatever their kana,
-  with the proposal weight. (3) the merger keeps Mozc's text for a group of segments whose top is a proper noun
+  conversion without rewriters, system + **user dictionary** + **learned words**; uncovered characters cost 10000
+  there, with 3000 a run of kana beat 西神吉) and, if it has a proper noun with kanji or a user's word the AI's top
+  lacks, proposes
+  its text and the top with the word put in for the part that reads as it (the cheapest reading of the top through
+  the dictionary gives the reading ↔ text positions; アザミヒラ → 莇平, 西換気 → 西神吉, the rest of the top stays; by
+  its kana if the dictionary cannot read the top). `GenmaiAugmenter.advise` (shared with `genmai-cli propose`) scores
+  the proposals with the model (`GenmaiCoreMLModel.score`: log-probs of the text + EOS after the prompt in one
+  sequence) and `rerank` holds a second round: its first-round winner against the proposals (AI candidates equal to
+  one count as proposals), whatever their kana, with the proposal weight. For a reading of one chunk the proposals'
+  scores equal the beam search's; for a longer one (the candidates' scores are sums over chunks) the first round runs
+  alone and its winner is scored again in one sequence with the proposals (nil if the reading and text exceed the
+  prompt slots: no second round). The scorer's cost cache is cleared on engine reloads (user dictionary edits).
+  **Learned words** (`AILearnedWords`): the entries of Mozc's prediction history (`UserHistoryStorage`, thread-safe)
+  with a kanji and a 2–12-character reading, copied into a reading → surfaces map (general noun id, cost 5000) at most
+  every 30 s, after every commit (`AugmentingConverter.finishConversion` → `didFinishConversion`) and after clearing
+  the history; they follow Mozc's learning rules (nothing in incognito / password fields, cleared with the history).
+  A name the user converted once is thus proposed from the next conversion on; their generation is part of the cost
+  cache key. (3) the merger keeps Mozc's text for a group of segments whose top is a proper noun
   (`PosMatcher.isUniqueNoun`) when the AI wrote its reading in kana where Mozc has kanji, or differs only in kanji and
   costs ≥ 2000 more (or is unreachable) (`keptDictionaryWords` in the debug log). A better dictionary thus improves
-  the AI conversion. `genmai-cli rescore [--data FILE] [--weights ...] [--verbose] gen_*.json` replays (1) on `eval`
-  n-best lists; `genmai-cli propose [--data FILE] [--weight W] [--proposal-weights W,...] <reading | set.json>...`
+  the AI conversion. `genmai-cli propose [--data FILE] [--weight W] [--proposal-weights W,...] <reading | set.json>...`
   shows the candidates, proposals, costs and scores of a reading, or the accuracy per proposal weight on a set
   (one-shot conversions, genmai-90M Core ML, extended data: proper nouns 220 / 110 sets 72 / 64 without proposals,
-  110 / 81 at 1.0, 120 / 83 at 2.0; daily 94, AJIMEE 177, hard 22 up to 1.0, AJIMEE 176 from 1.5); `session-eval
+  110 / 81 at 1.0, 120 / 83 at 2.0; daily 94, AJIMEE 177, hard 22 up to 1.0, AJIMEE 176 from 1.5; the same sentences
+  after a 26-kana prefix with 、 (two chunks): 79 / 61 without proposals, 110 / 77 with them); `session-eval
   --dictionary-weight W --proposal-weight W` (defaults 0.2 / 1.0, settle chunks, genmai-90M Core ML, extended data:
   proper nouns 126 / 220 and 89 / 110 (without proposals 92 / 76, Mozc alone 134 / 96), daily 94, AJIMEE 176, hard 20,
   the same as without them; conversion key unchanged). Proper-noun eval sets (template sentences) live outside the
   repo.
-- **Dictionary hints (for training; not used by the IME yet):** the next model is to get Mozc's view of the reading
-  in its prompt and learn to take the dictionary's spelling of words it does not know. `AIDictionaryHinter` computes
-  the hints: `segments` (Mozc's conversion, no user dictionary / learning) and `properNouns` (system dictionary proper
-  nouns for parts of the reading the conversion lacks; ≥ 3 reading characters, ≥ 2 characters with a kanji, not
-  inside a longer one's reading, at most 3). `genmai-cli dict-hints [--data FILE] [--jobs N] in.jsonl out.jsonl`
-  writes them for training data (`{"id", "reading"}` lines → `{"id", "reading", "h1", "segments", "proper_nouns"}`;
-  default data set `Data/genmai_extended.data`; ~750 readings / s on an M4 Pro). The training data's hints must come
-  from this code, and the IME must compute them the same way once a model with the new prompt format exists.
 - **Known model weaknesses:** readings that repeat one sound (きしゃのきしゃがきしゃできしゃした,
   にわにはにわにわとりがいる) map every occurrence to the same word or drop part of the reading; fine homophone
   distinctions and rare proper nouns.
-- Tests: GenmaiClientTests (aligner, merger, settings, reading check, safetensors conversion, the hook in the real
+- Tests: GenmaiClientTests (aligner, merger, settings, reading check, dictionary scorer, model installation, the hook in the real
   session layer with `FakeAugmenter`), GenmaiGUITests (AI tab, model installation with a fake installer),
   GenmaiMacTests (key queue, suggestion refresh), GenmaiRendererTests (`CandidatePlacement`), GenmaiAITests
   (tokenizer, decoding, KV reuse / draft vs. plain), GenmaiAIClientTests (model-backed speculation).
@@ -355,7 +364,7 @@ table; use "…" and "ユーザー".
   Installer (`GenmaiPackageInstaller`).
 - Uninstaller (GenmaiUninstaller, `UninstallGenmai.app`) lives in `Genmai.app/Contents/Resources` (built by
   Tools/make_ime_bundle.sh) and is opened from the settings (General › Uninstall Genmai…); nothing is installed into
-  /Applications (0.1.0 did; preinstall and the uninstaller remove that folder). Items outside the home folder are
+  /Applications. Items outside the home folder are
   removed as root after the system authorization dialog (Authorization Services, Touch ID) through
   AuthorizationExecuteWithPrivileges (deprecated, looked up with dlsym, as Mozc / Google Japanese Input do; the
   only replacement, an SMAppService daemon, needs approval in System Settings first); a per-user installation is

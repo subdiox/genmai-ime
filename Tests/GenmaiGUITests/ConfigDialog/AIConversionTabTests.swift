@@ -3,6 +3,7 @@
 
 import Foundation
 import GenmaiClient
+import Synchronization
 import Testing
 
 @testable import GenmaiGUI
@@ -52,25 +53,38 @@ import Testing
     #expect(AIConversionSettings.load(from: dir.settings) == AIConversionSettings())
   }
 
+  /// Fake model files (as `AIModelStatus.check` sees an installed model).
+  nonisolated static func makeModel(in directory: URL, info: GenmaiModelInfo? = nil) throws {
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    for f in AIModelStatus.requiredFiles + ["genmai.mlmodelc"] {
+      try Data().write(to: directory.appending(path: f))
+    }
+    try info?.save(to: directory)
+  }
+
   @Test func modelStatus() throws {
     let dir = TempDir()
     let model = ConfigDialogModel(client: ConfigDialogMockClient(), aiSettingsURL: dir.settings)
     model.aiValues.modelDirectory = dir.url.path
-    #expect(!model.aiModelStatus.isFound)
-    #expect(AIStrings.modelStatus(model.aiModelStatus, language: .english) == "No model is installed.")
-    for f in AIModelStatus.requiredFiles + ["genmai.mlmodelc"] {
-      try Data().write(to: dir.url.appending(path: f))
-    }
+    #expect(!model.aiModelStatus().isFound)
+    #expect(AIStrings.modelStatus(model.aiModelStatus(), language: .english) == "No model is installed.")
+    #expect(AIStrings.rowStatus(model.aiModelStatus(), diskSize: nil, language: .english) == "Not installed")
+    try Self.makeModel(in: dir.url)
     model.refreshAIModelStatus()
-    #expect(model.aiModelStatus.isFound)
-    #expect(model.aiModelStatus.needsInstall(Self.release))  // no genmai_model.json
+    #expect(model.aiModelStatus().isFound)
+    #expect(model.aiModelStatus().needsInstall(Self.release))  // no genmai_model.json
     #expect(
-      AIStrings.modelStatus(model.aiModelStatus, language: .japanese) == "モデルがインストールされています（バージョン不明）。")
+      AIStrings.modelStatus(model.aiModelStatus(), language: .japanese) == "モデルがインストールされています（バージョン不明）。")
     try Self.release.info.save(to: dir.url)
     model.refreshAIModelStatus()
     // The folder is not shown: it is managed by the installer.
     #expect(
-      AIStrings.modelStatus(model.aiModelStatus, language: .japanese) == "genmai-310M 0.2.0 がインストールされています。")
+      AIStrings.modelStatus(model.aiModelStatus(), language: .japanese) == "genmai-310M 0.2.0 がインストールされています。")
+    #expect(model.aiModelDiskSizes[.medium] != nil)
+    #expect(
+      AIStrings.rowStatus(model.aiModelStatus(), diskSize: 283_000_000, language: .english)
+        == "Version 0.2.0 installed (283 MB on disk)")
+    #expect(AIStrings.rowTitle(.small, language: .japanese) == "Small（genmai-90M）")
   }
 
   nonisolated static let release = GenmaiModelRelease(
@@ -84,67 +98,60 @@ import Testing
     info: GenmaiModelInfo(version: "0.1.1", repository: "subdiox/genmai-90M", revision: "v0.1.1"),
     files: release.files)
 
-  @Test func looksUpTheLatestRelease() async {
+  @Test func looksUpTheLatestReleases() async {
     let dir = TempDir()
     let model = ConfigDialogModel(client: ConfigDialogMockClient(), aiSettingsURL: dir.settings)
-    #expect(model.aiModelLatest == .unknown)
+    #expect(model.aiModelLatest[.medium] == nil)
     model.aiModelReleaseFetcher = { _ in throw AIModelInstallError.download("release list", status: 503) }
-    await model.checkLatestAIModel()
-    #expect(model.aiModelLatest == .failed("downloading release list failed (HTTP 503)"))
-    model.installAIModel()  // nothing to install
+    await model.checkLatestAIModels()
+    #expect(model.aiModelLatest[.medium] == .failed("downloading release list failed (HTTP 503)"))
+    model.installAIModel(.medium)  // nothing to install
     #expect(model.aiModelInstall == .idle)
     model.aiModelReleaseFetcher = { $0 == .small ? Self.smallRelease : Self.release }
-    await model.checkLatestAIModel()
-    #expect(model.aiModelLatest == .available(Self.release))
+    await model.checkLatestAIModels()
+    #expect(model.aiModelLatest[.medium] == .available(Self.release))
+    #expect(model.aiModelLatest[.small] == .available(Self.smallRelease))
     // not looked up again unless forced
-    let fetcher = model.aiModelReleaseFetcher
     model.aiModelReleaseFetcher = { _ in throw CancellationError() }
-    await model.checkLatestAIModel()
-    #expect(model.aiModelLatest == .available(Self.release))
-    await model.checkLatestAIModel(force: true)
-    #expect(model.aiModelLatest != .available(Self.release))
-    // choosing the other model looks up its releases
-    model.aiModelReleaseFetcher = fetcher
-    await model.checkLatestAIModel()
-    model.aiValues.modelSize = .small
-    #expect(model.aiModelLatest == .unknown)
-    await model.checkLatestAIModel()
-    #expect(model.aiModelLatest == .available(Self.smallRelease))
+    await model.checkLatestAIModels()
+    #expect(model.aiModelLatest[.medium] == .available(Self.release))
+    await model.checkLatestAIModel(.medium, force: true)
+    #expect(model.aiModelLatest[.medium] != .available(Self.release))
+    #expect(model.aiModelLatest[.small] == .available(Self.smallRelease))
   }
 
-  @Test func installsTheModelAndTellsTheIMEToReload() async throws {
+  /// Both models can be installed; each has its own directory (only the overridden one is written here).
+  @Test func installsEachModelIntoItsDirectoryAndTellsTheIMEToReload() async throws {
     let dir = TempDir()
     let client = ConfigDialogMockClient()
     let model = ConfigDialogModel(client: client, aiSettingsURL: dir.settings)
-    model.aiValues.modelDirectory = dir.url.path
+    model.aiValues.modelDirectory = dir.url.appending(path: "medium").path
     model.aiModelReleaseFetcher = { $0 == .small ? Self.smallRelease : Self.release }
-    await model.checkLatestAIModel()
-    #expect(model.aiModelStatus.needsInstall(Self.release))
-    let (phases, continuation) = AsyncStream<AIModelInstaller.Phase>.makeStream()
+    await model.checkLatestAIModels()
+    #expect(model.aiModelStatus(.medium).needsInstall(Self.release))
+    let installed = Mutex<[URL]>([])
     model.aiModelInstaller = { release, directory, progress in
-      #expect(release == Self.release)
       progress(.downloading(received: 500, total: 1000))
       progress(.installing)
-      for f in AIModelStatus.requiredFiles + ["genmai.mlmodelc"] {
-        try Data().write(to: directory.appending(path: f))
-      }
-      try release.info.save(to: directory)
-      continuation.finish()
+      progress(.preparing)
+      try Self.makeModel(in: directory, info: release.info)
+      installed.withLock { $0.append(directory) }
     }
-    model.installAIModel()
+    model.installAIModel(.medium)
     #expect(model.aiModelInstall.isRunning)
-    for await _ in phases {}
+    #expect(model.aiModelInstallSize == .medium)
+    model.installAIModel(.small)  // one at a time
     while model.aiModelInstall.isRunning { await Task.yield() }
     #expect(model.aiModelInstall == .idle)
-    #expect(model.aiModelStatus == .found(model.aiValues.resolvedModelDirectory, info: Self.release.info))
-    #expect(!model.aiModelStatus.needsInstall(Self.release))
+    #expect(model.aiModelStatus(.medium) == .found(model.aiValues.resolvedModelDirectory, info: Self.release.info))
+    #expect(!model.aiModelStatus(.medium).needsInstall(Self.release))
+    #expect(!model.aiModelStatus(.small).isFound)
     #expect(client.reloadCount == 1)
-    #expect(AIStrings.modelStatus(model.aiModelStatus, language: .english) == "genmai-310M 0.2.0 is installed.")
-    // Choosing the other model offers its download.
-    model.aiValues.modelSize = .small
-    await model.checkLatestAIModel()
-    #expect(model.aiModelStatus.needsInstall(Self.smallRelease))
+    // the small model (not overridden) would go into its own directory
+    #expect(installed.withLock { $0 } == [dir.url.appending(path: "medium", directoryHint: .isDirectory)])
+    #expect(AIConversionSettings().modelDirectory(for: .small).lastPathComponent == "genmai-90M")
     #expect(AIStrings.releaseText(.download, Self.smallRelease, language: .english) == "Download genmai-90M 0.1.1")
+    #expect(AIStrings.installPhase(.preparing, language: .japanese).hasPrefix("Neural Engine 用に"))
   }
 
   @Test func failedOrCancelledInstallation() async throws {
@@ -153,53 +160,48 @@ import Testing
     let model = ConfigDialogModel(client: client, aiSettingsURL: dir.settings)
     model.aiValues.modelDirectory = dir.url.path
     model.aiModelReleaseFetcher = { _ in Self.release }
-    await model.checkLatestAIModel()
-    model.aiModelInstaller = { _, _, _ in throw AIModelInstallError.download("model.safetensors", status: 404) }
-    model.installAIModel()
+    await model.checkLatestAIModel(.medium)
+    model.aiModelInstaller = { _, _, _ in throw AIModelInstallError.download("model-coreml.zip", status: 404) }
+    model.installAIModel(.medium)
     while model.aiModelInstall.isRunning { await Task.yield() }
-    #expect(model.aiModelInstall == .failed("downloading model.safetensors failed (HTTP 404)"))
+    #expect(model.aiModelInstall == .failed("downloading model-coreml.zip failed (HTTP 404)"))
     #expect(client.reloadCount == 0)
 
     model.aiModelInstaller = { _, _, _ in try await Task.sleep(for: .seconds(60)) }
-    model.installAIModel()
+    model.installAIModel(.medium)
     #expect(model.aiModelInstall.isRunning)
     model.cancelAIModelInstall()
     while model.aiModelInstall.isRunning { await Task.yield() }
     #expect(model.aiModelInstall == .idle)
-    #expect(!model.aiModelStatus.isFound)
+    #expect(!model.aiModelStatus().isFound)
     #expect(client.reloadCount == 0)
   }
 
-  @Test func removesOnlyTheModelFiles() throws {
+  @Test func removesOnlyTheChosenModelsFiles() throws {
     let dir = TempDir()
     let client = ConfigDialogMockClient()
     let model = ConfigDialogModel(client: client, aiSettingsURL: dir.settings)
     let modelDir = dir.url.appending(path: "model")
-    try FileManager.default.createDirectory(at: modelDir, withIntermediateDirectories: true)
     model.aiValues.modelDirectory = modelDir.path
-    for f in AIModelStatus.requiredFiles + ["genmai.mlmodelc"] {
-      try Data().write(to: modelDir.appending(path: f))
-    }
-    try Self.release.info.save(to: modelDir)
+    try Self.makeModel(in: modelDir, info: Self.release.info)
     try Data().write(to: modelDir.appending(path: "notes.txt"))
     model.refreshAIModelStatus()
-    #expect(model.aiModelStatus.isFound)
+    #expect(model.aiModelStatus().isFound)
 
-    model.removeAIModel()
+    model.removeAIModel(.medium)
     #expect(model.pendingMessage?.kind == .question)
-    #expect(model.aiModelStatus.isFound)  // nothing happens before the answer
-    model.performRemoveAIModel()
-    #expect(!model.aiModelStatus.isFound)
+    #expect(model.pendingMessage?.text.contains("genmai-310M") == true)
+    #expect(model.aiModelStatus().isFound)  // nothing happens before the answer
+    model.performRemoveAIModel(.medium)
+    #expect(!model.aiModelStatus().isFound)
     #expect(client.reloadCount == 1)
     #expect(try FileManager.default.contentsOfDirectory(atPath: modelDir.path) == ["notes.txt"])
 
     // an otherwise empty model directory is removed too
     try FileManager.default.removeItem(at: modelDir.appending(path: "notes.txt"))
-    for f in AIModelStatus.requiredFiles + ["genmai.mlmodelc"] {
-      try Data().write(to: modelDir.appending(path: f))
-    }
+    try Self.makeModel(in: modelDir)
     model.refreshAIModelStatus()
-    model.performRemoveAIModel()
+    model.performRemoveAIModel(.medium)
     #expect(!FileManager.default.fileExists(atPath: modelDir.path))
   }
 
@@ -207,7 +209,7 @@ import Testing
     let dir = TempDir()
     let model = ConfigDialogModel(client: ConfigDialogMockClient(), aiSettingsURL: dir.settings)
     model.aiValues.modelDirectory = dir.url.appending(path: "none").path
-    model.removeAIModel()
+    model.removeAIModel(.medium)
     #expect(model.pendingMessage == nil)
   }
 

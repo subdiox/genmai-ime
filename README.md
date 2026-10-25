@@ -92,10 +92,10 @@ The model is not part of the app. There are two, picked under **Model** in the s
 
 (Core ML on the Neural Engine, M4 Pro; memory = what AI conversion adds to the input method at most while
 converting.) The tab looks up the latest release of the chosen model on Hugging Face and offers **Download**: it
-downloads the model (checked against the checksums Hugging Face lists), compiles it and installs it into
-`~/Library/Application Support/Genmai/model`. When a newer model is released, the same place offers **Update**;
-**Remove Model…** deletes it. The first use after the download compiles the model for the Neural Engine (about
-20 s). From the command line:
+downloads the model (checked against the checksums Hugging Face lists), installs it into
+`~/Library/Application Support/Genmai/models/<model>` and prepares it for the Neural Engine (once, about 20 s).
+Both models can be installed; **Model to use** picks one, and each model's row shows its version and size on disk,
+offers **Update** when a newer release is out and **Remove…** to delete it. From the command line:
 
 ```sh
 Tools/prepare_genmai_model.sh [--size small]     # = genmai-cli install [--size small]

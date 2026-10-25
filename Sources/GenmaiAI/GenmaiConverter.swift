@@ -42,20 +42,14 @@ public actor GenmaiConverter {
     }
   }
 
-  private let model: any GenmaiDecoder
+  private let model: GenmaiCoreMLModel
   public nonisolated let loadSeconds: Double
   public nonisolated let tokenizer: GenmaiTokenizer
-
-  /// The directory the IME loads the model from: `~/Library/Application Support/Genmai/model`
-  /// (installed by the config dialog, `genmai-cli install` or Tools/prepare_genmai_model.sh).
-  public static var defaultModelDirectory: URL {
-    URL.applicationSupportDirectory.appending(path: "Genmai/model", directoryHint: .isDirectory)
-  }
 
   /// Loads the Core ML model in `directory` (`GenmaiCoreMLModel`). The first load on a Mac compiles the model for
   /// the Neural Engine; the system caches that.
   public init(
-    directory: URL = GenmaiConverter.defaultModelDirectory, computeUnits: MLComputeUnits = .cpuAndNeuralEngine
+    directory: URL, computeUnits: MLComputeUnits = .cpuAndNeuralEngine
   )
     async throws
   {
@@ -78,20 +72,20 @@ public actor GenmaiConverter {
     try Self.measured { try model.convert(reading, context: context, options: options) }
   }
 
-  /// The model's scores of `texts` as outputs for `reading` (one chunk) after `context` (see `GenmaiDecoder.score`);
+  /// The model's scores of `texts` as outputs for `reading` (one chunk) after `context` (see `GenmaiCoreMLModel.score`);
   /// nil for a text that does not fit.
   public func score(_ texts: [String], reading: String, context: String = "") throws -> [Double?] {
     try Self.measured { try texts.map { try model.score($0, reading: reading, context: context) } }
   }
 
-  /// Beam across one chunk (see `GenmaiDecoder.extend`).
+  /// Beam across one chunk (see `GenmaiCoreMLModel.extend`).
   public func extend(_ hyps: [GenmaiCandidate], part: String, context: String = "", options: GenmaiOptions = .init())
     throws -> [GenmaiCandidate]
   {
     try Self.measured { try model.extend(hyps, part: part, context: context, options: options) }
   }
 
-  /// One beam search per left context (see `GenmaiDecoder.genBatch`).
+  /// One beam search per left context (see `GenmaiCoreMLModel.genBatch`).
   public func genBatch(
     _ reading: String, contexts: [String], beams: Int = 5, minRatio: Double = 0,
     reusePromptKV: Bool = true, draft: Bool = false, draftMargin: Float = 2

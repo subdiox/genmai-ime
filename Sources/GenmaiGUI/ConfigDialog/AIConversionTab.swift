@@ -12,7 +12,8 @@ public enum AIStrings {
       modelInstalledUnknown, modelNotInstalled,
       modelUpToDate, download, update, downloadNote, downloading, verifying, installing, cancel, installFailed,
       remove, removeConfirm, removeFailed, checkingLatest, latestFailed, retry, size, sizeSmall, sizeMedium,
-      sizeNote, checkAgain, saveFailed, milliseconds
+      sizeNote, checkAgain, saveFailed, milliseconds, preparing, inUse, rowInstalled, rowNotInstalled,
+      selectedMissing, smallTitle, mediumTitle
   }
 
   static let english: [Key: String] = [
@@ -28,7 +29,7 @@ public enum AIStrings {
     .modelInstalled: "%@ %@ is installed.",
     .modelInstalledUnknown: "A model is installed (version unknown).",
     .modelNotInstalled: "No model is installed.",
-    .size: "Model",
+    .size: "Model to use",
     .sizeSmall: "Small (%@, about %d MB of memory)",
     .sizeMedium: "Medium (%@, about %d MB of memory)",
     .sizeNote:
@@ -41,14 +42,21 @@ public enum AIStrings {
     .downloading: "Downloading… %@ of %@",
     .verifying: "Verifying the download…",
     .installing: "Installing…",
+    .preparing: "Preparing the model for the Neural Engine… (first time only, about 20 seconds)",
     .cancel: "Cancel",
     .installFailed: "Could not install the model: %@",
     .checkingLatest: "Checking for the latest model…",
     .latestFailed: "Could not check for the latest model: %@",
     .retry: "Retry",
-    .remove: "Remove Model…",
+    .remove: "Remove…",
     .removeConfirm:
-      "Remove the AI model from %@? AI conversion stops working until you download the model again (the settings are kept).",
+      "Remove %@ (%@ on disk)? If it is the model in use, AI conversion stops working until you download a model again (the settings are kept).",
+    .inUse: "In use",
+    .rowInstalled: "Version %@ installed (%@ on disk)",
+    .rowNotInstalled: "Not installed",
+    .selectedMissing: "The model in use is not installed. Download it below.",
+    .smallTitle: "Small (%@)",
+    .mediumTitle: "Medium (%@)",
     .removeFailed: "Could not remove the model: %@",
     .checkAgain: "Check again",
     .saveFailed: "Failed to save the AI conversion settings.",
@@ -68,7 +76,7 @@ public enum AIStrings {
     .modelInstalled: "%1$@ %2$@ がインストールされています。",
     .modelInstalledUnknown: "モデルがインストールされています（バージョン不明）。",
     .modelNotInstalled: "モデルがインストールされていません。",
-    .size: "モデル",
+    .size: "使うモデル",
     .sizeSmall: "Small（%@、メモリ約 %d MB）",
     .sizeMedium: "Medium（%@、メモリ約 %d MB）",
     .sizeNote: "Medium のほうが正確に変換します。Small はメモリが少なく、変換も速くなります。メモリは、変換中に AI 変換が入力メソッドに加える使用量の目安です。",
@@ -80,13 +88,20 @@ public enum AIStrings {
     .downloading: "ダウンロード中… %@ / %@",
     .verifying: "ダウンロードを検証中…",
     .installing: "インストール中…",
+    .preparing: "Neural Engine 用にモデルを準備中…（初回のみ、20 秒ほどかかります）",
     .cancel: "キャンセル",
     .installFailed: "モデルをインストールできませんでした: %@",
     .checkingLatest: "最新のモデルを確認中…",
     .latestFailed: "最新のモデルを確認できませんでした: %@",
     .retry: "再試行",
-    .remove: "モデルを削除…",
-    .removeConfirm: "%@ から AI モデルを削除しますか? もう一度ダウンロードするまで AI 変換は使えなくなります (設定はそのまま残ります)。",
+    .remove: "削除…",
+    .removeConfirm: "%1$@（ディスク %2$@）を削除しますか? 使用中のモデルを削除すると、もう一度ダウンロードするまで AI 変換は使えなくなります（設定はそのまま残ります）。",
+    .inUse: "使用中",
+    .rowInstalled: "バージョン %1$@ をインストール済み（ディスク %2$@）",
+    .rowNotInstalled: "インストールされていません",
+    .selectedMissing: "使用中のモデルがインストールされていません。下でダウンロードしてください。",
+    .smallTitle: "Small（%@）",
+    .mediumTitle: "Medium（%@）",
     .removeFailed: "モデルを削除できませんでした: %@",
     .checkAgain: "再確認",
     .saveFailed: "AI 変換の設定を保存できませんでした。",
@@ -140,7 +155,23 @@ public enum AIStrings {
       return text(.verifying, language: language)
     case .installing:
       return text(.installing, language: language)
+    case .preparing:
+      return text(.preparing, language: language)
     }
+  }
+
+  /// A model row's title: "Medium (genmai-310M)".
+  public static func rowTitle(_ size: AIModelSize, language: GUILanguage = .current) -> String {
+    String(format: text(size == .small ? .smallTitle : .mediumTitle, language: language), size.modelName)
+  }
+
+  /// A model row's status: the installed version and its size on disk.
+  public static func rowStatus(_ status: AIModelStatus, diskSize: Int64?, language: GUILanguage = .current)
+    -> String
+  {
+    guard status.isFound else { return text(.rowNotInstalled, language: language) }
+    guard case .found(_, let info?) = status else { return text(.modelInstalledUnknown, language: language) }
+    return String(format: text(.rowInstalled, language: language), info.version, bytes(diskSize ?? 0))
   }
 
   /// The explanation under the download button.
@@ -201,85 +232,109 @@ struct AIConversionTab: View {
           } label: {
             Text(verbatim: AIStrings.text(.size))
           }
-          .disabled(model.aiModelInstall.isRunning)
           Text(verbatim: AIStrings.text(.sizeNote))
             .font(.callout)
             .foregroundStyle(.secondary)
             .fixedSize(horizontal: false, vertical: true)
+          if !model.aiModelStatus().isFound {
+            Label(AIStrings.text(.selectedMissing), systemImage: "exclamationmark.triangle.fill")
+              .font(.callout)
+              .foregroundStyle(.orange)
+          }
         }
-        AIModelStatusRow(status: model.aiModelStatus) {
-          model.refreshAIModelStatus()
-          Task { await model.checkLatestAIModel(force: true) }
+        ForEach(AIModelSize.allCases, id: \.self) { size in
+          AIModelRow(model: model, size: size)
         }
-        AIModelInstallRow(model: model)
       } header: {
-        Text(verbatim: AIStrings.text(.sectionModel))
+        HStack {
+          Text(verbatim: AIStrings.text(.sectionModel))
+          Spacer()
+          Button(AIStrings.text(.checkAgain)) {
+            model.refreshAIModelStatus()
+            Task { await model.checkLatestAIModels(force: true) }
+          }
+          .font(.callout)
+          .disabled(model.aiModelInstall.isRunning)
+        }
       }
     }
     .formStyle(.grouped)
-    .task(id: model.aiValues.modelSize) { await model.checkLatestAIModel() }
+    .task { await model.checkLatestAIModels() }
   }
 }
 
-struct AIModelStatusRow: View {
-  let status: AIModelStatus
-  let checkAgain: () -> Void
-
-  var body: some View {
-    HStack(alignment: .firstTextBaseline) {
-      Image(systemName: status.isFound ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
-        .foregroundStyle(status.isFound ? .green : .orange)
-        .accessibilityHidden(true)
-      Text(verbatim: AIStrings.modelStatus(status))
-        .fixedSize(horizontal: false, vertical: true)
-      Spacer()
-      Button(AIStrings.text(.checkAgain), action: checkAgain)
-    }
-  }
-}
-
-/// Download / update of the newest model release from Hugging Face, with its progress.
-struct AIModelInstallRow: View {
+/// One model: whether it is installed (version, size on disk) and in use, its download / update with progress, and
+/// its removal.
+struct AIModelRow: View {
   let model: ConfigDialogModel
+  let size: AIModelSize
 
   var body: some View {
-    switch model.aiModelInstall {
-    case .running(let phase):
-      HStack {
-        VStack(alignment: .leading, spacing: 4) {
-          Text(verbatim: AIStrings.installPhase(phase))
-            .monospacedDigit()
-          if case .downloading(let received, let total) = phase {
-            ProgressView(value: Double(received), total: Double(max(total, 1)))
-          } else {
-            ProgressView()
-              .progressViewStyle(.linear)
+    let status = model.aiModelStatus(size)
+    let installing = model.aiModelInstallSize == size && model.aiModelInstall.isRunning
+    VStack(alignment: .leading, spacing: 6) {
+      HStack(alignment: .firstTextBaseline) {
+        Image(systemName: status.isFound ? "checkmark.circle.fill" : "circle.dashed")
+          .foregroundStyle(status.isFound ? .green : .secondary)
+          .accessibilityHidden(true)
+        VStack(alignment: .leading, spacing: 2) {
+          HStack(spacing: 6) {
+            Text(verbatim: AIStrings.rowTitle(size))
+              .font(.headline)
+            if model.aiValues.modelSize == size {
+              Text(verbatim: AIStrings.text(.inUse))
+                .font(.caption)
+                .padding(.horizontal, 6)
+                .padding(.vertical, 1)
+                .background(.tint.opacity(0.15), in: .capsule)
+            }
           }
+          Text(verbatim: AIStrings.rowStatus(status, diskSize: model.aiModelDiskSizes[size]))
+            .font(.callout)
+            .foregroundStyle(.secondary)
         }
-        Button(AIStrings.text(.cancel)) { model.cancelAIModelInstall() }
+        Spacer()
+        if status.isFound, !installing {
+          Button(AIStrings.text(.remove), role: .destructive) { model.removeAIModel(size) }
+            .disabled(model.aiModelInstall.isRunning)
+        }
       }
-    case .idle, .failed:
-      AIModelLatestRow(model: model)
-      if case .failed(let message) = model.aiModelInstall {
-        Text(verbatim: String(format: AIStrings.text(.installFailed), message))
-          .font(.callout)
-          .foregroundStyle(.red)
-          .textSelection(.enabled)
-          .fixedSize(horizontal: false, vertical: true)
-      }
-      if model.aiModelStatus.isFound {
-        Button(AIStrings.text(.remove), role: .destructive) { model.removeAIModel() }
+      if installing, case .running(let phase) = model.aiModelInstall {
+        HStack {
+          VStack(alignment: .leading, spacing: 4) {
+            Text(verbatim: AIStrings.installPhase(phase))
+              .monospacedDigit()
+            if case .downloading(let received, let total) = phase {
+              ProgressView(value: Double(received), total: Double(max(total, 1)))
+            } else {
+              ProgressView()
+                .progressViewStyle(.linear)
+            }
+          }
+          Button(AIStrings.text(.cancel)) { model.cancelAIModelInstall() }
+        }
+      } else {
+        AIModelLatestRow(model: model, size: size)
+        if model.aiModelInstallSize == size, case .failed(let message) = model.aiModelInstall {
+          Text(verbatim: String(format: AIStrings.text(.installFailed), message))
+            .font(.callout)
+            .foregroundStyle(.red)
+            .textSelection(.enabled)
+            .fixedSize(horizontal: false, vertical: true)
+        }
       }
     }
   }
 }
 
-/// What the newest release is and whether to download it.
+/// What the newest release of a model is and whether to download it.
 struct AIModelLatestRow: View {
   let model: ConfigDialogModel
+  let size: AIModelSize
 
   var body: some View {
-    switch model.aiModelLatest {
+    let status = model.aiModelStatus(size)
+    switch model.aiModelLatest[size] ?? .unknown {
     case .unknown, .checking:
       HStack(spacing: 8) {
         ProgressView()
@@ -297,17 +352,16 @@ struct AIModelLatestRow: View {
           .fixedSize(horizontal: false, vertical: true)
         Spacer()
         Button(AIStrings.text(.retry)) {
-          Task { await model.checkLatestAIModel(force: true) }
+          Task { await model.checkLatestAIModel(size, force: true) }
         }
       }
     case .available(let release):
-      if model.aiModelStatus.needsInstall(release) {
+      if status.needsInstall(release) {
         VStack(alignment: .leading, spacing: 6) {
-          // "Update" only for a newer release of the installed model; another model is downloaded
-          let update = model.aiModelStatus.installedSize == release.info.size
-          Button(AIStrings.releaseText(update ? .update : .download, release)) {
-            model.installAIModel()
+          Button(AIStrings.releaseText(status.isFound ? .update : .download, release)) {
+            model.installAIModel(size)
           }
+          .disabled(model.aiModelInstall.isRunning)
           Text(verbatim: AIStrings.downloadNote(release))
             .font(.callout)
             .foregroundStyle(.secondary)

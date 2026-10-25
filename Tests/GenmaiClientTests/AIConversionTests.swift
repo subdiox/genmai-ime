@@ -22,6 +22,7 @@ final class FakeAugmenter: ConversionAugmenter, Sendable {
     var converted: [(reading: String, context: String)] = []
     var results: [String: [String]] = [:]
     var background: [String: Task<Bool, Never>] = [:]
+    var advice: AIDictionaryAdvice?
   }
   let lock = Mutex(State())
   let respond: @Sendable (String, String) async throws -> [String]
@@ -61,7 +62,9 @@ final class FakeAugmenter: ConversionAugmenter, Sendable {
     readyResult(reading: reading, context: context, maxResults: 1) == nil
       ? nil : AIResultInfo(latency: .milliseconds(1), exact: false)
   }
-  func setDictionaryAdvice(_ advice: AIDictionaryAdvice?) {}
+  func setDictionaryAdvice(_ advice: AIDictionaryAdvice?) {
+    lock.withLock { $0.advice = advice }
+  }
 
   /// Simulates a speculation in flight: `resultUpdate` returns a task that stores `texts` (as ready) when
   /// `release()` is called.
@@ -431,7 +434,13 @@ func conversionRequest() -> ConversionRequest {
     #expect(!d.enabled)
     #expect(d.timeoutMilliseconds == 300)
     #expect(d.candidateCount == 5)
-    #expect(d.resolvedModelDirectory == AIConversionSettings.defaultModelDirectory)
+    #expect(d.resolvedModelDirectory == AIConversionSettings.defaultModelDirectory(for: .medium))
+    #expect(d.resolvedModelDirectory.lastPathComponent == "genmai-310M")
+    var overridden = d
+    overridden.modelSize = .small
+    overridden.modelDirectory = "/tmp/m"
+    #expect(overridden.resolvedModelDirectory.path == "/tmp/m")
+    #expect(overridden.modelDirectory(for: .medium) == AIConversionSettings.defaultModelDirectory(for: .medium))
     let decoded = try JSONDecoder().decode(
       AIConversionSettings.self,
       from: Data(#"{"enabled": true, "timeout_ms": 1, "future": 3, "model_directory": ""}"#.utf8))
@@ -760,6 +769,20 @@ struct AIConversionHookTests {
       let next = ai.special(.right)
       #expect(SessionDriver.descriptions(next).first?.hasPrefix("AI") == true)
       #expect(SessionDriver.candidates(next).first?.hasPrefix("渡り") == true)
+    }
+  }
+
+  /// A conversion the user commits is learned by Mozc's predictor and proposed to the AI conversion from then on.
+  @Test func committedWordsAreProposed() async throws {
+    try await withScopedProfile {
+      let fake = FakeAugmenter([:])
+      let (ai, hook) = makeAI(fake)
+      await hook.waitForReadingCheck()
+      let advice = try #require(fake.lock.withLock { $0.advice })
+      #expect(!advice.propose("はしをわたる", ["箸を渡る"]).contains("橋をわたる"))
+      #expect(SessionDriver.preedit(await ai.convert("hasiwowataru")) == "橋をわたる")
+      _ = ai.special(.enter)
+      #expect(advice.propose("はしをわたる", ["箸を渡る"]).contains("橋をわたる"))
     }
   }
 

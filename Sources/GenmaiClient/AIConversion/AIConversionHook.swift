@@ -102,6 +102,10 @@ public final class AIConversionHook: Sendable {
   struct ReadingCheckState {
     /// The engine's data set (set by `AugmentedEngine`).
     var dataManager: DataManager?
+    /// The engine's user dictionary and prediction history (their words are proposed to the AI conversion).
+    var userDictionary: (any DictionaryInterface)?
+    var history: UserHistoryStorage?
+    var learnedWords: AILearnedWords?
     var checker: AIReadingChecker?
     var scorer: AIDictionaryScorer?
     var posMatcher: PosMatcher?
@@ -138,10 +142,31 @@ public final class AIConversionHook: Sendable {
 
   // MARK: - Reading check
 
-  /// The data set whose system dictionary the reading check uses (called by `AugmentedEngine`).
-  func attachReadingCheckData(_ dataManager: DataManager) {
-    readingCheck.withLock { $0.dataManager = dataManager }
+  /// The data set whose system dictionary the reading check uses, and the user dictionary whose words the
+  /// dictionary proposes (called by `AugmentedEngine`).
+  func attachReadingCheckData(
+    _ dataManager: DataManager, userDictionary: (any DictionaryInterface)? = nil, history: UserHistoryStorage? = nil
+  ) {
+    readingCheck.withLock {
+      $0.dataManager = dataManager
+      $0.userDictionary = userDictionary
+      $0.history = history
+    }
     startReadingCheckIfNeeded()
+  }
+
+  /// A commit was learned (Mozc's predictor adds it to the history in `finishConversion`): the learned words are
+  /// copied again, so that a word converted now is proposed from the next conversion on.
+  func didFinishConversion() {
+    readingCheck.withLock { $0.learnedWords }?.invalidate()
+  }
+
+  /// The user dictionary or the history may have changed (engine reload, history cleared): the learned words are
+  /// copied again and costs computed again.
+  func dictionaryChanged() {
+    let (scorer, learned) = readingCheck.withLock { ($0.scorer, $0.learnedWords) }
+    learned?.invalidate()
+    scorer?.clearCache()
   }
 
   private func startReadingCheckIfNeeded() {
@@ -149,12 +174,18 @@ public final class AIConversionHook: Sendable {
     guard s.enabled else { return }
     readingCheck.withLock { r in
       guard r.checker == nil, r.scorer == nil, r.task == nil, let dataManager = r.dataManager else { return }
+      let userDictionary = r.userDictionary
+      let learnedWords = r.history.map {
+        AILearnedWords(storage: $0, posID: PosMatcher(dataManager.getPosMatcherData()).getGeneralNounId())
+      }
+      r.learnedWords = learnedWords
       r.task = Task.detached { [weak self] in
         var checker: AIReadingChecker?
         var scorer: AIDictionaryScorer?
         do {
           checker = try AIReadingChecker(dataManager: dataManager)
-          scorer = try AIDictionaryScorer(dataManager: dataManager)
+          scorer = try AIDictionaryScorer(
+            dataManager: dataManager, userDictionary: userDictionary, learnedWords: learnedWords)
         } catch {
           GenmaiLog.error("AI reading check unavailable: \(error)")
         }
@@ -659,7 +690,8 @@ public final class AugmentedEngine: EngineInterface {
     converterProvider = { engine.getConverter() }
     self.hook = hook
     if let dataManager = engine.getDataManager() {
-      hook.attachReadingCheckData(dataManager)
+      hook.attachReadingCheckData(
+        dataManager, userDictionary: engine.getUserDictionary(), history: engine.getUserHistoryStorage())
     }
   }
 
@@ -668,12 +700,25 @@ public final class AugmentedEngine: EngineInterface {
   }
 
   public func getDataVersion() -> String { base.getDataVersion() }
-  public func reload() -> Bool { base.reload() }
+  public func reload() -> Bool {
+    hook.dictionaryChanged()
+    return base.reload()
+  }
   public func sync() -> Bool { base.sync() }
   public func wait() async -> Bool { await base.wait() }
-  public func reloadAndWait() async -> Bool { await base.reloadAndWait() }
-  public func clearUserHistory() -> Bool { base.clearUserHistory() }
-  public func clearUserPrediction() -> Bool { base.clearUserPrediction() }
+  public func reloadAndWait() async -> Bool {
+    let reloaded = await base.reloadAndWait()
+    hook.dictionaryChanged()
+    return reloaded
+  }
+  public func clearUserHistory() -> Bool {
+    defer { hook.dictionaryChanged() }
+    return base.clearUserHistory()
+  }
+  public func clearUserPrediction() -> Bool {
+    defer { hook.dictionaryChanged() }
+    return base.clearUserPrediction()
+  }
   public func addUserHistory(_ key: String, _ value: String) -> Bool { base.addUserHistory(key, value) }
   public func getPosList() -> [String] { base.getPosList() }
   public func maybeReloadEngine(_ response: inout Genmai_EngineReloadResponse) -> Bool {
@@ -731,6 +776,7 @@ public final class AugmentingConverter: ConverterInterface {
   public func finishConversion(_ request: ConversionRequest, _ segments: Segments) {
     hook.willFinishConversion(segments)
     base.finishConversion(request, segments)
+    hook.didFinishConversion()
   }
   public func cancelConversion(_ segments: Segments) { base.cancelConversion(segments) }
   public func resetConversion(_ segments: Segments) { base.resetConversion(segments) }

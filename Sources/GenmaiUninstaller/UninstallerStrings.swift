@@ -66,7 +66,6 @@ struct UninstallerStrings: Sendable, Equatable {
   func itemName(_ kind: RemoveItem.Kind) -> String {
     switch kind {
     case .inputMethod: pick("Genmai input method (for all users)", "Genmai入力メソッド（すべてのユーザー用）")
-    case .applicationsFolder: pick("Genmai folder of an earlier version", "以前のバージョンのGenmaiフォルダ")
     case .userInputMethod: pick("Genmai input method (for this user)", "Genmai入力メソッド（このユーザー用）")
     }
   }

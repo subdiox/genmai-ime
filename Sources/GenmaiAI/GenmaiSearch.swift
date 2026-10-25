@@ -1,7 +1,7 @@
-// The genmai beam search. A decoder (`GenmaiCoreMLModel`, Core ML on the Neural Engine) implements `genBatch` (one
-// beam search per left context, with drafts and prompt KV reuse) and `logProbs`; the chunked conversion on top of
-// it (`gen`, `extend`, `convert`), scoring a given text, the drafts and how a search ends are shared (a port of the
-// Python reference decoder of the training code).
+// The genmai beam search (a port of the Python reference decoder of the training code). `GenmaiCoreMLModel` (Core ML
+// on the Neural Engine) does the model calls in `genBatch` (one beam search per left context, with drafts and prompt
+// KV reuse) and `logProbs`; this file has the chunked conversion on top of them (`gen`, `extend`, `convert`),
+// scoring a given text, the drafts and how a search ends.
 
 import Foundation
 
@@ -28,41 +28,8 @@ public struct GenmaiSearchBound: Sendable {
   }
 }
 
-/// A genmai decoder: the model behind `GenmaiConverter`. Not Sendable; used from one actor at a time.
-public protocol GenmaiDecoder: AnyObject {
-  var tokenizer: GenmaiTokenizer { get }
-  /// Seconds spent loading the model.
-  var loadSeconds: Double { get }
-  /// Diagnostics: output tokens accepted from drafts, decode steps, prompt tokens prefilled / reused.
-  var draftTokensAccepted: Int { get }
-  var decodeSteps: Int { get }
-  var promptTokensPrefilled: Int { get }
-  var promptTokensReused: Int { get }
-
-  /// Independent beam searches for one reading under several left contexts. Returns, per context, the candidates
-  /// (text, sum log-prob) best first; with `bound`, a context's list may miss candidates that cannot be among the
-  /// best `bound.keep` of the batch. Throws `CancellationError` (checked between decode steps).
-  ///
-  /// Shared semantics (`GenmaiSearch`): max_new = 1.3 * reading + 8; prompts longer than the decoder's limit keep
-  /// BOS + their tail; with `minRatio`, EOS is forbidden until the output has `minRatio * reading` tokens; with
-  /// `draft`, the draft of each context (`GenmaiDraftStore`) is verified after its prompt and the longest prefix
-  /// accepted by every context (`GenmaiDraftStore.accept`) starts all searches; a search stops once `beams`
-  /// hypotheses ended; a single-context search stores its best output as the draft of its context (also when
-  /// cancelled).
-  func genBatch(
-    _ reading: String, contexts: [String], beams: Int, minRatio: Double, reusePromptKV: Bool, draft: Bool,
-    draftMargin: Float, bound: GenmaiSearchBound?
-  ) throws -> [[GenmaiCandidate]]
-
-  /// The log-prob of each token of `continuation` after `prompt` (prompt ids from `GenmaiPrompt.ids`); nil if they do
-  /// not fit into the decoder's prompt (a long prompt keeps BOS + its tail first).
-  func logProbs(of continuation: [Int32], after prompt: [Int32]) throws -> [Float]?
-
-  /// Drops the prompt KV cache and the drafts (tests, memory pressure).
-  func clearPromptCache()
-}
-
-extension GenmaiDecoder {
+/// The shared beam search on top of `genBatch` / `logProbs`.
+extension GenmaiCoreMLModel {
   public func gen(_ reading: String, context: String = "", beams: Int = 5, minRatio: Double = 0) throws
     -> [GenmaiCandidate]
   {
@@ -87,11 +54,17 @@ extension GenmaiDecoder {
     return GenmaiSearch.best(next, options.beams)
   }
 
-  /// The model's score of `text` as the output for `reading` after `context`, as a candidate's score (sum of the
-  /// log-probs of its tokens and EOS); nil if it does not fit. For a reading of one chunk (`split`).
+  /// The model's score of `text` as the output for `reading` after `context` in one sequence (sum of the log-probs
+  /// of its tokens and EOS): a candidate's score for a reading of one chunk (`split`); for longer readings it
+  /// compares texts with each other. nil if the reading and the text do not fit into the prompt slots (the context
+  /// is cut first).
   public func score(_ text: String, reading: String, context: String = "") throws -> Double? {
+    let output = tokenizer.encode(text) + [tokenizer.eosTokenID]
+    guard GenmaiPrompt.ids(tokenizer, reading: reading, context: "").count + output.count <= config.promptSlots else {
+      return nil
+    }
     let prompt = GenmaiPrompt.ids(tokenizer, reading: reading, context: context)
-    guard let lps = try logProbs(of: tokenizer.encode(text) + [tokenizer.eosTokenID], after: prompt) else {
+    guard let lps = try logProbs(of: output, after: prompt) else {
       return nil
     }
     return lps.reduce(0) { $0 + Double($1) }

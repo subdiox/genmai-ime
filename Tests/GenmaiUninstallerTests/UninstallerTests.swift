@@ -52,10 +52,6 @@ struct FakeInstall {
   func populate() throws {
     try makeBundle("Library/Input Methods/Genmai.app", identifier: UninstallerLayout.kBundleIdentifier)
     try makeBundle(
-      "Applications/Genmai/UninstallGenmai.app",
-      identifier: "io.github.subdiox.genmai.inputmethod.Japanese.Uninstaller")
-    try makeFile("Applications/Genmai/.localized/ja.strings")
-    try makeBundle(
       "Library/Input Methods/Genmai.app", identifier: UninstallerLayout.kBundleIdentifier, home: true)
     // The C++ Mozc and its LaunchAgents, and the user's profile.
     try makeBundle("Library/Input Methods/Mozc.app", identifier: "org.mozc.inputmethod.Japanese")
@@ -116,7 +112,6 @@ final class Counter {
     let layout = UninstallerLayout(
       systemRoot: URL(fileURLWithPath: "/"), homeDirectory: URL(fileURLWithPath: "/Users/nobody"))
     #expect(layout.inputMethodBundle.path(percentEncoded: false) == "/Library/Input Methods/Genmai.app/")
-    #expect(layout.applicationsFolder.path(percentEncoded: false) == "/Applications/Genmai/")
     #expect(
       layout.manualInstallCandidates.map { $0.path(percentEncoded: false) } == [
         "/Users/nobody/Library/Input Methods/Genmai.app/"
@@ -131,7 +126,6 @@ final class Counter {
     #expect(
       paths == [
         install.layout.inputMethodBundle.path(percentEncoded: false),
-        install.layout.applicationsFolder.path(percentEncoded: false),
         install.url("Library/Input Methods/Genmai.app/", home: true).path(percentEncoded: false),
       ])
     // The C++ Mozc's /Library/Input Methods/Mozc.app has another bundle id.
@@ -186,7 +180,6 @@ final class Counter {
     #expect(runner.commands.count == 1)
 
     #expect(!install.exists("Library/Input Methods/Genmai.app"))
-    #expect(!install.exists("Applications/Genmai"))
     #expect(!install.exists("Library/Input Methods/Genmai.app", home: true))
     // Not ours: the C++ Mozc, its LaunchAgents and folder, and the user profile.
     #expect(install.exists("Library/Input Methods/Mozc.app/Contents/MacOS/GenmaiIME"))
@@ -203,7 +196,7 @@ final class Counter {
     let install = try FakeInstall()
     defer { install.remove() }
     try install.populate()
-    // Make /Library/Input Methods read-only: removing Genmai.app fails, so /Applications/Genmai stays.
+    // Make /Library/Input Methods read-only: removing Genmai.app fails, so the per-user copy stays.
     let inputMethods = install.url("Library/Input Methods")
     try FileManager.default.setAttributes([.posixPermissions: 0o555], ofItemAtPath: inputMethods.path)
     defer { try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: inputMethods.path) }
@@ -214,7 +207,7 @@ final class Counter {
       return
     }
     #expect(install.exists("Library/Input Methods/Genmai.app"))
-    #expect(install.exists("Applications/Genmai/UninstallGenmai.app"))
+    #expect(install.exists("Library/Input Methods/Genmai.app", home: true))
   }
 
   @Test func removeItemsDescribeEachPath() throws {
@@ -222,7 +215,7 @@ final class Counter {
     defer { install.remove() }
     try install.populate()
     let items = install.layout.removeItems()
-    #expect(items.map(\.kind) == [.inputMethod, .applicationsFolder, .userInputMethod])
+    #expect(items.map(\.kind) == [.inputMethod, .userInputMethod])
     #expect(items.map(\.path) == install.layout.removePaths())
     #expect(
       RemoveItem(kind: .inputMethod, path: "/Library/Input Methods/Genmai.app/").displayPath
@@ -360,11 +353,12 @@ struct ControllerFixture {
     let profile = "Library/Application Support/Genmai/"
     for name in [
       "config1.db", "ai_conversion.json", "update.json", ".config_dialog..lock", "user_dictionary.db", ".history.db",
-      "segment.db", "boundary.db", ".encrypt_key.db", "ai_debug.log", "model/model.safetensors", "model/config.json",
+      "segment.db", "boundary.db", ".encrypt_key.db", "ai_debug.log", "models/genmai-310M/genmai_coreml.json",
+      "models/genmai-310M/config.json",
     ] {
       try install.makeFile(profile + name, home: true)
     }
-    try install.makeFile("Library/Caches/Genmai/download/v0.1.0/model-8bit.safetensors", home: true)
+    try install.makeFile("Library/Caches/Genmai/download/v1.0.0/model-coreml.zip", home: true)
   }
 
   @Test func classifiesTheProfile() throws {
@@ -377,7 +371,7 @@ struct ControllerFixture {
     func names(_ kind: UserDataKind) -> Set<String> {
       Set(items.first { $0.kind == kind }!.paths.map { URL(filePath: $0).lastPathComponent })
     }
-    #expect(names(.aiModel) == ["model", "Genmai"])  // the profile's model folder and ~/Library/Caches/Genmai
+    #expect(names(.aiModel) == ["models", "Genmai"])  // the profile's models folder and ~/Library/Caches/Genmai
     #expect(names(.userDictionary) == ["user_dictionary.db"])
     #expect(names(.learning) == [".history.db", "segment.db", "boundary.db", ".encrypt_key.db", "ai_debug.log"])
     #expect(names(.settings) == ["config1.db", "ai_conversion.json", "update.json", ".config_dialog..lock"])
@@ -414,7 +408,7 @@ struct ControllerFixture {
     await controller.uninstall()
     #expect(!install.exists("Library/Application Support/Genmai/.history.db", home: true))
     #expect(!install.exists("Library/Application Support/Genmai/ai_debug.log", home: true))
-    #expect(install.exists("Library/Application Support/Genmai/model/model.safetensors", home: true))
+    #expect(install.exists("Library/Application Support/Genmai/models/genmai-310M/genmai_coreml.json", home: true))
     #expect(install.exists("Library/Application Support/Genmai/user_dictionary.db", home: true))
   }
 
@@ -439,7 +433,7 @@ struct ControllerFixture {
     controller.selectedUserData = Set(UserDataKind.allCases)
     await controller.uninstall()
     #expect(controller.phase == .failed(.authorization))
-    #expect(install.exists("Library/Application Support/Genmai/model/model.safetensors", home: true))
+    #expect(install.exists("Library/Application Support/Genmai/models/genmai-310M/genmai_coreml.json", home: true))
     #expect(install.exists("Library/Application Support/Genmai/config1.db", home: true))
   }
 

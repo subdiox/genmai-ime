@@ -2,8 +2,8 @@
 //
 // The C++ runs InitGenmai and loads Dialogs.xib with a DialogsController owner. The port is a SwiftUI app with
 // one window showing UninstallerView; the app quits when the window is closed (like Cancel). The bundle
-// (UninstallGenmai.app) is assembled by Tools/make_uninstaller_bundle.sh and installed in /Applications/Genmai by
-// Tools/make_installer_pkg.sh.
+// (UninstallGenmai.app) is assembled by Tools/make_uninstaller_bundle.sh and put inside Genmai.app/Contents/Resources
+// by Tools/make_ime_bundle.sh.
 
 import AppKit
 import SwiftUI
