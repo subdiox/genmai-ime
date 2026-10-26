@@ -3,7 +3,10 @@
 // / prelauncher helpers belong to the app layer and are not ported.
 
 import Foundation
-import IOKit
+
+#if os(macOS)
+  import IOKit
+#endif
 
 public enum MacUtil {
   // kProductPrefix for the OSS (MOZC_BUILD) branding.
@@ -52,19 +55,23 @@ public enum MacUtil {
   }
 
   /// Returns the serial number of the Mac (IOPlatformSerialNumber), or ""
-  /// if failed. See TN1103.
+  /// if failed. See TN1103. Always "" on iOS (no IOKit).
   public static func getSerialNumber() -> String {
-    let platformExpert = IOServiceGetMatchingService(
-      kIOMainPortDefault, IOServiceMatching("IOPlatformExpertDevice"))
-    guard platformExpert != 0 else { return "" }
-    defer { IOObjectRelease(platformExpert) }
-    guard
-      let value = IORegistryEntryCreateCFProperty(
-        platformExpert, kIOPlatformSerialNumberKey as CFString, kCFAllocatorDefault, 0)?
-        .takeRetainedValue() as? String
-    else {
+    #if os(macOS)
+      let platformExpert = IOServiceGetMatchingService(
+        kIOMainPortDefault, IOServiceMatching("IOPlatformExpertDevice"))
+      guard platformExpert != 0 else { return "" }
+      defer { IOObjectRelease(platformExpert) }
+      guard
+        let value = IORegistryEntryCreateCFProperty(
+          platformExpert, kIOPlatformSerialNumberKey as CFString, kCFAllocatorDefault, 0)?
+          .takeRetainedValue() as? String
+      else {
+        return ""
+      }
+      return value
+    #else
       return ""
-    }
-    return value
+    #endif
   }
 }

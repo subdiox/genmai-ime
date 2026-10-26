@@ -7,11 +7,14 @@
 // explanation, content, Cancel / OK) and `TableEditorBox` (the table with +/− buttons and a "More" menu under it,
 // like the lists of System Settings). Their strings are in `TableEditorStrings`.
 
-import AppKit
 import Foundation
 import Observation
 import SwiftUI
 import UniformTypeIdentifiers
+
+#if os(macOS)
+  import AppKit
+#endif
 
 /// A row of a table editor.
 public protocol TableEditorRow: Identifiable, Equatable, Sendable where ID == UUID {
@@ -255,212 +258,214 @@ enum TableEditorStrings {
   }
 }
 
-// MARK: - Views
+#if os(macOS)
+  // MARK: - Views
 
-/// The layout of an editor sheet: title and explanation, the content, and Cancel / OK.
-struct EditorSheet<Content: View>: View {
-  let title: String
-  let message: String
-  let okEnabled: Bool
-  /// False when Return must reach the content (the key capture field) instead of OK.
-  var okIsDefault = true
-  let onCancel: () -> Void
-  let onOK: () -> Void
-  @ViewBuilder let content: Content
+  /// The layout of an editor sheet: title and explanation, the content, and Cancel / OK.
+  struct EditorSheet<Content: View>: View {
+    let title: String
+    let message: String
+    let okEnabled: Bool
+    /// False when Return must reach the content (the key capture field) instead of OK.
+    var okIsDefault = true
+    let onCancel: () -> Void
+    let onOK: () -> Void
+    @ViewBuilder let content: Content
 
-  var body: some View {
-    VStack(alignment: .leading, spacing: 16) {
-      EditorSheetHeader(title: title, message: message)
-      content
-      HStack {
+    var body: some View {
+      VStack(alignment: .leading, spacing: 16) {
+        EditorSheetHeader(title: title, message: message)
+        content
+        HStack {
+          Spacer()
+          Button(TableEditorStrings.text(.cancel), role: .cancel, action: onCancel)
+            .keyboardShortcut(.cancelAction)
+          if okIsDefault {
+            Button(TableEditorStrings.text(.ok), action: onOK)
+              .keyboardShortcut(.defaultAction)
+              .disabled(!okEnabled)
+          } else {
+            Button(TableEditorStrings.text(.ok), action: onOK)
+              .buttonStyle(.borderedProminent)
+              .disabled(!okEnabled)
+          }
+        }
+        .controlSize(.regular)
+      }
+      .padding(20)
+    }
+  }
+
+  struct EditorSheetHeader: View {
+    let title: String
+    let message: String
+
+    var body: some View {
+      VStack(alignment: .leading, spacing: 4) {
+        Text(verbatim: title)
+          .font(.headline)
+          .accessibilityAddTraits(.isHeader)
+        Text(verbatim: message)
+          .font(.callout)
+          .foregroundStyle(.secondary)
+          .fixedSize(horizontal: false, vertical: true)
+      }
+    }
+  }
+
+  /// A table with +/− buttons and a "More" menu under it, in a rounded box.
+  struct TableEditorBox<Content: View>: View {
+    let canRemove: Bool
+    let moreItems: [TableEditorMenuItem]
+    let onAdd: () -> Void
+    let onRemove: () -> Void
+    @ViewBuilder let content: Content
+
+    var body: some View {
+      VStack(spacing: 0) {
+        content
+        Divider()
+        TableEditorControlBar(
+          canRemove: canRemove, moreItems: moreItems, onAdd: onAdd, onRemove: onRemove)
+      }
+      .background(Color(nsColor: .controlBackgroundColor))
+      .clipShape(.rect(cornerRadius: 8))
+      .overlay {
+        RoundedRectangle(cornerRadius: 8)
+          .strokeBorder(.separator)
+      }
+    }
+  }
+
+  /// + / − and the "More" menu.
+  struct TableEditorControlBar: View {
+    let canRemove: Bool
+    let moreItems: [TableEditorMenuItem]
+    let onAdd: () -> Void
+    let onRemove: () -> Void
+
+    var body: some View {
+      HStack(spacing: 0) {
+        Button(action: onAdd) {
+          Image(systemName: "plus")
+            .frame(width: 24, height: 22)
+            .contentShape(.rect)
+        }
+        .help(TableEditorStrings.text(.addEntry))
+        .accessibilityLabel(TableEditorStrings.text(.addEntry))
+        Divider()
+          .frame(height: 14)
+        Button(action: onRemove) {
+          Image(systemName: "minus")
+            .frame(width: 24, height: 22)
+            .contentShape(.rect)
+        }
+        .disabled(!canRemove)
+        .help(TableEditorStrings.text(.removeEntries))
+        .accessibilityLabel(TableEditorStrings.text(.removeEntries))
         Spacer()
-        Button(TableEditorStrings.text(.cancel), role: .cancel, action: onCancel)
-          .keyboardShortcut(.cancelAction)
-        if okIsDefault {
-          Button(TableEditorStrings.text(.ok), action: onOK)
-            .keyboardShortcut(.defaultAction)
-            .disabled(!okEnabled)
-        } else {
-          Button(TableEditorStrings.text(.ok), action: onOK)
-            .buttonStyle(.borderedProminent)
-            .disabled(!okEnabled)
+        Menu {
+          TableEditorMenuContent(items: moreItems)
+        } label: {
+          Image(systemName: "ellipsis.circle")
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .help(TableEditorStrings.text(.more))
+        .accessibilityLabel(TableEditorStrings.text(.more))
+        .padding(.trailing, 6)
+      }
+      .buttonStyle(.borderless)
+      .padding(.horizontal, 4)
+      .frame(height: 26)
+    }
+  }
+
+  /// An item of the "More" menu of a concrete editor.
+  struct TableEditorMenuItem: Identifiable {
+    enum Kind {
+      case action(title: String, enabled: Bool, perform: @MainActor () -> Void)
+      case submenu(title: String, items: [TableEditorMenuItem])
+      case divider
+    }
+
+    let id = UUID()
+    let kind: Kind
+
+    static func action(_ title: String, enabled: Bool = true, _ perform: @escaping @MainActor () -> Void)
+      -> TableEditorMenuItem
+    {
+      TableEditorMenuItem(kind: .action(title: title, enabled: enabled, perform: perform))
+    }
+
+    static func submenu(_ title: String, _ items: [TableEditorMenuItem]) -> TableEditorMenuItem {
+      TableEditorMenuItem(kind: .submenu(title: title, items: items))
+    }
+
+    static var divider: TableEditorMenuItem { TableEditorMenuItem(kind: .divider) }
+  }
+
+  struct TableEditorMenuContent: View {
+    let items: [TableEditorMenuItem]
+
+    var body: some View {
+      ForEach(items) { item in
+        switch item.kind {
+        case .action(let title, let enabled, let perform):
+          Button(title) { perform() }
+            .disabled(!enabled)
+        case .submenu(let title, let items):
+          Menu(title) {
+            TableEditorMenuContent(items: items)
+          }
+        case .divider:
+          Divider()
         }
       }
-      .controlSize(.regular)
-    }
-    .padding(20)
-  }
-}
-
-struct EditorSheetHeader: View {
-  let title: String
-  let message: String
-
-  var body: some View {
-    VStack(alignment: .leading, spacing: 4) {
-      Text(verbatim: title)
-        .font(.headline)
-        .accessibilityAddTraits(.isHeader)
-      Text(verbatim: message)
-        .font(.callout)
-        .foregroundStyle(.secondary)
-        .fixedSize(horizontal: false, vertical: true)
     }
   }
-}
 
-/// A table with +/− buttons and a "More" menu under it, in a rounded box.
-struct TableEditorBox<Content: View>: View {
-  let canRemove: Bool
-  let moreItems: [TableEditorMenuItem]
-  let onAdd: () -> Void
-  let onRemove: () -> Void
-  @ViewBuilder let content: Content
+  /// Context menu of table rows (OnContextMenuRequested).
+  struct TableEditorContextMenu: View {
+    /// The "Change Key…" action, when the editor has one and a single row is clicked.
+    let onEdit: (() -> Void)?
+    let onNew: () -> Void
+    let onRemove: () -> Void
 
-  var body: some View {
-    VStack(spacing: 0) {
-      content
-      Divider()
-      TableEditorControlBar(
-        canRemove: canRemove, moreItems: moreItems, onAdd: onAdd, onRemove: onRemove)
-    }
-    .background(Color(nsColor: .controlBackgroundColor))
-    .clipShape(.rect(cornerRadius: 8))
-    .overlay {
-      RoundedRectangle(cornerRadius: 8)
-        .strokeBorder(.separator)
-    }
-  }
-}
-
-/// + / − and the "More" menu.
-struct TableEditorControlBar: View {
-  let canRemove: Bool
-  let moreItems: [TableEditorMenuItem]
-  let onAdd: () -> Void
-  let onRemove: () -> Void
-
-  var body: some View {
-    HStack(spacing: 0) {
-      Button(action: onAdd) {
-        Image(systemName: "plus")
-          .frame(width: 24, height: 22)
-          .contentShape(.rect)
-      }
-      .help(TableEditorStrings.text(.addEntry))
-      .accessibilityLabel(TableEditorStrings.text(.addEntry))
-      Divider()
-        .frame(height: 14)
-      Button(action: onRemove) {
-        Image(systemName: "minus")
-          .frame(width: 24, height: 22)
-          .contentShape(.rect)
-      }
-      .disabled(!canRemove)
-      .help(TableEditorStrings.text(.removeEntries))
-      .accessibilityLabel(TableEditorStrings.text(.removeEntries))
-      Spacer()
-      Menu {
-        TableEditorMenuContent(items: moreItems)
-      } label: {
-        Image(systemName: "ellipsis.circle")
-      }
-      .menuStyle(.borderlessButton)
-      .menuIndicator(.hidden)
-      .fixedSize()
-      .help(TableEditorStrings.text(.more))
-      .accessibilityLabel(TableEditorStrings.text(.more))
-      .padding(.trailing, 6)
-    }
-    .buttonStyle(.borderless)
-    .padding(.horizontal, 4)
-    .frame(height: 26)
-  }
-}
-
-/// An item of the "More" menu of a concrete editor.
-struct TableEditorMenuItem: Identifiable {
-  enum Kind {
-    case action(title: String, enabled: Bool, perform: @MainActor () -> Void)
-    case submenu(title: String, items: [TableEditorMenuItem])
-    case divider
-  }
-
-  let id = UUID()
-  let kind: Kind
-
-  static func action(_ title: String, enabled: Bool = true, _ perform: @escaping @MainActor () -> Void)
-    -> TableEditorMenuItem
-  {
-    TableEditorMenuItem(kind: .action(title: title, enabled: enabled, perform: perform))
-  }
-
-  static func submenu(_ title: String, _ items: [TableEditorMenuItem]) -> TableEditorMenuItem {
-    TableEditorMenuItem(kind: .submenu(title: title, items: items))
-  }
-
-  static var divider: TableEditorMenuItem { TableEditorMenuItem(kind: .divider) }
-}
-
-struct TableEditorMenuContent: View {
-  let items: [TableEditorMenuItem]
-
-  var body: some View {
-    ForEach(items) { item in
-      switch item.kind {
-      case .action(let title, let enabled, let perform):
-        Button(title) { perform() }
-          .disabled(!enabled)
-      case .submenu(let title, let items):
-        Menu(title) {
-          TableEditorMenuContent(items: items)
-        }
-      case .divider:
+    var body: some View {
+      if let onEdit {
+        Button(TableEditorStrings.text(.changeKey), action: onEdit)
         Divider()
       }
+      Button(TableEditorStrings.text(.newEntry), action: onNew)
+      Button(TableEditorStrings.text(.deleteEntries), action: onRemove)
     }
   }
-}
 
-/// Context menu of table rows (OnContextMenuRequested).
-struct TableEditorContextMenu: View {
-  /// The "Change Key…" action, when the editor has one and a single row is clicked.
-  let onEdit: (() -> Void)?
-  let onNew: () -> Void
-  let onRemove: () -> Void
-
-  var body: some View {
-    if let onEdit {
-      Button(TableEditorStrings.text(.changeKey), action: onEdit)
-      Divider()
-    }
-    Button(TableEditorStrings.text(.newEntry), action: onNew)
-    Button(TableEditorStrings.text(.deleteEntries), action: onRemove)
-  }
-}
-
-extension View {
-  /// `QFileDialog::getOpenFileName(tr("import from file"))`.
-  @MainActor
-  func tableEditorImporter(isPresented: Binding<Bool>, onPick: @escaping (URL) -> Void) -> some View {
-    fileImporter(isPresented: isPresented, allowedContentTypes: [.data, .plainText, .text]) { result in
-      if case .success(let url) = result {
-        let accessed = url.startAccessingSecurityScopedResource()
-        defer { if accessed { url.stopAccessingSecurityScopedResource() } }
-        onPick(url)
+  extension View {
+    /// `QFileDialog::getOpenFileName(tr("import from file"))`.
+    @MainActor
+    func tableEditorImporter(isPresented: Binding<Bool>, onPick: @escaping (URL) -> Void) -> some View {
+      fileImporter(isPresented: isPresented, allowedContentTypes: [.data, .plainText, .text]) { result in
+        if case .success(let url) = result {
+          let accessed = url.startAccessingSecurityScopedResource()
+          defer { if accessed { url.stopAccessingSecurityScopedResource() } }
+          onPick(url)
+        }
       }
     }
   }
-}
 
-/// Presents NSSavePanel for Export() (fileExporter needs a FileDocument; the panel is simpler here).
-@MainActor
-enum TableEditorSavePanel {
-  static func run(defaultFilename: String) -> URL? {
-    let panel = NSSavePanel()
-    panel.title = TableEditorStrings.text(.exportPanelTitle)
-    panel.nameFieldStringValue = defaultFilename
-    panel.directoryURL = FileManager.default.homeDirectoryForCurrentUser
-    return panel.runModal() == .OK ? panel.url : nil
+  /// Presents NSSavePanel for Export() (fileExporter needs a FileDocument; the panel is simpler here).
+  @MainActor
+  enum TableEditorSavePanel {
+    static func run(defaultFilename: String) -> URL? {
+      let panel = NSSavePanel()
+      panel.title = TableEditorStrings.text(.exportPanelTitle)
+      panel.nameFieldStringValue = defaultFilename
+      panel.directoryURL = FileManager.default.homeDirectoryForCurrentUser
+      return panel.runModal() == .OK ? panel.url : nil
+    }
   }
-}
+#endif

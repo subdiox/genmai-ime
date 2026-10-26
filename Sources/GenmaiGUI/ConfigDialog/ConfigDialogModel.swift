@@ -313,8 +313,10 @@ public final class ConfigDialogModel {
   private var baseConfig = Genmai_Config_Config()
   private var isLoading = false
   private let aiSettingsURL: URL?
-  /// Not in Mozc: updates of Genmai itself (tab "Misc").
-  public let appUpdate: GenmaiUpdateModel
+  #if os(macOS)
+    /// Not in Mozc: updates of Genmai itself (tab "Misc"). The iOS app is updated by the App Store.
+    public let appUpdate: GenmaiUpdateModel
+  #endif
   /// The AI settings as last loaded / saved.
   private var savedAIValues = AIConversionSettings()
 
@@ -322,10 +324,11 @@ public final class ConfigDialogModel {
   public init(
     client: any GenmaiClientProtocol,
     openApp: @escaping @MainActor (String) -> Void = { _ in },
-    aiSettingsURL: URL? = nil,
-    appUpdate: GenmaiUpdateModel? = nil
+    aiSettingsURL: URL? = nil
   ) {
-    self.appUpdate = appUpdate ?? GenmaiUpdateModel()
+    #if os(macOS)
+      self.appUpdate = GenmaiUpdateModel()
+    #endif
     self.client = client
     self.openApp = openApp
     self.aiSettingsURL = aiSettingsURL

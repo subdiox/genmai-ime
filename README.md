@@ -1,6 +1,6 @@
 # genmai
 
-**genmai** (玄米, brown rice) is a Japanese input method for macOS that combines a classic dictionary-based
+**genmai** (玄米, brown rice) is a Japanese input method for macOS and iOS that combines a classic dictionary-based
 conversion engine with an on-device language model. While you type, a small kana-kanji conversion model
 (genmai, 310M parameters, running on the Neural Engine with Core ML) converts the whole sentence in the background; its result is shown first in the suggestion window and on the conversion key.
 Nothing you type leaves your Mac.
@@ -35,6 +35,7 @@ interval, 45–64 ms when it is pressed right after it.
 
 - macOS 15 or later, Apple silicon (AI conversion runs on the Neural Engine)
 - 0.1–0.3 GB of disk for the AI model
+- iOS: iOS 18 or later (a keyboard extension)
 - To build: Xcode 26 or later (Swift 6.2 toolchain)
 
 ## Install
@@ -58,6 +59,24 @@ besides the request for the release list.
 To make a release, bump `kProductVersion` in `Sources/GenmaiBase/VersionDef.swift`, commit, and push the tag
 `vX.Y.Z`: the GitHub Actions workflow `Release` builds the package and creates the GitHub release
 (`Tools/make_release.sh --publish` does the same from a Mac).
+
+## iOS
+
+The iOS app adds Genmai as a keyboard: 12 keys with toggle input and flicks (kana, letters, numbers) or QWERTY
+romaji, a candidate bar, the conversion and suggestion settings and the user dictionary of the macOS version, all
+from the same engine, and the same AI conversion (download the model in the app's AI settings; the small model is the
+default on iOS).
+
+```sh
+Tools/build_data.sh --oss --extended  # Data/genmai_extended.data, bundled in the app
+brew install xcodegen
+Tools/make_ios_project.sh        # iOS/Genmai.xcodeproj from iOS/project.yml
+open iOS/Genmai.xcodeproj        # scheme Genmai; for a device set DEVELOPMENT_TEAM in iOS/Local.xcconfig
+```
+
+Then Settings › General › Keyboard › Keyboards › Add New Keyboard… › Genmai, and turn on **Allow Full Access** so
+that the keyboard uses the app's settings, user dictionary and AI model and keeps what it learns (nothing is sent
+anywhere).
 
 ## Build from source
 
@@ -117,6 +136,7 @@ Then turn on **Use AI conversion** in the same tab. The settings are stored in
 | `Tools/coreml` | converts a model checkpoint into the Core ML packages the IME runs |
 | `Sources/GenmaiClient`, `GenmaiAIClient` | client layer and the AI conversion hook |
 | `Sources/GenmaiMac`, `GenmaiRenderer`, `GenmaiGUI`, `GenmaiIME`, `GenmaiApp`, `GenmaiUninstaller` | the macOS app |
+| `Sources/GenmaiIOS`, `GenmaiIOSKeyboard`, `GenmaiIOSApp`, `iOS/` | the iOS keyboard (engine client, keyboard UI) and app; the Xcode project |
 | `Vendor/mozc` | upstream Mozc (git submodule): dictionary sources and the reference implementation for parity tests |
 | `Tools/` | build, bundle, installer and parity scripts |
 

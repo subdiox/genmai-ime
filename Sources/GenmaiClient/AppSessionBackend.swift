@@ -2,8 +2,8 @@
 //
 // In C++ the tools talk to mozc_server over IPC (GET_CONFIG / SET_CONFIG / RELOAD / CLEAR_USER_HISTORY ...).
 // The Swift IME has no server process: the Genmai app reads and writes the config file through `ConfigHandler`
-// directly and asks the IME process to reload via a distributed notification (`kReloadNotificationName`),
-// which the IME answers by calling `reload()` on its backend.
+// directly and asks the IME process to reload via a distributed notification (`kReloadNotificationName`; on
+// iOS the `ToolCommandQueue` file), which the IME answers with `SessionHandlerBackend.handleToolCommand`.
 //
 // Session commands (the word register dialog's reverse conversion: SEND_KEY ON, CONVERT_REVERSE, REVERT) go to
 // an engine of the app's own (`SessionHandlerBackend`, created on first use). That engine never learns
@@ -41,9 +41,15 @@ public final class AppSessionBackend: SessionBackend {
     return backend
   }
 
+  /// Asks the IME to run `command`: a distributed notification on macOS, the `ToolCommandQueue` that the
+  /// keyboard extension reads on iOS.
   public static func postDistributedNotification(_ command: String) {
-    DistributedNotificationCenter.default().postNotificationName(
-      kReloadNotificationName, object: command, userInfo: nil, deliverImmediately: true)
+    #if os(macOS)
+      DistributedNotificationCenter.default().postNotificationName(
+        kReloadNotificationName, object: command, userInfo: nil, deliverImmediately: true)
+    #else
+      ToolCommandQueue.post(command)
+    #endif
   }
 
   /// A client for the Genmai app process.

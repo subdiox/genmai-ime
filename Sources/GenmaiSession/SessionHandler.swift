@@ -382,6 +382,11 @@ public final class SessionHandler {
     return element.value
   }
 
+  /// Not in Mozc: the session `id` (nil if there is none), for clients that restore its state around a command.
+  public func session(_ id: SessionID) -> Session? {
+    lookupSession(id)
+  }
+
   private func sendKey(_ command: inout Genmai_Commands_Command) -> Bool {
     let id = command.input.id
     guard let session = lookupSession(id) else {

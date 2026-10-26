@@ -6,7 +6,7 @@
 // the highest vX.Y.Z tag whose config.json this IME can run and that has the Core ML model) and download
 // config.json, tokenizer.json and `model-coreml.zip` (`genmai_coreml.json` + `genmai.mlpackage`, or
 // `genmai_0.mlpackage`, ... for a model split into chunks), each checked against the checksum Hugging Face lists.
-// The archive is extracted (ditto), the packages are compiled, and they are installed as `genmai*.mlmodelc` with
+// The archive is extracted (`ZipArchive`), the packages are compiled, and they are installed as `genmai*.mlmodelc` with
 // `genmai_coreml.json`, config.json, tokenizer.json and `genmai_model.json` (which model and release is installed).
 // The release's fp32 `model.safetensors` (HF layout, for transformers) is not downloaded.
 
@@ -21,7 +21,12 @@ public enum AIModelSize: String, Codable, CaseIterable, Sendable {
   /// genmai-310M: 24 layers, 1024 dim (Core ML model 283 MB).
   case medium
 
-  public static let `default` = AIModelSize.medium
+  /// iOS: the small model (a keyboard extension has far less memory than an input method on the Mac).
+  #if os(iOS)
+    public static let `default` = AIModelSize.small
+  #else
+    public static let `default` = AIModelSize.medium
+  #endif
 
   public var repository: String {
     switch self {
@@ -334,7 +339,7 @@ public enum AIModelInstaller {
     defer { try? fm.removeItem(at: staging) }
     let extracted = downloads.appending(path: "coreml", directoryHint: .isDirectory)
     try? fm.removeItem(at: extracted)
-    try await unzip(downloads.appending(path: GenmaiModelRelease.coreMLArchiveName), to: extracted)
+    try ZipArchive.extract(downloads.appending(path: GenmaiModelRelease.coreMLArchiveName), to: extracted)
     let config = extracted.appending(path: coreMLConfigFileName)
     guard let data = try? Data(contentsOf: config), GenmaiModelRelease.isSupportedCoreML(config: data) else {
       throw AIModelInstallError.badModel("\(GenmaiModelRelease.coreMLArchiveName) is not a model this IME runs")
@@ -384,29 +389,6 @@ public enum AIModelInstaller {
 
   /// The Core ML model's shapes in the model directory (`GenmaiCoreMLModel.configFileName` in GenmaiAI).
   public static let coreMLConfigFileName = "genmai_coreml.json"
-
-  /// Extracts the zip archive `archive` into `directory` with ditto (Foundation has no zip API).
-  static func unzip(_ archive: URL, to directory: URL) async throws {
-    let process = Process()
-    process.executableURL = URL(filePath: "/usr/bin/ditto")
-    process.arguments = ["-x", "-k", archive.path(percentEncoded: false), directory.path(percentEncoded: false)]
-    let output = Pipe()
-    process.standardOutput = output
-    process.standardError = output
-    let status: Int32 = await withCheckedContinuation { continuation in
-      process.terminationHandler = { continuation.resume(returning: $0.terminationStatus) }
-      do {
-        try process.run()
-      } catch {
-        process.terminationHandler = nil
-        continuation.resume(returning: -1)
-      }
-    }
-    guard status == 0 else {
-      let message = String(decoding: output.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
-      throw AIModelInstallError.badModel("cannot extract \(archive.lastPathComponent): \(message)")
-    }
-  }
 
   /// The Core ML models in `directory` (`genmai*.mlmodelc` / `genmai*.mlpackage`).
   public static func coreMLModelFiles(in directory: URL) -> [String] {

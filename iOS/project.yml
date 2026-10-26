@@ -1,0 +1,115 @@
+# The iOS app and its keyboard extension. Generate the Xcode project with `xcodegen --spec iOS/project.yml`
+# (Tools/make_ios_project.sh). Both targets are thin: the code is in the Swift package at the repository root
+# (GenmaiIOSApp, GenmaiIOSKeyboard → GenmaiIOS → the shared engine). Data/genmai_extended.data must exist
+# (Tools/build_data.sh); it is bundled in the app, where the keyboard extension finds it.
+name: Genmai
+options:
+  bundleIdPrefix: io.github.subdiox.genmai
+  deploymentTarget:
+    iOS: "18.0"
+  createIntermediateGroups: true
+configFiles:
+  Debug: Signing.xcconfig
+  Release: Signing.xcconfig
+settings:
+  base:
+    MARKETING_VERSION: "1.0.0"
+    CURRENT_PROJECT_VERSION: "1"
+    SWIFT_VERSION: "6.0"
+    TARGETED_DEVICE_FAMILY: "1,2"
+    CODE_SIGN_STYLE: Automatic
+    ENABLE_USER_SCRIPT_SANDBOXING: YES
+    SWIFT_STRICT_CONCURRENCY: complete
+packages:
+  genmai-ime:
+    path: ..
+targets:
+  Genmai:
+    type: application
+    platform: iOS
+    sources:
+      - path: App
+      - path: ../build/ios/genmai.data
+        buildPhase: resources
+      - path: ../build/ios/credits_en.html
+        buildPhase: resources
+      - path: ../Tools/assets/genmai.icon
+        buildPhase: resources
+    dependencies:
+      - package: genmai-ime
+        product: GenmaiIOSApp
+      # the keyboard preview of debug builds (-keyboardPreview)
+      - package: genmai-ime
+        product: GenmaiIOSKeyboard
+      - target: GenmaiKeyboard
+        embed: true
+        codeSign: true
+    entitlements:
+      path: App/Genmai.entitlements
+      properties:
+        com.apple.security.application-groups:
+          - group.io.github.subdiox.genmai
+    info:
+      path: App/Info.plist
+      properties:
+        CFBundleDisplayName: Genmai
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        LSApplicationCategoryType: public.app-category.utilities
+        UILaunchScreen: {}
+        UIApplicationSceneManifest:
+          UIApplicationSupportsMultipleScenes: false
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+        UISupportedInterfaceOrientations~ipad:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationPortraitUpsideDown
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: io.github.subdiox.genmai.ios
+        ASSETCATALOG_COMPILER_APPICON_NAME: genmai
+  GenmaiKeyboard:
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: Keyboard
+    dependencies:
+      - package: genmai-ime
+        product: GenmaiIOSKeyboard
+    entitlements:
+      path: Keyboard/GenmaiKeyboard.entitlements
+      properties:
+        com.apple.security.application-groups:
+          - group.io.github.subdiox.genmai
+    info:
+      path: Keyboard/Info.plist
+      properties:
+        CFBundleDisplayName: Genmai
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.keyboard-service
+          NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).KeyboardViewController
+          NSExtensionAttributes:
+            IsASCIICapable: false
+            PrefersRightToLeft: false
+            PrimaryLanguage: ja-JP
+            RequestsOpenAccess: true
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: io.github.subdiox.genmai.ios.keyboard
+        APPLICATION_EXTENSION_API_ONLY: YES
+schemes:
+  Genmai:
+    build:
+      targets:
+        Genmai: all
+        GenmaiKeyboard: all
+    run:
+      config: Debug
+    archive:
+      config: Release

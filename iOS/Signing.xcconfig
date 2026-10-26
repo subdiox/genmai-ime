@@ -1,0 +1,4 @@
+// Code signing of the iOS targets. Simulator builds need nothing. For a device, put your team in
+// iOS/Local.xcconfig (git-ignored): DEVELOPMENT_TEAM = XXXXXXXXXX
+// The app group (group.io.github.subdiox.genmai) must then be registered for that team.
+#include? "Local.xcconfig"

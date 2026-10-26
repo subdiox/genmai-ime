@@ -584,7 +584,7 @@ func conversionRequest() -> ConversionRequest {
     #expect(!GenmaiModelRelease.isSupportedCoreML(config: Data(#"{"format": "genmai-coreml-2"}"#.utf8)))
   }
 
-  /// A Core ML archive is extracted and its packages are found.
+  /// A Core ML archive (made by ditto here) is extracted and its packages are found.
   @Test func unzipCoreMLArchive() async throws {
     let dir = FileManager.default.temporaryDirectory.appending(path: "coreml-zip-\(UUID())")
     defer { try? FileManager.default.removeItem(at: dir) }
@@ -608,12 +608,13 @@ func conversionRequest() -> ConversionRequest {
     }
     #expect(status == 0)
     let out = dir.appending(path: "out")
-    try await AIModelInstaller.unzip(archive, to: out)
+    try ZipArchive.extract(archive, to: out)
     #expect(AIModelInstaller.coreMLModelFiles(in: out) == ["genmai_0.mlpackage"])
     #expect(FileManager.default.fileExists(atPath: out.appending(path: "genmai_coreml.json").path))
-    await #expect(throws: AIModelInstallError.self) {
-      try await AIModelInstaller.unzip(dir.appending(path: "missing.zip"), to: out)
-    }
+    #expect(try Data(contentsOf: out.appending(path: "genmai_0.mlpackage/Manifest.json")) == Data("{}".utf8))
+    #expect(throws: (any Error).self) { try ZipArchive.extract(dir.appending(path: "missing.zip"), to: out) }
+    try Data("not a zip".utf8).write(to: dir.appending(path: "bad.zip"))
+    #expect(throws: ZipArchive.Failure.notAZip) { try ZipArchive.extract(dir.appending(path: "bad.zip"), to: out) }
   }
 
   @Test func compatibility() {

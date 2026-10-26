@@ -1,5 +1,5 @@
 // swift-tools-version: 6.2
-// genmai: a Japanese input method for macOS. The conversion engine is ported from Mozc (https://github.com/google/mozc).
+// genmai: a Japanese input method for macOS and iOS. The conversion engine is ported from Mozc (https://github.com/google/mozc).
 import PackageDescription
 
 let swiftSettings: [SwiftSetting] = [
@@ -11,7 +11,7 @@ let swiftSettings: [SwiftSetting] = [
 // subfolder per Mozc directory. Layers: GenmaiBase / GenmaiStorage / GenmaiProtocol → GenmaiCore → GenmaiSession.
 let package = Package(
   name: "genmai-ime",
-  platforms: [.macOS(.v15)],
+  platforms: [.macOS(.v15), .iOS(.v18)],
   products: [
     .library(name: "GenmaiProtocol", targets: ["GenmaiProtocol"]),
     .library(name: "GenmaiBase", targets: ["GenmaiBase"]),
@@ -35,6 +35,11 @@ let package = Package(
     .executable(name: "genmai-cli", targets: ["genmai-cli"]),
     // The genmai model as the IME's AI conversion augmenter (GenmaiClient's AIConversionHook).
     .library(name: "GenmaiAIClient", targets: ["GenmaiAIClient"]),
+    // iOS: the keyboard logic (ios/ios_engine + its client; also builds and is tested on macOS), the keyboard
+    // extension's UI and the app's UI (iOS only; the Xcode project in iOS/ links them).
+    .library(name: "GenmaiIOS", targets: ["GenmaiIOS"]),
+    .library(name: "GenmaiIOSKeyboard", targets: ["GenmaiIOSKeyboard"]),
+    .library(name: "GenmaiIOSApp", targets: ["GenmaiIOSApp"]),
   ],
   dependencies: [
     .package(url: "https://github.com/apple/swift-protobuf.git", from: "1.28.0")
@@ -111,6 +116,22 @@ let package = Package(
     .target(name: "GenmaiAI", swiftSettings: swiftSettings),
     // AI conversion in the IME: GenmaiAugmenter (ConversionAugmenter of GenmaiClient's AIConversionHook).
     .target(name: "GenmaiAIClient", dependencies: ["GenmaiAI", "GenmaiClient"], swiftSettings: swiftSettings),
+    .target(
+      name: "GenmaiIOS",
+      dependencies: ["GenmaiBase", "GenmaiProtocol", "GenmaiCore", "GenmaiSession", "GenmaiClient"],
+      swiftSettings: swiftSettings
+    ),
+    .target(
+      name: "GenmaiIOSKeyboard",
+      dependencies: ["GenmaiIOS", "GenmaiAIClient", "GenmaiClient", "GenmaiBase", "GenmaiProtocol", "GenmaiCore"],
+      resources: [.process("Resources")],
+      swiftSettings: swiftSettings
+    ),
+    .target(
+      name: "GenmaiIOSApp",
+      dependencies: ["GenmaiIOS", "GenmaiGUI", "GenmaiClient", "GenmaiBase", "GenmaiProtocol", "GenmaiCore"],
+      swiftSettings: swiftSettings
+    ),
     .executableTarget(
       name: "genmai-cli",
       dependencies: ["GenmaiAI", "GenmaiAIClient", "GenmaiClient", "GenmaiCore", "GenmaiBase", "GenmaiProtocol"],
@@ -139,6 +160,10 @@ let package = Package(
       ], swiftSettings: swiftSettings),
     .testTarget(
       name: "GenmaiUninstallerTests", dependencies: ["GenmaiUninstaller", "GenmaiBase"], swiftSettings: swiftSettings),
+    .testTarget(
+      name: "GenmaiIOSTests",
+      dependencies: ["GenmaiIOS", "GenmaiClient", "GenmaiProtocol", "GenmaiBase", "GenmaiCore"],
+      swiftSettings: swiftSettings),
     .testTarget(name: "GenmaiProtocolTests", dependencies: ["GenmaiProtocol"], swiftSettings: swiftSettings),
     .testTarget(name: "GenmaiBaseTests", dependencies: ["GenmaiBase"], swiftSettings: swiftSettings),
     .testTarget(

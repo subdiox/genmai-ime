@@ -36,7 +36,8 @@ public enum OssDataManager {
 
   /// `genmai.data` of the running app bundle, if any: Contents/Resources of the
   /// main bundle, or the directory containing the main bundle (a helper app
-  /// nested in Genmai.app/Contents/Resources).
+  /// nested in Genmai.app/Contents/Resources), or the iOS app containing the
+  /// main bundle (the keyboard extension, Genmai.app/PlugIns/*.appex).
   public static var bundleDataPath: String? {
     let bundle = Bundle.main
     var candidates: [URL] = []
@@ -46,6 +47,11 @@ public enum OssDataManager {
     if bundle.bundleURL.pathExtension == "app" {
       candidates.append(
         bundle.bundleURL.deletingLastPathComponent().appendingPathComponent(bundleResourceName))
+    }
+    if bundle.bundleURL.pathExtension == "appex" {
+      candidates.append(
+        bundle.bundleURL.deletingLastPathComponent().deletingLastPathComponent()
+          .appendingPathComponent(bundleResourceName))
     }
     return candidates.first { FileManager.default.fileExists(atPath: $0.path) }?.path
   }

@@ -24,6 +24,10 @@
 # - --score-scale C: attention logits are computed / C (folded into the query weights), the row maximum subtracted,
 #   then × C: softmax(s) = softmax((s / C - max(s / C)) × C); large negative values become -inf, i.e. weight 0.
 # genmai-310M: --residual-scale 0.25 --score-scale 256. genmai-90M (v0.1.2) was converted without them.
+# Layer norms divide their input by its maximum magnitude first (`LayerNorm`): an attention sink puts a residual
+# value of ~5000 (genmai-90M) / ~20k (genmai-310M, scaled) at the first token, whose square overflows fp16 where Core ML
+# computes a layer_norm op's variance in fp16 (macOS 26: inf, garbage output on the CPU and the Neural Engine; macOS
+# 27 computes it in range).
 
 import argparse
 import json
@@ -55,15 +59,29 @@ class Weights:
         self.sd = {k.removeprefix("transformer."): v.float() for k, v in sd.items()}
 
 
+class LayerNorm(torch.nn.Module):
+    """Layer norm that stays in fp16 range for any input: LN(x) = LN(x / s) with eps / s², s = max |x| (so every
+    square is ≤ 1; eps / s² underflows to 0 for large s, where it is negligible)."""
+
+    def __init__(self, sd, name, eps):
+        super().__init__()
+        self.weight, self.bias, self.eps = sd[name + ".weight"], sd[name + ".bias"], eps
+
+    def forward(self, x):
+        s = x.abs().amax(dim=-1, keepdim=True).clamp(min=1e-3)
+        z = x / s
+        y = z - z.mean(dim=-1, keepdim=True)
+        var = (y * y).mean(dim=-1, keepdim=True)
+        return y * torch.rsqrt(var + self.eps / (s * s)) * self.weight + self.bias
+
+
 class Block(torch.nn.Module):
     def __init__(self, w, i):
         super().__init__()
         sd, p, r = w.sd, f"h.{i}.", w.residual_scale
         eps = w.eps * r * r
-        self.ln1 = torch.nn.LayerNorm(w.E, eps=eps)
-        self.ln1.weight.data, self.ln1.bias.data = sd[p + "ln_1.weight"], sd[p + "ln_1.bias"]
-        self.ln2 = torch.nn.LayerNorm(w.E, eps=eps)
-        self.ln2.weight.data, self.ln2.bias.data = sd[p + "ln_2.weight"], sd[p + "ln_2.bias"]
+        self.ln1 = LayerNorm(sd, p + "ln_1", eps)
+        self.ln2 = LayerNorm(sd, p + "ln_2", eps)
 
         def lin(name, scale=1.0):
             l = torch.nn.Linear(*sd[p + name + ".weight"].shape)
@@ -124,8 +142,7 @@ class Stateful(torch.nn.Module):
             self.wpe = torch.nn.Parameter(w.sd["wpe.weight"] * r)
         if self.last:
             self.wte = torch.nn.Parameter(w.sd["wte.weight"])
-            self.lnf = torch.nn.LayerNorm(w.E, eps=w.eps * r * r)
-            self.lnf.weight.data, self.lnf.bias.data = w.sd["ln_f.weight"], w.sd["ln_f.bias"]
+            self.lnf = LayerNorm(w.sd, "ln_f", w.eps * r * r)
         self.layers = list(range(lo, hi))
         self.blocks = torch.nn.ModuleList([Block(w, i) for i in self.layers])
         self.P, self.S, self.B = P, S, B

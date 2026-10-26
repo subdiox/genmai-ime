@@ -105,10 +105,13 @@ public struct AIConversionSettings: Codable, Equatable, Sendable {
 
   // MARK: - Model location
 
-  /// `~/Library/Application Support/Genmai/models`: one directory per model, written by the model installer
-  /// (`AIModelInstaller`), so that both models can be installed and the unused one removed.
+  /// `<profile>/models` (`~/Library/Application Support/Genmai/models` on macOS; on iOS the profile is in the app
+  /// group, shared by the app, which downloads the models, and the keyboard extension): one directory per model,
+  /// written by the model installer (`AIModelInstaller`), so that both models can be installed and the unused one
+  /// removed.
   public static var modelsDirectory: URL {
-    URL.applicationSupportDirectory.appending(path: "Genmai/models", directoryHint: .isDirectory)
+    URL(filePath: SystemUtil.getUserProfileDirectory(), directoryHint: .isDirectory)
+      .appending(path: "models", directoryHint: .isDirectory)
   }
 
   /// `models/genmai-90M` / `models/genmai-310M`.

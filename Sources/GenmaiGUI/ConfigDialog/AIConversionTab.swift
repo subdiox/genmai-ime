@@ -197,181 +197,183 @@ extension ConfigDialogModel {
 
 }
 
-struct AIConversionTab: View {
-  @Bindable var model: ConfigDialogModel
+#if os(macOS)
+  struct AIConversionTab: View {
+    @Bindable var model: ConfigDialogModel
 
-  var body: some View {
-    Form {
-      SettingsPaneHeader(pane: .ai)
-      Section {
-        ConfigToggle(label: AIStrings.text(.enable), isOn: $model.aiValues.enabled)
-        Text(verbatim: AIStrings.text(.explanation))
-          .font(.callout)
-          .foregroundStyle(.secondary)
-          .fixedSize(horizontal: false, vertical: true)
-      } header: {
-        Text(verbatim: AIStrings.text(.sectionAI))
-      }
-      Section {
-        ConfigPicker(
-          label: AIStrings.text(.timeout), selection: $model.aiValues.timeoutMilliseconds,
-          items: ConfigDialogModel.aiTimeoutPickerItems)
-        ConfigPicker(
-          label: AIStrings.text(.candidates), selection: $model.aiValues.candidateCount,
-          items: ConfigDialogModel.aiCandidatePickerItems)
-      } header: {
-        Text(verbatim: AIStrings.text(.sectionSettings))
-      }
-      .disabled(!model.aiValues.enabled)
-      Section {
-        VStack(alignment: .leading, spacing: 6) {
-          Picker(selection: $model.aiValues.modelSize) {
-            ForEach(AIModelSize.allCases, id: \.self) { size in
-              Text(verbatim: AIStrings.sizeName(size)).tag(size)
-            }
-          } label: {
-            Text(verbatim: AIStrings.text(.size))
-          }
-          Text(verbatim: AIStrings.text(.sizeNote))
+    var body: some View {
+      Form {
+        SettingsPaneHeader(pane: .ai)
+        Section {
+          ConfigToggle(label: AIStrings.text(.enable), isOn: $model.aiValues.enabled)
+          Text(verbatim: AIStrings.text(.explanation))
             .font(.callout)
             .foregroundStyle(.secondary)
             .fixedSize(horizontal: false, vertical: true)
-          if !model.aiModelStatus().isFound {
-            Label(AIStrings.text(.selectedMissing), systemImage: "exclamationmark.triangle.fill")
+        } header: {
+          Text(verbatim: AIStrings.text(.sectionAI))
+        }
+        Section {
+          ConfigPicker(
+            label: AIStrings.text(.timeout), selection: $model.aiValues.timeoutMilliseconds,
+            items: ConfigDialogModel.aiTimeoutPickerItems)
+          ConfigPicker(
+            label: AIStrings.text(.candidates), selection: $model.aiValues.candidateCount,
+            items: ConfigDialogModel.aiCandidatePickerItems)
+        } header: {
+          Text(verbatim: AIStrings.text(.sectionSettings))
+        }
+        .disabled(!model.aiValues.enabled)
+        Section {
+          VStack(alignment: .leading, spacing: 6) {
+            Picker(selection: $model.aiValues.modelSize) {
+              ForEach(AIModelSize.allCases, id: \.self) { size in
+                Text(verbatim: AIStrings.sizeName(size)).tag(size)
+              }
+            } label: {
+              Text(verbatim: AIStrings.text(.size))
+            }
+            Text(verbatim: AIStrings.text(.sizeNote))
               .font(.callout)
-              .foregroundStyle(.orange)
+              .foregroundStyle(.secondary)
+              .fixedSize(horizontal: false, vertical: true)
+            if !model.aiModelStatus().isFound {
+              Label(AIStrings.text(.selectedMissing), systemImage: "exclamationmark.triangle.fill")
+                .font(.callout)
+                .foregroundStyle(.orange)
+            }
+          }
+          ForEach(AIModelSize.allCases, id: \.self) { size in
+            AIModelRow(model: model, size: size)
+          }
+        } header: {
+          HStack {
+            Text(verbatim: AIStrings.text(.sectionModel))
+            Spacer()
+            Button(AIStrings.text(.checkAgain)) {
+              model.refreshAIModelStatus()
+              Task { await model.checkLatestAIModels(force: true) }
+            }
+            .font(.callout)
+            .disabled(model.aiModelInstall.isRunning)
           }
         }
-        ForEach(AIModelSize.allCases, id: \.self) { size in
-          AIModelRow(model: model, size: size)
-        }
-      } header: {
-        HStack {
-          Text(verbatim: AIStrings.text(.sectionModel))
+      }
+      .formStyle(.grouped)
+      .task { await model.checkLatestAIModels() }
+    }
+  }
+
+  /// One model: whether it is installed (version, size on disk) and in use, its download / update with progress, and
+  /// its removal.
+  struct AIModelRow: View {
+    let model: ConfigDialogModel
+    let size: AIModelSize
+
+    var body: some View {
+      let status = model.aiModelStatus(size)
+      let installing = model.aiModelInstallSize == size && model.aiModelInstall.isRunning
+      VStack(alignment: .leading, spacing: 6) {
+        HStack(alignment: .firstTextBaseline) {
+          Image(systemName: status.isFound ? "checkmark.circle.fill" : "circle.dashed")
+            .foregroundStyle(status.isFound ? .green : .secondary)
+            .accessibilityHidden(true)
+          VStack(alignment: .leading, spacing: 2) {
+            HStack(spacing: 6) {
+              Text(verbatim: AIStrings.rowTitle(size))
+                .font(.headline)
+              if model.aiValues.modelSize == size {
+                Text(verbatim: AIStrings.text(.inUse))
+                  .font(.caption)
+                  .padding(.horizontal, 6)
+                  .padding(.vertical, 1)
+                  .background(.tint.opacity(0.15), in: .capsule)
+              }
+            }
+            Text(verbatim: AIStrings.rowStatus(status, diskSize: model.aiModelDiskSizes[size]))
+              .font(.callout)
+              .foregroundStyle(.secondary)
+          }
           Spacer()
-          Button(AIStrings.text(.checkAgain)) {
-            model.refreshAIModelStatus()
-            Task { await model.checkLatestAIModels(force: true) }
+          if status.isFound, !installing {
+            Button(AIStrings.text(.remove), role: .destructive) { model.removeAIModel(size) }
+              .disabled(model.aiModelInstall.isRunning)
           }
-          .font(.callout)
-          .disabled(model.aiModelInstall.isRunning)
+        }
+        if installing, case .running(let phase) = model.aiModelInstall {
+          HStack {
+            VStack(alignment: .leading, spacing: 4) {
+              Text(verbatim: AIStrings.installPhase(phase))
+                .monospacedDigit()
+              if case .downloading(let received, let total) = phase {
+                ProgressView(value: Double(received), total: Double(max(total, 1)))
+              } else {
+                ProgressView()
+                  .progressViewStyle(.linear)
+              }
+            }
+            Button(AIStrings.text(.cancel)) { model.cancelAIModelInstall() }
+          }
+        } else {
+          AIModelLatestRow(model: model, size: size)
+          if model.aiModelInstallSize == size, case .failed(let message) = model.aiModelInstall {
+            Text(verbatim: String(format: AIStrings.text(.installFailed), message))
+              .font(.callout)
+              .foregroundStyle(.red)
+              .textSelection(.enabled)
+              .fixedSize(horizontal: false, vertical: true)
+          }
         }
       }
     }
-    .formStyle(.grouped)
-    .task { await model.checkLatestAIModels() }
   }
-}
 
-/// One model: whether it is installed (version, size on disk) and in use, its download / update with progress, and
-/// its removal.
-struct AIModelRow: View {
-  let model: ConfigDialogModel
-  let size: AIModelSize
+  /// What the newest release of a model is and whether to download it.
+  struct AIModelLatestRow: View {
+    let model: ConfigDialogModel
+    let size: AIModelSize
 
-  var body: some View {
-    let status = model.aiModelStatus(size)
-    let installing = model.aiModelInstallSize == size && model.aiModelInstall.isRunning
-    VStack(alignment: .leading, spacing: 6) {
-      HStack(alignment: .firstTextBaseline) {
-        Image(systemName: status.isFound ? "checkmark.circle.fill" : "circle.dashed")
-          .foregroundStyle(status.isFound ? .green : .secondary)
-          .accessibilityHidden(true)
-        VStack(alignment: .leading, spacing: 2) {
-          HStack(spacing: 6) {
-            Text(verbatim: AIStrings.rowTitle(size))
-              .font(.headline)
-            if model.aiValues.modelSize == size {
-              Text(verbatim: AIStrings.text(.inUse))
-                .font(.caption)
-                .padding(.horizontal, 6)
-                .padding(.vertical, 1)
-                .background(.tint.opacity(0.15), in: .capsule)
-            }
-          }
-          Text(verbatim: AIStrings.rowStatus(status, diskSize: model.aiModelDiskSizes[size]))
+    var body: some View {
+      let status = model.aiModelStatus(size)
+      switch model.aiModelLatest[size] ?? .unknown {
+      case .unknown, .checking:
+        HStack(spacing: 8) {
+          ProgressView()
+            .controlSize(.small)
+          Text(verbatim: AIStrings.text(.checkingLatest))
             .font(.callout)
             .foregroundStyle(.secondary)
         }
-        Spacer()
-        if status.isFound, !installing {
-          Button(AIStrings.text(.remove), role: .destructive) { model.removeAIModel(size) }
-            .disabled(model.aiModelInstall.isRunning)
-        }
-      }
-      if installing, case .running(let phase) = model.aiModelInstall {
-        HStack {
-          VStack(alignment: .leading, spacing: 4) {
-            Text(verbatim: AIStrings.installPhase(phase))
-              .monospacedDigit()
-            if case .downloading(let received, let total) = phase {
-              ProgressView(value: Double(received), total: Double(max(total, 1)))
-            } else {
-              ProgressView()
-                .progressViewStyle(.linear)
-            }
-          }
-          Button(AIStrings.text(.cancel)) { model.cancelAIModelInstall() }
-        }
-      } else {
-        AIModelLatestRow(model: model, size: size)
-        if model.aiModelInstallSize == size, case .failed(let message) = model.aiModelInstall {
-          Text(verbatim: String(format: AIStrings.text(.installFailed), message))
+      case .failed(let message):
+        HStack(alignment: .firstTextBaseline) {
+          Text(verbatim: String(format: AIStrings.text(.latestFailed), message))
             .font(.callout)
-            .foregroundStyle(.red)
+            .foregroundStyle(.secondary)
             .textSelection(.enabled)
             .fixedSize(horizontal: false, vertical: true)
-        }
-      }
-    }
-  }
-}
-
-/// What the newest release of a model is and whether to download it.
-struct AIModelLatestRow: View {
-  let model: ConfigDialogModel
-  let size: AIModelSize
-
-  var body: some View {
-    let status = model.aiModelStatus(size)
-    switch model.aiModelLatest[size] ?? .unknown {
-    case .unknown, .checking:
-      HStack(spacing: 8) {
-        ProgressView()
-          .controlSize(.small)
-        Text(verbatim: AIStrings.text(.checkingLatest))
-          .font(.callout)
-          .foregroundStyle(.secondary)
-      }
-    case .failed(let message):
-      HStack(alignment: .firstTextBaseline) {
-        Text(verbatim: String(format: AIStrings.text(.latestFailed), message))
-          .font(.callout)
-          .foregroundStyle(.secondary)
-          .textSelection(.enabled)
-          .fixedSize(horizontal: false, vertical: true)
-        Spacer()
-        Button(AIStrings.text(.retry)) {
-          Task { await model.checkLatestAIModel(size, force: true) }
-        }
-      }
-    case .available(let release):
-      if status.needsInstall(release) {
-        VStack(alignment: .leading, spacing: 6) {
-          Button(AIStrings.releaseText(status.isFound ? .update : .download, release)) {
-            model.installAIModel(size)
+          Spacer()
+          Button(AIStrings.text(.retry)) {
+            Task { await model.checkLatestAIModel(size, force: true) }
           }
-          .disabled(model.aiModelInstall.isRunning)
-          Text(verbatim: AIStrings.downloadNote(release))
+        }
+      case .available(let release):
+        if status.needsInstall(release) {
+          VStack(alignment: .leading, spacing: 6) {
+            Button(AIStrings.releaseText(status.isFound ? .update : .download, release)) {
+              model.installAIModel(size)
+            }
+            .disabled(model.aiModelInstall.isRunning)
+            Text(verbatim: AIStrings.downloadNote(release))
+              .font(.callout)
+              .foregroundStyle(.secondary)
+              .fixedSize(horizontal: false, vertical: true)
+          }
+        } else {
+          Text(verbatim: AIStrings.releaseText(.modelUpToDate, release))
             .font(.callout)
             .foregroundStyle(.secondary)
-            .fixedSize(horizontal: false, vertical: true)
         }
-      } else {
-        Text(verbatim: AIStrings.releaseText(.modelUpToDate, release))
-          .font(.callout)
-          .foregroundStyle(.secondary)
       }
     }
   }
-}
+#endif

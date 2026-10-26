@@ -248,181 +248,183 @@ public final class KeyMapEditorModel {
   }
 }
 
-/// The keymap editor sheet. `onFinish` receives the new keymap table on OK, or nil on cancel.
-public struct KeyMapEditorView: View {
-  @State private var model: KeyMapEditorModel
-  @State private var isImporting = false
-  private let onFinish: (String?) -> Void
+#if os(macOS)
+  /// The keymap editor sheet. `onFinish` receives the new keymap table on OK, or nil on cancel.
+  public struct KeyMapEditorView: View {
+    @State private var model: KeyMapEditorModel
+    @State private var isImporting = false
+    private let onFinish: (String?) -> Void
 
-  public init(currentKeymap: String, onFinish: @escaping (String?) -> Void) {
-    _model = State(initialValue: KeyMapEditorModel(currentKeymap: currentKeymap))
-    self.onFinish = onFinish
-  }
+    public init(currentKeymap: String, onFinish: @escaping (String?) -> Void) {
+      _model = State(initialValue: KeyMapEditorModel(currentKeymap: currentKeymap))
+      self.onFinish = onFinish
+    }
 
-  public var body: some View {
-    @Bindable var table = model.table
-    EditorSheet(
-      title: TableEditorStrings.text(.keymapTitle),
-      message: TableEditorStrings.text(.keymapMessage),
-      okEnabled: model.okEnabled,
-      onCancel: { onFinish(nil) },
-      onOK: {
-        if model.update() {
-          onFinish(model.serializedTable)
+    public var body: some View {
+      @Bindable var table = model.table
+      EditorSheet(
+        title: TableEditorStrings.text(.keymapTitle),
+        message: TableEditorStrings.text(.keymapMessage),
+        okEnabled: model.okEnabled,
+        onCancel: { onFinish(nil) },
+        onOK: {
+          if model.update() {
+            onFinish(model.serializedTable)
+          }
         }
-      }
-    ) {
-      TableEditorBox(
-        canRemove: model.canRemoveOrExport && !table.selection.isEmpty,
-        moreItems: moreItems,
-        onAdd: { model.table.addNewItem() },
-        onRemove: { model.table.deleteSelectedItems() }
       ) {
-        KeyMapGrid(table: model.table, commands: model.commands)
+        TableEditorBox(
+          canRemove: model.canRemoveOrExport && !table.selection.isEmpty,
+          moreItems: moreItems,
+          onAdd: { model.table.addNewItem() },
+          onRemove: { model.table.deleteSelectedItems() }
+        ) {
+          KeyMapGrid(table: model.table, commands: model.commands)
+        }
       }
+      .frame(minWidth: 600, minHeight: 440)
+      .genmaiMessageAlert($table.pendingMessage)
+      .tableEditorImporter(isPresented: $isImporting) { model.importFile($0) }
     }
-    .frame(minWidth: 600, minHeight: 440)
-    .genmaiMessageAlert($table.pendingMessage)
-    .tableEditorImporter(isPresented: $isImporting) { model.importFile($0) }
+
+    private var moreItems: [TableEditorMenuItem] {
+      let model = model
+      let predefined = KeyMapEditorModel.predefinedKeymaps.map { keymap, name in
+        TableEditorMenuItem.action(tr(KeyMapEditorModel.context, name)) {
+          model.confirmOverwrite { model.importPredefined(keymap) }
+        }
+      }
+      return [
+        .submenu(TableEditorStrings.text(.importPreset), predefined),
+        .divider,
+        .action(TableEditorStrings.text(.importFromFile)) {
+          model.confirmOverwrite { isImporting = true }
+        },
+        .action(TableEditorStrings.text(.exportToFile), enabled: model.canRemoveOrExport) {
+          guard model.update(),
+            let url = TableEditorSavePanel.run(defaultFilename: KeyMapEditorModel.defaultFilename)
+          else { return }
+          model.table.writeExportFile(url, model.serializedTable)
+        },
+      ]
+    }
   }
 
-  private var moreItems: [TableEditorMenuItem] {
-    let model = model
-    let predefined = KeyMapEditorModel.predefinedKeymaps.map { keymap, name in
-      TableEditorMenuItem.action(tr(KeyMapEditorModel.context, name)) {
-        model.confirmOverwrite { model.importPredefined(keymap) }
+  struct KeyMapGrid: View {
+    @Bindable var table: GenericTableEditorModel<KeyMapRow>
+    let commands: [String]
+    @State private var editingKey: KeyEditTarget?
+
+    var body: some View {
+      let context = KeyMapEditorModel.context
+      Table($table.rows, selection: $table.selection) {
+        TableColumn(tr(context, "Mode")) { $row in
+          NamePicker(selection: $row.status, names: KeyMapEditorModel.statuses)
+        }
+        .width(min: 120, ideal: 140)
+        TableColumn(tr(context, "Key")) { $row in
+          KeyMapKeyCell(key: row.key)
+        }
+        .width(min: 80, ideal: 100)
+        TableColumn(tr(context, "Command")) { $row in
+          NamePicker(selection: $row.command, names: commands)
+        }
+      }
+      .tableStyle(.inset(alternatesRowBackgrounds: true))
+      .contextMenu(forSelectionType: UUID.self) { ids in
+        TableEditorContextMenu(
+          onEdit: ids.count == 1 ? { editingKey = ids.first.map(KeyEditTarget.init) } : nil,
+          onNew: { table.addNewItem() },
+          onRemove: {
+            if !ids.isEmpty { table.selection = ids }
+            table.deleteSelectedItems()
+          })
+      } primaryAction: { ids in
+        if ids.count == 1 {
+          editingKey = ids.first.map(KeyEditTarget.init)
+        }
+      }
+      .sheet(item: $editingKey) { target in
+        let id = target.id
+        KeyBindingEditorView(binding: table.rows.first { $0.id == id }?.key ?? "") { binding in
+          if let binding, let index = table.rows.firstIndex(where: { $0.id == id }) {
+            table.rows[index].key = binding
+          }
+          editingKey = nil
+        }
       }
     }
-    return [
-      .submenu(TableEditorStrings.text(.importPreset), predefined),
-      .divider,
-      .action(TableEditorStrings.text(.importFromFile)) {
-        model.confirmOverwrite { isImporting = true }
-      },
-      .action(TableEditorStrings.text(.exportToFile), enabled: model.canRemoveOrExport) {
-        guard model.update(),
-          let url = TableEditorSavePanel.run(defaultFilename: KeyMapEditorModel.defaultFilename)
-        else { return }
-        model.table.writeExportFile(url, model.serializedTable)
-      },
+  }
+
+  /// The key of a row with macOS key symbols ("⌃⇧A"); double-clicking the row opens the key binding editor.
+  struct KeyMapKeyCell: View {
+    let key: String
+
+    var body: some View {
+      Text(verbatim: KeyDisplayFormatter.display(key))
+        .help(key)
+        .accessibilityLabel(key)
+    }
+  }
+
+  /// Shows Mozc key strings ("Ctrl Shift a", "Backspace") the way macOS menus show shortcuts ("⌃⇧A", "⌫").
+  /// Display only: the keymap keeps Mozc's names.
+  enum KeyDisplayFormatter {
+    /// Modifiers in the macOS order (⌃⌥⇧⌘).
+    static let modifiers: [(name: String, symbol: String)] = [
+      ("Ctrl", "⌃"), ("Option", "⌥"), ("Alt", "⌥"), ("Shift", "⇧"), ("Command", "⌘"),
     ]
+
+    static let keys: [String: String] = [
+      "Backspace": "⌫", "Delete": "⌦", "Enter": "↩", "Tab": "⇥", "Escape": "⎋", "Left": "←", "Right": "→",
+      "Up": "↑", "Down": "↓", "Home": "↖", "End": "↘", "PageUp": "⇞", "PageDown": "⇟",
+    ]
+
+    static func display(_ key: String) -> String {
+      let parts = key.split(separator: " ").map(String.init)
+      var symbols = ""
+      for (name, symbol) in modifiers where parts.contains(name) && !symbols.contains(symbol) {
+        symbols += symbol
+      }
+      let names = parts.filter { part in !modifiers.contains { $0.name == part } }
+      let rest = names.map { name in
+        if let symbol = keys[name] { return symbol }
+        return name.count == 1 ? name.uppercased() : name
+      }
+      return symbols + rest.joined(separator: " ")
+    }
   }
-}
 
-struct KeyMapGrid: View {
-  @Bindable var table: GenericTableEditorModel<KeyMapRow>
-  let commands: [String]
-  @State private var editingKey: KeyEditTarget?
+  /// The ComboBoxDelegate: a borderless menu over normalized names shown translated.
+  struct NamePicker: View {
+    @Binding var selection: String
+    let names: [String]
 
-  var body: some View {
-    let context = KeyMapEditorModel.context
-    Table($table.rows, selection: $table.selection) {
-      TableColumn(tr(context, "Mode")) { $row in
-        NamePicker(selection: $row.status, names: KeyMapEditorModel.statuses)
-      }
-      .width(min: 120, ideal: 140)
-      TableColumn(tr(context, "Key")) { $row in
-        KeyMapKeyCell(key: row.key)
-      }
-      .width(min: 80, ideal: 100)
-      TableColumn(tr(context, "Command")) { $row in
-        NamePicker(selection: $row.command, names: commands)
-      }
-    }
-    .tableStyle(.inset(alternatesRowBackgrounds: true))
-    .contextMenu(forSelectionType: UUID.self) { ids in
-      TableEditorContextMenu(
-        onEdit: ids.count == 1 ? { editingKey = ids.first.map(KeyEditTarget.init) } : nil,
-        onNew: { table.addNewItem() },
-        onRemove: {
-          if !ids.isEmpty { table.selection = ids }
-          table.deleteSelectedItems()
-        })
-    } primaryAction: { ids in
-      if ids.count == 1 {
-        editingKey = ids.first.map(KeyEditTarget.init)
-      }
-    }
-    .sheet(item: $editingKey) { target in
-      let id = target.id
-      KeyBindingEditorView(binding: table.rows.first { $0.id == id }?.key ?? "") { binding in
-        if let binding, let index = table.rows.firstIndex(where: { $0.id == id }) {
-          table.rows[index].key = binding
+    var body: some View {
+      Menu {
+        Picker(selection: $selection) {
+          if !names.contains(selection) {
+            // Unknown names are shown as is (tr() of an unknown string) and dropped on Update().
+            Text(verbatim: KeyMapEditorModel.translate(selection)).tag(selection)
+          }
+          ForEach(names, id: \.self) { name in
+            Text(verbatim: KeyMapEditorModel.translate(name)).tag(name)
+          }
+        } label: {
+          EmptyView()
         }
-        editingKey = nil
-      }
-    }
-  }
-}
-
-/// The key of a row with macOS key symbols ("⌃⇧A"); double-clicking the row opens the key binding editor.
-struct KeyMapKeyCell: View {
-  let key: String
-
-  var body: some View {
-    Text(verbatim: KeyDisplayFormatter.display(key))
-      .help(key)
-      .accessibilityLabel(key)
-  }
-}
-
-/// Shows Mozc key strings ("Ctrl Shift a", "Backspace") the way macOS menus show shortcuts ("⌃⇧A", "⌫").
-/// Display only: the keymap keeps Mozc's names.
-enum KeyDisplayFormatter {
-  /// Modifiers in the macOS order (⌃⌥⇧⌘).
-  static let modifiers: [(name: String, symbol: String)] = [
-    ("Ctrl", "⌃"), ("Option", "⌥"), ("Alt", "⌥"), ("Shift", "⇧"), ("Command", "⌘"),
-  ]
-
-  static let keys: [String: String] = [
-    "Backspace": "⌫", "Delete": "⌦", "Enter": "↩", "Tab": "⇥", "Escape": "⎋", "Left": "←", "Right": "→",
-    "Up": "↑", "Down": "↓", "Home": "↖", "End": "↘", "PageUp": "⇞", "PageDown": "⇟",
-  ]
-
-  static func display(_ key: String) -> String {
-    let parts = key.split(separator: " ").map(String.init)
-    var symbols = ""
-    for (name, symbol) in modifiers where parts.contains(name) && !symbols.contains(symbol) {
-      symbols += symbol
-    }
-    let names = parts.filter { part in !modifiers.contains { $0.name == part } }
-    let rest = names.map { name in
-      if let symbol = keys[name] { return symbol }
-      return name.count == 1 ? name.uppercased() : name
-    }
-    return symbols + rest.joined(separator: " ")
-  }
-}
-
-/// The ComboBoxDelegate: a borderless menu over normalized names shown translated.
-struct NamePicker: View {
-  @Binding var selection: String
-  let names: [String]
-
-  var body: some View {
-    Menu {
-      Picker(selection: $selection) {
-        if !names.contains(selection) {
-          // Unknown names are shown as is (tr() of an unknown string) and dropped on Update().
-          Text(verbatim: KeyMapEditorModel.translate(selection)).tag(selection)
-        }
-        ForEach(names, id: \.self) { name in
-          Text(verbatim: KeyMapEditorModel.translate(name)).tag(name)
-        }
+        .pickerStyle(.inline)
+        .labelsHidden()
       } label: {
-        EmptyView()
+        Text(verbatim: KeyMapEditorModel.translate(selection))
       }
-      .pickerStyle(.inline)
-      .labelsHidden()
-    } label: {
-      Text(verbatim: KeyMapEditorModel.translate(selection))
+      .menuStyle(.borderlessButton)
+      .accessibilityValue(KeyMapEditorModel.translate(selection))
     }
-    .menuStyle(.borderlessButton)
-    .accessibilityValue(KeyMapEditorModel.translate(selection))
   }
-}
 
-/// The row whose key is being edited with the key binding editor.
-struct KeyEditTarget: Identifiable {
-  let id: UUID
-}
+  /// The row whose key is being edited with the key binding editor.
+  struct KeyEditTarget: Identifiable {
+    let id: UUID
+  }
+#endif

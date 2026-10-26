@@ -85,6 +85,22 @@ public final class SessionHandlerBackend: SessionBackend {
     return command.output
   }
 
+  /// Re-runs the suggestion of session `id`'s composition (MOVE_CURSOR to `cursor`) and restores its composer
+  /// afterwards, so that the cursor move does not end the toggle of the last kana (the composer is a value). For
+  /// the AI hook's results that arrive after a key on the 12 keys, where the toggle has no timeout.
+  public func refreshSuggestion(id: UInt64, cursor: UInt32) -> Output? {
+    guard let session = handler?.session(id) else { return nil }
+    let composer = session.context.composer
+    var input = Input()
+    input.id = id
+    input.type = .sendCommand
+    input.command.type = .moveCursor
+    input.command.cursorPosition = cursor
+    let output = evalCommand(input)
+    session.context.composer = composer
+    return output
+  }
+
   // MARK: - Server-side commands (no session needed)
 
   @discardableResult
@@ -116,6 +132,16 @@ public final class SessionHandlerBackend: SessionBackend {
 
   @discardableResult
   public func cleanup() -> Bool { call(.cleanup) }
+
+  /// Runs a command of the Genmai app (`AppSessionBackend`): "clear_user_history", "clear_user_prediction",
+  /// anything else reloads.
+  public func handleToolCommand(_ command: String) {
+    switch command {
+    case "clear_user_history": clearUserHistory()
+    case "clear_user_prediction": clearUserPrediction()
+    default: reload()
+    }
+  }
 
   @discardableResult
   public func clearUserHistory() -> Bool { call(.clearUserHistory) }

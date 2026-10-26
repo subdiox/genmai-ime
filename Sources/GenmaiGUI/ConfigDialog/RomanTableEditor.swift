@@ -159,111 +159,113 @@ public final class RomanTableEditorModel {
   }
 }
 
-/// The romaji table editor sheet. `onFinish` receives the new table on OK (empty == default) or nil.
-public struct RomanTableEditorView: View {
-  @State private var model: RomanTableEditorModel
-  @State private var isImporting = false
-  /// Set when OK succeeded but an information message must be read before the sheet closes.
-  @State private var finishAfterMessage = false
-  private let onFinish: (String?) -> Void
+#if os(macOS)
+  /// The romaji table editor sheet. `onFinish` receives the new table on OK (empty == default) or nil.
+  public struct RomanTableEditorView: View {
+    @State private var model: RomanTableEditorModel
+    @State private var isImporting = false
+    /// Set when OK succeeded but an information message must be read before the sheet closes.
+    @State private var finishAfterMessage = false
+    private let onFinish: (String?) -> Void
 
-  public init(currentRomanTable: String, onFinish: @escaping (String?) -> Void) {
-    _model = State(initialValue: RomanTableEditorModel(currentRomanTable: currentRomanTable))
-    self.onFinish = onFinish
-  }
+    public init(currentRomanTable: String, onFinish: @escaping (String?) -> Void) {
+      _model = State(initialValue: RomanTableEditorModel(currentRomanTable: currentRomanTable))
+      self.onFinish = onFinish
+    }
 
-  public var body: some View {
-    @Bindable var table = model.table
-    EditorSheet(
-      title: TableEditorStrings.text(.romanTitle),
-      message: TableEditorStrings.text(.romanMessage),
-      okEnabled: model.okEnabled,
-      onCancel: { onFinish(nil) },
-      onOK: {
-        if model.update() {
-          if model.table.pendingMessage == nil {
-            onFinish(model.acceptedRomanTable())
-          } else {
-            finishAfterMessage = true
+    public var body: some View {
+      @Bindable var table = model.table
+      EditorSheet(
+        title: TableEditorStrings.text(.romanTitle),
+        message: TableEditorStrings.text(.romanMessage),
+        okEnabled: model.okEnabled,
+        onCancel: { onFinish(nil) },
+        onOK: {
+          if model.update() {
+            if model.table.pendingMessage == nil {
+              onFinish(model.acceptedRomanTable())
+            } else {
+              finishAfterMessage = true
+            }
           }
         }
-      }
-    ) {
-      TableEditorBox(
-        canRemove: model.canRemoveOrReset && !table.selection.isEmpty,
-        moreItems: moreItems,
-        onAdd: { model.table.addNewItem() },
-        onRemove: { model.table.deleteSelectedItems() }
       ) {
-        RomanTableGrid(table: model.table)
+        TableEditorBox(
+          canRemove: model.canRemoveOrReset && !table.selection.isEmpty,
+          moreItems: moreItems,
+          onAdd: { model.table.addNewItem() },
+          onRemove: { model.table.deleteSelectedItems() }
+        ) {
+          RomanTableGrid(table: model.table)
+        }
       }
+      .frame(minWidth: 440, minHeight: 440)
+      .genmaiMessageAlert($table.pendingMessage)
+      .onChange(of: table.pendingMessage) { _, message in
+        if message == nil, finishAfterMessage {
+          onFinish(model.acceptedRomanTable())
+        }
+      }
+      .tableEditorImporter(isPresented: $isImporting) { model.importFile($0) }
     }
-    .frame(minWidth: 440, minHeight: 440)
-    .genmaiMessageAlert($table.pendingMessage)
-    .onChange(of: table.pendingMessage) { _, message in
-      if message == nil, finishAfterMessage {
-        onFinish(model.acceptedRomanTable())
-      }
-    }
-    .tableEditorImporter(isPresented: $isImporting) { model.importFile($0) }
-  }
 
-  private var moreItems: [TableEditorMenuItem] {
-    let model = model
-    return [
-      .action(TableEditorStrings.text(.importFromFile)) {
-        model.confirmOverwrite { isImporting = true }
-      },
-      .action(TableEditorStrings.text(.exportToFile)) {
-        guard model.update(),
-          let url = TableEditorSavePanel.run(defaultFilename: RomanTableEditorModel.defaultFilename)
-        else { return }
-        model.table.writeExportFile(url, model.serializedTable)
-      },
-      .divider,
-      .action(TableEditorStrings.text(.resetToDefaults), enabled: model.canRemoveOrReset) {
-        model.confirmOverwrite { model.loadDefaultRomanTable() }
-      },
-    ]
-  }
-}
-
-struct RomanTableGrid: View {
-  @Bindable var table: GenericTableEditorModel<RomanTableRow>
-
-  var body: some View {
-    let context = "genmai::gui::RomanTableEditorDialog"
-    Table($table.rows, selection: $table.selection) {
-      TableColumn(tr(context, "Input")) { $row in
-        RomanTableCell(text: $row.input)
-      }
-      TableColumn(tr(context, "Output")) { $row in
-        RomanTableCell(text: $row.output)
-      }
-      TableColumn(tr(context, "Next input")) { $row in
-        RomanTableCell(text: $row.pending)
-      }
-    }
-    .tableStyle(.inset(alternatesRowBackgrounds: true))
-    .contextMenu(forSelectionType: UUID.self) { ids in
-      TableEditorContextMenu(
-        onEdit: nil,
-        onNew: { table.addNewItem() },
-        onRemove: {
-          if !ids.isEmpty { table.selection = ids }
-          table.deleteSelectedItems()
-        })
+    private var moreItems: [TableEditorMenuItem] {
+      let model = model
+      return [
+        .action(TableEditorStrings.text(.importFromFile)) {
+          model.confirmOverwrite { isImporting = true }
+        },
+        .action(TableEditorStrings.text(.exportToFile)) {
+          guard model.update(),
+            let url = TableEditorSavePanel.run(defaultFilename: RomanTableEditorModel.defaultFilename)
+          else { return }
+          model.table.writeExportFile(url, model.serializedTable)
+        },
+        .divider,
+        .action(TableEditorStrings.text(.resetToDefaults), enabled: model.canRemoveOrReset) {
+          model.confirmOverwrite { model.loadDefaultRomanTable() }
+        },
+      ]
     }
   }
-}
 
-/// An editable cell: plain text until clicked.
-struct RomanTableCell: View {
-  @Binding var text: String
+  struct RomanTableGrid: View {
+    @Bindable var table: GenericTableEditorModel<RomanTableRow>
 
-  var body: some View {
-    TextField("", text: $text)
-      .textFieldStyle(.plain)
-      .labelsHidden()
+    var body: some View {
+      let context = "genmai::gui::RomanTableEditorDialog"
+      Table($table.rows, selection: $table.selection) {
+        TableColumn(tr(context, "Input")) { $row in
+          RomanTableCell(text: $row.input)
+        }
+        TableColumn(tr(context, "Output")) { $row in
+          RomanTableCell(text: $row.output)
+        }
+        TableColumn(tr(context, "Next input")) { $row in
+          RomanTableCell(text: $row.pending)
+        }
+      }
+      .tableStyle(.inset(alternatesRowBackgrounds: true))
+      .contextMenu(forSelectionType: UUID.self) { ids in
+        TableEditorContextMenu(
+          onEdit: nil,
+          onNew: { table.addNewItem() },
+          onRemove: {
+            if !ids.isEmpty { table.selection = ids }
+            table.deleteSelectedItems()
+          })
+      }
+    }
   }
-}
+
+  /// An editable cell: plain text until clicked.
+  struct RomanTableCell: View {
+    @Binding var text: String
+
+    var body: some View {
+      TextField("", text: $text)
+        .textFieldStyle(.plain)
+        .labelsHidden()
+    }
+  }
+#endif

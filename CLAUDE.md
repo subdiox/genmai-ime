@@ -1,6 +1,6 @@
 # CLAUDE.md — genmai-ime
 
-genmai is a Japanese input method for macOS: a conversion engine ported to Swift from Mozc
+genmai is a Japanese input method for macOS and iOS: a conversion engine ported to Swift from Mozc
 (https://github.com/google/mozc, 3.35.6354) plus optional on-device AI conversion with the genmai language model
 (Core ML). Runtime, UI and data generation are all Swift; the C++ Mozc in `Vendor/mozc` is only the source of the
 dictionary data and the reference ("oracle") for parity tests. User-facing overview: `README.md`. Per-file
@@ -47,6 +47,8 @@ Layers: GenmaiProtocol / GenmaiBase / GenmaiStorage → GenmaiCore → GenmaiSes
 | genmai-engine | converter_main | CLI printing the oracle's format, for parity |
 | GenmaiClient, GenmaiRenderer, GenmaiGUI, GenmaiMac, GenmaiIME, GenmaiApp, GenmaiUninstaller | client/, renderer/, gui/, mac/ | InputMethodKit app; SwiftUI UI |
 | GenmaiAI, genmai-cli | — | the genmai model on Core ML; independent of GenmaiCore |
+| GenmaiIOS | ios/ios_engine | iOS keyboard logic (`IosEngine`, `KeyboardController`); builds and is tested on macOS |
+| GenmaiIOSKeyboard, GenmaiIOSApp | — | iOS-only UI of the keyboard extension and the app; `iOS/` holds the XcodeGen project |
 | GenmaiClient/AIConversion, GenmaiAIClient | — | the IME's AI conversion hook and its genmai augmenter |
 
 Naming: every module, type and user-visible string is "Genmai". Upstream names remain where they identify upstream
@@ -118,8 +120,8 @@ needs a fraction of the memory: genmai-310M 80–140 MB vs. 1–2.7 GB).
   changes (then give it another prompt format / model type, or another archive name for a Core ML format older IMEs
   cannot run, so they skip it). `AIModelInstaller.install(release)` downloads the files (kept in
   `~/Library/Caches/Genmai/download/<repo>@<tag>` until the install succeeds), verifies the checksums and the config,
-  extracts the archive with `/usr/bin/ditto -x -k` (Foundation has no zip API; awaited through the process's
-  termination handler), checks the format in `genmai_coreml.json`, compiles each package (`MLModel.compileModel`),
+  extracts the archive (`ZipArchive`: central directory + stored / deflated entries inflated with the Compression
+  framework; Foundation has no zip API and iOS cannot run `ditto`), checks the format in `genmai_coreml.json`, compiles each package (`MLModel.compileModel`),
   replaces config.json / tokenizer.json / `genmai*.mlmodelc` / `genmai_coreml.json` / `genmai_model.json` (installed
   repository and release) one at a time (other files are left alone) and then loads the installed functions once on
   the Neural Engine (phase `preparing`): the first ANE load compiles the model (~20 s for genmai-310M) and the system
@@ -170,7 +172,10 @@ decoder it replaced (genmai-90M, M4 Pro): top-1 identical 101/101 daily, 199/200
   ~500k (an attention sink), beyond fp16 (65504): NaN. The converter reparametrizes exactly: `--residual-scale 0.25`
   (embeddings and attention / MLP output projections × 0.25, layer norm eps × 1/16; layer norms are scale-invariant,
   the head keeps the unscaled embeddings) and `--score-scale 256` (logits computed / 256 via the query weights, row
-  max subtracted, × 256 before the softmax).
+  max subtracted, × 256 before the softmax). **Layer norms** divide their input by its maximum magnitude first
+  (`LayerNorm` in the converter; eps / max²): an attention sink puts ~5000 (genmai-90M) / ~20k (genmai-310M, scaled)
+  at the first token, and macOS 26's Core ML computes a `layer_norm` op's variance in fp16 (the square overflows:
+  garbage on the CPU and the ANE; macOS 27 was fine). Models v1.0.0 have the plain op.
 - The B rows hold one search, so `genBatch` searches its contexts one after another. `extend` passes a
   `GenmaiSearchBound` (hypothesis texts / scores, beams): a search stops once all its rows are below the `beams`-th best
   distinct text found so far, which does not change the result (log-probs only decrease). Drafts with several contexts
@@ -324,6 +329,67 @@ unchanged; the hook only forwards). GenmaiCore and GenmaiSession contain no AI c
   session layer with `FakeAugmenter`), GenmaiGUITests (AI tab, model installation with a fake installer),
   GenmaiMacTests (key queue, suggestion refresh), GenmaiRendererTests (`CandidatePlacement`), GenmaiAITests
   (tokenizer, decoding, KV reuse / draft vs. plain), GenmaiAIClientTests (model-backed speculation).
+
+## iOS (not in Mozc, except ios/ios_engine)
+
+The same package builds for iOS 18+ (`platforms: [.macOS(.v15), .iOS(.v18)]`). Everything below the app layer is
+shared: GenmaiBase … GenmaiSession, GenmaiClient (`SessionHandlerBackend`, `AppSessionBackend`) and the models of
+GenmaiGUI (`ConfigDialogModel`, `DictionaryToolModel`, strings / `tr`). macOS-only code is behind `#if os(macOS)`
+(AppKit / Carbon views of GenmaiGUI, `GenmaiUpdateModel`, IOKit serial number, posix_spawn); GenmaiMac, GenmaiRenderer,
+the app executables and the uninstaller are not built for iOS. **Every change must keep both platforms building**:
+`xcodebuild -scheme GenmaiIOSApp -destination 'generic/platform=iOS Simulator' build` (CI builds the iOS app).
+
+- **Engine:** `IosEngine` is a port of ios/ios_engine on top of `SessionHandlerBackend` (the macOS IME's in-process
+  server: engine, SYNC_DATA, watch dog, reload commands, optional AI hook). Layouts: "12KEYS" (toggle + flick,
+  TOGGLE_FLICK_TO_HIRAGANA_INTUITIVE), "12KEYS_FLICKONLY", "12KEYS_QWERTY", "QWERTY_JA"; mobile request / config
+  (`fillMobileConfig`: MOBILE keymap). The composer's toggle / flick / qwerty_mobile tables do the kana.
+- **`KeyboardController`** (GenmaiIOS): key presses → engine; applies each Output to a `KeyboardTextDocument`
+  (UITextDocumentProxy in the extension, a fake in tests): result committed, preedit as marked text, unconsumed keys
+  get their default action, `all_candidate_words` for the candidate bar. As on the iOS kana keyboard, toggling has
+  no timeout: the last kana toggles until another key, "→" (`advance`) sends STOP_KEY_TOGGLING. A late AI result
+  refreshes the suggestion through `SessionHandlerBackend.refreshSuggestion` (MOVE_CURSOR with the composer saved
+  and restored: a plain MOVE_CURSOR would end the toggle). The left column follows the system: with toggling → / ↺ /
+  a tall next-mode key (ABC → ☆123 → あいう), with flick only ☆123 / ABC / a tall あいう. Keys are in `KeyboardKeys` (KeyboardLayout.swift); a
+  12-key tap sends the key's kana (toggle), a flick the character itself, 小゛゜ is "*" with flicks "`" "[" "]".
+  Feedback copies the system keyboard (measured from iPhone screen recordings, iOS 27): a pressed key fades
+  towards the background; after a tap that can toggle the key stays so until the toggle ends
+  (`KeyboardController.togglingKey`; with flick only nothing toggles, so only while touched); a flick shows its character in a popup on that side pointing at the key; a
+  hold (400 ms) shows the guide cross and dims the other labels. The popups are drawn over the whole keyboard
+  (`FlickPopupOverlay`, fed by each key's bounds through `FlickPopupPreference`). Colors are color sets in
+  `GenmaiIOSKeyboard/Resources/KeyboardColors.xcassets` (`Legacy*` before iOS 26). Geometry, label sizes and colors
+  are measured from iPhone 16 Pro recordings (`KeyboardMetrics`, `FlickPopupOverlay`, `CandidateButton`) and checked
+  by diffing preview screenshots against the recording's frames (same 402 pt width): keys, popup and guide
+  outlines and kana labels within 1 px.
+- **Processes:** the app (`io.github.subdiox.genmai.ios`) and the keyboard extension (`….keyboard`) share the user
+  profile in the app group `group.io.github.subdiox.genmai` (`SharedContainer.useSharedProfile()` at startup).
+  There is no DistributedNotificationCenter: `AppSessionBackend` queues reload requests in
+  `<profile>/tool_commands` (`ToolCommandQueue`), which the keyboard runs when it appears; keyboard settings are
+  `<profile>/keyboard.json` (`KeyboardSettings`). The keyboard requests Full Access (RequestsOpenAccess): Apple
+  gives a keyboard the shared container (and haptics) only with it; without it the keyboard converts with the
+  bundled data set and default settings and keeps no learning.
+- **Data:** the extended data set (`Data/genmai_extended.data`, copied to `build/ios/genmai.data` by
+  `Tools/make_ios_project.sh`, with credits_en.html + SudachiDict's notice) is bundled in the app; the extension
+  finds it in the containing app (`OssDataManager.bundleDataPath`, `*.appex` → `../../`).
+- **AI conversion:** the same Core ML decoder and hook as on macOS. The app's settings screen "AI conversion"
+  (`AISettingsView`: `ConfigDialogModel` + `AIStrings`, like the macOS AI tab) downloads the models into
+  `<profile>/models` of the app group (`ZipArchive` extracts the archive; no `ditto` on iOS); the keyboard builds
+  `AIConversionHook.makeGenmai` for its `IosEngine` and needs Full Access to read them. Left context:
+  `documentContextBeforeInput` when a composition starts (`IosEngine.precedingText`). `KeyboardController` waits
+  for the AI result on the conversion key (`conversionWait`, keys typed meanwhile queued) and refreshes the
+  suggestion when a result arrives later (`SessionHandlerBackend.refreshSuggestion`: MOVE_CURSOR, as
+  `aiSuggestionUpdate` on macOS, with the composer restored so the last kana keeps toggling). Default model on iOS: small (`AIModelSize.default`). Keyboard extensions have a
+  memory limit (not enforced in the simulator; genmai-90M adds up to ~90 MB on the Mac): check on a device.
+- **Xcode project:** `iOS/project.yml` → `Tools/make_ios_project.sh` (XcodeGen; `iOS/Genmai.xcodeproj` is
+  git-ignored). Both targets are thin (`@main` app, `KeyboardViewController: GenmaiKeyboardViewController`).
+  Device signing: `DEVELOPMENT_TEAM` in `iOS/Local.xcconfig` (git-ignored).
+- **Simulator testing:** this Xcode has no Simulator.app; a headless simulator counts as having a hardware keyboard,
+  so no software keyboard (not even Apple's) appears. Enable the keyboard with
+  `simctl spawn <udid> defaults write -g AppleKeyboards -array io.github.subdiox.genmai.ios.keyboard …`. To see and
+  drive the keyboard, launch a debug build with `-keyboardPreview` (`KeyboardPreview`: `KeyboardView` over a text
+  area, with the AI hook) and tap with `sim-use`.
+  `-textField` opens a screen with only a focused text field, to compare keyboards on a device. On a physical
+  iPhone `sim-use` takes screenshots but cannot tap, swipe or record: for gestures, ask the user for an iPhone screen
+  recording and read its frames with ffmpeg. Drive only the Genmai app there.
 
 ## GUI design (not in Mozc)
 

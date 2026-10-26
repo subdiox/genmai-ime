@@ -2,9 +2,9 @@
 
 Status: `-` not started, `P` ported, `T` C++ tests ported and passing (or Swift tests for code without C++ tests), `V` parity-verified against the oracle, `n/a` not applicable to the Swift architecture (Qt/Windows/IPC-only).
 
-Total runtime C++ lines in scope (incl. headers/comments): 119435
+Total runtime C++ lines in scope (incl. headers/comments): 120220
 
-330 rows: 9 V (parity-verified), 233 T (tests ported / passing), 40 P (ported, no dedicated test), 48 n/a (not applicable on macOS / build-time tools / IPC), 0 missing. Every runtime .cc/.h/.mm of Vendor/mozc/src outside third_party, android, ios, win32, unix, build_tools and testing is listed (audited 2026-10-20).
+333 rows: 9 V (parity-verified), 234 T (tests ported / passing), 40 P (ported, no dedicated test), 50 n/a (not applicable on macOS / iOS / build-time tools / IPC), 0 missing. Every runtime .cc/.h/.mm of Vendor/mozc/src outside third_party, android, win32, unix, build_tools and testing is listed (audited 2026-10-20; ios/ added 2026-10-23).
 
 ## GenmaiBase
 
@@ -412,6 +412,14 @@ talks to the IME through the config file and a distributed "reload" notification
 user profile (learning data, user dictionary, settings) in `~/Library/Application Support/Genmai`, separate from an
 installed C++ Mozc.
 
+## GenmaiIOS (ios/)
+
+| file | lines | status |
+|---|---|---|
+| ios/ios_engine | 575 | T (GenmaiIOS/IosEngine.swift on GenmaiClient's `SessionHandlerBackend`; `@MainActor` instead of the mutex) |
+| ios/ios_engine_main | 123 | n/a (CLI driver; the keyboard logic is tested by GenmaiIOSTests) |
+| ios/ios_engine_stub | 87 | n/a (no-op IosEngine for builds without the engine) |
+
 ## Evaluation sets (data/)
 
 | set | status |
@@ -474,4 +482,4 @@ such as the mock suggestion filter). These rows are not included in the summary 
 
 - base/protobuf_util's generic reflection-based sanitizer is specialized to RendererStyle (its only user).
 
-Summary: 330 rows: 9 V (parity-verified), 233 T (tests ported / passing), 40 P (ported, no dedicated test), 48 n/a (not applicable on macOS / build-time tools / IPC), 0 missing. Every runtime .cc/.h/.mm of Vendor/mozc/src outside third_party, android, ios, win32, unix, build_tools and testing is listed (audited 2026-10-20).
+Summary: 333 rows: 9 V (parity-verified), 234 T (tests ported / passing), 40 P (ported, no dedicated test), 50 n/a (not applicable on macOS / iOS / build-time tools / IPC), 0 missing. Every runtime .cc/.h/.mm of Vendor/mozc/src outside third_party, android, win32, unix, build_tools and testing is listed (audited 2026-10-20; ios/ added 2026-10-23).

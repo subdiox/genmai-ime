@@ -1,4 +1,4 @@
-# Builds every product and runs the tests on each push to main and on pull requests, with the same Xcode as the
+# Builds every product (also the iOS app and keyboard for the simulator) and runs the tests on each push to main and on pull requests, with the same Xcode as the
 # release workflow (the oldest supported toolchain is where compile errors show up first), and checks
 # swift-format (.swift-format; any finding fails). Tests that need the AI
 # model skip (it is not downloaded here); the data sets are built with genmai-datagen and cached.
@@ -41,7 +41,7 @@ jobs:
 
       - name: Lint (swift-format)
         run: |
-          find Sources Tests Package.swift -name '*.swift' -not -path 'Sources/GenmaiProtocol/*' -print0 \
+          find Sources Tests iOS Package.swift -name '*.swift' -not -path 'Sources/GenmaiProtocol/*' -print0 \
             | xargs -0 xcrun swift-format lint --strict
 
       - name: Restore build cache
@@ -86,3 +86,11 @@ jobs:
 
       - name: Test
         run: swift test --build-path .build-ci -c release -Xswiftc -enable-testing --skip-build
+
+      - name: iOS app (simulator build)
+        run: |
+          brew install xcodegen
+          Tools/make_ios_project.sh
+          xcodebuild -project iOS/Genmai.xcodeproj -scheme Genmai -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath .build-ci/ios -clonedSourcePackagesDirPath .build-ci/ios-packages \
+            CODE_SIGNING_ALLOWED=NO build -quiet

@@ -25,43 +25,48 @@ public enum GenmaiProcess {
   /// Spawns `path` with the space separated arguments `arg`. If `path` is an
   /// application bundle, it is opened with NSWorkspace (without arguments,
   /// like the C++). Returns the child pid in `pid` (0 for bundles).
+  /// Always fails on iOS, where apps cannot spawn processes.
   @discardableResult
   public static func spawnProcess(_ path: String, _ arg: String, _ pid: inout Int) -> Bool {
-    let argTmp = arg.split(separator: " ", omittingEmptySubsequences: true).map(String.init)
+    #if os(macOS)
+      let argTmp = arg.split(separator: " ", omittingEmptySubsequences: true).map(String.init)
 
-    var statbuf = stat()
-    if stat(path, &statbuf) != 0 {
-      GenmaiLog.error("Can't stat \(path): \(String(cString: strerror(errno)))")
+      var statbuf = stat()
+      if stat(path, &statbuf) != 0 {
+        GenmaiLog.error("Can't stat \(path): \(String(cString: strerror(errno)))")
+        return false
+      }
+
+      // Check if the "path" is an application or not.  If it's an
+      // application, do a special process using mac_process.mm.
+      if (statbuf.st_mode & S_IFMT) == S_IFDIR && path.utf8.count > 4 && path.hasSuffix(".app") {
+        // In mac launchApplication cannot accept any arguments.
+        return MacProcess.openApplication(path)
+      }
+
+      // Spawn new process.
+      // NOTE:
+      // posix_spawn returns 0 even if kGenmaiServer doesn't exist, because
+      // the return value of posix_spawn is basically determined
+      // by the return value of fork().
+      // Not Foundation.Process: it reaps the child itself, but callers wait for
+      // the returned pid (WaitProcess). posix_spawn takes C strings, so argv is
+      // built with strdup / free here (the only unsafe code in this file).
+      var tmpPid: pid_t = 0
+      var cArgs: [UnsafeMutablePointer<CChar>?] = ([path] + argTmp).map { strdup($0) }
+      cArgs.append(nil)
+      defer {
+        for p in cArgs { free(p) }
+      }
+      let result = posix_spawn(&tmpPid, path, nil, nil, cArgs, environ)
+      if result != 0 {
+        GenmaiLog.error("posix_spawn failed: \(String(cString: strerror(result)))")
+      }
+      pid = Int(tmpPid)
+      return result == 0
+    #else
       return false
-    }
-
-    // Check if the "path" is an application or not.  If it's an
-    // application, do a special process using mac_process.mm.
-    if (statbuf.st_mode & S_IFMT) == S_IFDIR && path.utf8.count > 4 && path.hasSuffix(".app") {
-      // In mac launchApplication cannot accept any arguments.
-      return MacProcess.openApplication(path)
-    }
-
-    // Spawn new process.
-    // NOTE:
-    // posix_spawn returns 0 even if kGenmaiServer doesn't exist, because
-    // the return value of posix_spawn is basically determined
-    // by the return value of fork().
-    // Not Foundation.Process: it reaps the child itself, but callers wait for
-    // the returned pid (WaitProcess). posix_spawn takes C strings, so argv is
-    // built with strdup / free here (the only unsafe code in this file).
-    var tmpPid: pid_t = 0
-    var cArgs: [UnsafeMutablePointer<CChar>?] = ([path] + argTmp).map { strdup($0) }
-    cArgs.append(nil)
-    defer {
-      for p in cArgs { free(p) }
-    }
-    let result = posix_spawn(&tmpPid, path, nil, nil, cArgs, environ)
-    if result != 0 {
-      GenmaiLog.error("posix_spawn failed: \(String(cString: strerror(result)))")
-    }
-    pid = Int(tmpPid)
-    return result == 0
+    #endif
   }
 
   @discardableResult

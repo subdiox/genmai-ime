@@ -170,11 +170,7 @@ public final class GenmaiIMEEnvironment {
 
   func handleToolNotification(_ command: String) {
     if let server = backend as? SessionHandlerBackend {
-      switch command {
-      case "clear_user_history": server.clearUserHistory()
-      case "clear_user_prediction": server.clearUserPrediction()
-      default: server.reload()
-      }
+      server.handleToolCommand(command)
     } else {
       // Another backend (tests): route the command through one client.
       guard let client = clients.lazy.compactMap(\.client).first else { return }
