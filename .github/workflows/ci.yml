@@ -1,7 +1,8 @@
 # Builds every product (also the iOS app and keyboard for the simulator) and runs the tests on each push to main and on pull requests, with the same Xcode as the
 # release workflow (the oldest supported toolchain is where compile errors show up first), and checks
 # swift-format (.swift-format; any finding fails). Tests that need the AI
-# model skip (it is not downloaded here); the data sets are built with genmai-datagen and cached.
+# model skip (it is not downloaded here); the data sets (also the extended one the iOS app bundles) are built
+# with genmai-datagen and cached.
 # The tests run in a release build with testing enabled: debug code is ~20x slower and the tests took 45 minutes on
 # the runner. The caches are saved even when a step fails (a failing run must not make the next one start over);
 # the build cache keeps the dependencies' objects, the package's own modules are rebuilt because the checkout gives
@@ -59,11 +60,11 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: Data
-          key: data-${{ runner.os }}-${{ steps.mozc.outputs.commit }}-${{ hashFiles('Tools/build_data.sh', 'Sources/GenmaiDataGen/**') }}
+          key: data-extended-${{ runner.os }}-${{ steps.mozc.outputs.commit }}-${{ hashFiles('Tools/build_data.sh', 'Sources/GenmaiDataGen/**') }}
 
       - name: Data sets (genmai-datagen)
         if: steps.data.outputs.cache-hit != 'true'
-        run: Tools/build_data.sh
+        run: Tools/build_data.sh --extended
 
       - name: Save data sets
         if: steps.data.outputs.cache-hit != 'true'
